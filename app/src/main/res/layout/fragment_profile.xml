@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    tools:context=".ProfileFragment">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:layout_width="156dp"
+            android:layout_height="156dp"
+            android:id="@+id/profile_pic"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            android:layout_marginStart="20dp"
+            android:layout_marginTop="56dp"
+            android:src="@drawable/profile_pic"
+            app:shapeAppearanceOverlay="@style/CircleImageViewStyle" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:id="@+id/profile_login"
+            app:layout_constraintStart_toEndOf="@id/profile_pic"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="@id/profile_pic"
+            android:text="mifoxti"
+            android:fontFamily="@font/saira_var"
+            android:textSize="48sp"
+            android:textStyle="bold"
+            />
+
+        <Button
+            style="?attr/materialButtonOutlinedStyle"
+            android:id="@+id/textButton"
+            android:layout_width="156dp"
+            android:layout_height="40dp"
+            android:text="Мысли"
+            app:layout_constraintTop_toBottomOf="@id/profile_login"
+            app:layout_constraintStart_toEndOf="@id/profile_pic"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:textSize="12dp"
+
+            />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</FrameLayout>
