@@ -43,12 +43,11 @@ class FragmentMain : Fragment() {
     }
 
     private fun playSong(song: Song) {
-        // Воспроизведение песни
-        val mediaPlayer = MediaPlayer().apply {
-            setDataSource(song.filePath)
-            prepare()
-            start()
-        }
+        MusicPlayer.playSong(requireContext(), song)
+
+        // Открываем Bottom Sheet с информацией о песне
+        val bottomSheetFragment = MusicBottomSheetFragment.newInstance(song)
+        bottomSheetFragment.show(parentFragmentManager, bottomSheetFragment.tag)
     }
 
     fun extractCoverArt(context: Context, resourceId: Int): Bitmap? {

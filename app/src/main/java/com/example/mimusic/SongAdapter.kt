@@ -21,15 +21,11 @@ class SongAdapter(
 
     override fun onBindViewHolder(holder: SongViewHolder, position: Int) {
         val song = songs[position]
-        Log.d("SongAdapter", "Binding song: ${song.title}")
         holder.bind(song)
         holder.itemView.setOnClickListener { onItemClick(song) }
     }
 
-    override fun getItemCount(): Int {
-        Log.d("SongAdapter", "Total songs: ${songs.size}")
-        return songs.size
-    }
+    override fun getItemCount(): Int = songs.size
 
     class SongViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val poster: ShapeableImageView = itemView.findViewById(R.id.galleryposter)

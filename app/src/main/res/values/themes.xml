@@ -56,4 +56,8 @@
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">35%</item> <!-- 50% делает изображение круглым -->
     </style>
+    <style name="CircleSongBigViewStyle">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">15%</item> <!-- 50% делает изображение круглым -->
+    </style>
 </resources>
