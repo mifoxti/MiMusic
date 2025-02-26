@@ -1,24 +1,35 @@
 package com.example.mimusic
 
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : AppCompatActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.contentContainer, ContentFragment())
-            .commit()
+        // Загружаем начальный фрагмент (например, FragmentMain)
+        if (savedInstanceState == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.contentContainer, FragmentMain())
+                .commit()
 
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.bottomNavigationContainer, BottomNavigationFragment())
-            .commit()
+            // Добавляем навигационный бар
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.bottomNavigationContainer, BottomNavigationFragment())
+                .commit()
+        }
+    }
+
+    override fun onBackPressed() {
+        // Проверяем, есть ли фрагменты в back stack
+        if (supportFragmentManager.backStackEntryCount > 0) {
+            // Возвращаемся на предыдущий фрагмент
+            supportFragmentManager.popBackStack()
+        } else {
+            // Если back stack пуст, завершаем Activity
+            super.onBackPressed()
+        }
     }
 }
-

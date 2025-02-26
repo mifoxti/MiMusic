@@ -32,11 +32,12 @@
             android:fontFamily="@font/saira_var"
             android:textSize="48sp"
             android:textStyle="bold"
+            android:textColor="#000000"
             />
 
         <Button
             style="?attr/materialButtonOutlinedStyle"
-            android:id="@+id/textButton"
+            android:id="@+id/thoughtsBtn"
             android:layout_width="156dp"
             android:layout_height="40dp"
             android:text="Мысли"
@@ -44,8 +45,46 @@
             app:layout_constraintStart_toEndOf="@id/profile_pic"
             app:layout_constraintEnd_toEndOf="parent"
             android:textSize="12dp"
+            android:textColor="@color/md_theme_onPrimaryFixed"
 
             />
+
+        <Button
+            style="?attr/materialIconButtonFilledTonalStyle"
+            android:id="@+id/settingsButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:layout_constraintStart_toEndOf="@id/profile_pic"
+            app:layout_constraintEnd_toEndOf="@id/profile_pic"
+            app:layout_constraintTop_toBottomOf="@id/profile_pic"
+            app:layout_constraintBottom_toBottomOf="@id/profile_pic"
+            app:icon="@drawable/ic_settings"
+            />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:layout_constraintTop_toBottomOf="@id/profile_pic"
+            app:layout_constraintStart_toStartOf="@id/profile_pic"
+            app:layout_constraintEnd_toEndOf="@id/profile_pic"
+            android:text="Любимые песни"
+            android:id="@+id/text_loved"
+            android:textColor="#000000"
+            android:layout_marginTop="24dp"
+            android:textStyle="bold"
+            />
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:layout_width="105dp"
+            android:layout_height="105dp"
+            android:id="@+id/loved_image"
+            app:layout_constraintStart_toStartOf="@id/text_loved"
+            app:layout_constraintEnd_toEndOf="@id/text_loved"
+            app:layout_constraintTop_toBottomOf="@id/text_loved"
+            android:layout_marginTop="4dp"
+            android:src="@drawable/im_loved"
+            app:shapeAppearanceOverlay="@style/CircleImageViewStyle" />
+
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

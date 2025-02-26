@@ -3,12 +3,28 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".SearchFragment">
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    tools:context=".SearchFragment"
+    android:padding="8dp">
 
-    <!-- TODO: Update blank fragment layout -->
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:text="33333333333333333333333333333" />
+        android:orientation="vertical">
 
+        <!-- SearchView for input -->
+        <android.widget.SearchView
+            android:id="@+id/search_view"
+            android:layout_marginTop="32dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/rounded_corners"
+            android:queryHint="Введите название фильма" />
+        <!-- RecyclerView for displaying search results -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:layout_marginTop="16dp"
+            android:id="@+id/search_results_recycler_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </LinearLayout>
 </FrameLayout>
