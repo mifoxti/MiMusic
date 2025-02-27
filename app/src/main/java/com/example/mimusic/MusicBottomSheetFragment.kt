@@ -71,16 +71,21 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         artistTextView.text = "Artist" // Замените на реального исполнителя, если есть данные
         profilePic.setImageBitmap(song.coverArt)
 
-        // Инициализация MediaPlayer
-        if (MusicPlayer.getCurrentSong() != song) {
-            MusicPlayer.playSong(requireContext(), song)
-        }
-
-        // Установка начального состояния кнопки Play/Pause
-        if (MusicPlayer.isPlaying()) {
-            playButton.setIconResource(R.drawable.ic_pause) // Иконка "Pause"
+        // Инициализация MediaPlayer (если песня не играет)
+        if (MusicPlayer.getCurrentSong() != song || !MusicPlayer.isPrepared()) {
+            MusicPlayer.playSong(requireContext(), song) {
+                // Колбэк, вызываемый после подготовки MediaPlayer
+                updatePlayButtonState()
+                seekBar.max = MusicPlayer.getDuration()
+                totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
+                handler.post(updateSeekBar) // Запускаем обновление SeekBar
+            }
         } else {
-            playButton.setIconResource(R.drawable.ic_play) // Иконка "Play"
+            // Если MediaPlayer уже готов, обновляем UI сразу
+            updatePlayButtonState()
+            seekBar.max = MusicPlayer.getDuration()
+            totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
+            handler.post(updateSeekBar)
         }
 
         // Обработка нажатия на кнопку Play/Pause
@@ -95,9 +100,6 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         }
 
         // Обработка изменения SeekBar
-        seekBar.max = MusicPlayer.getDuration()
-        seekBar.progress = MusicPlayer.getCurrentPosition()
-        totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
@@ -110,10 +112,15 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
 
-        // Запуск обновления SeekBar
-        handler.post(updateSeekBar)
-
         return view
+    }
+
+    private fun updatePlayButtonState() {
+        if (MusicPlayer.isPlaying()) {
+            playButton.setIconResource(R.drawable.ic_pause) // Иконка "Pause"
+        } else {
+            playButton.setIconResource(R.drawable.ic_play) // Иконка "Play"
+        }
     }
 
     private fun formatTime(milliseconds: Int): String {

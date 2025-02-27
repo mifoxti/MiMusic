@@ -7,8 +7,9 @@ import android.util.Log
 object MusicPlayer {
     private var mediaPlayer: MediaPlayer? = null
     private var currentSong: Song? = null
+    private var isPrepared = false // Флаг для отслеживания состояния подготовки
 
-    fun playSong(context: Context, song: Song) {
+    fun playSong(context: Context, song: Song, onPrepared: (() -> Unit)? = null) {
         if (mediaPlayer == null) {
             mediaPlayer = MediaPlayer()
         } else {
@@ -28,14 +29,17 @@ object MusicPlayer {
                 assetFileDescriptor.close()
 
                 setOnPreparedListener {
+                    isPrepared = true
                     start()
                     currentSong = song
                     Log.d("MusicPlayer", "Song started: ${song.title}, duration: ${duration}")
+                    onPrepared?.invoke() // Вызываем колбэк после подготовки
                 }
 
                 setOnCompletionListener {
                     Log.d("MusicPlayer", "Song completed: ${song.title}")
                     currentSong = null
+                    isPrepared = false
                 }
 
                 setOnErrorListener { _, what, extra ->
@@ -65,7 +69,7 @@ object MusicPlayer {
     }
 
     fun resume() {
-        if (mediaPlayer != null && !mediaPlayer!!.isPlaying) {
+        if (mediaPlayer != null && !mediaPlayer!!.isPlaying && isPrepared) {
             mediaPlayer?.start()
             Log.d("MusicPlayer", "Song resumed")
         }
@@ -87,10 +91,15 @@ object MusicPlayer {
         mediaPlayer?.release()
         mediaPlayer = null
         currentSong = null
+        isPrepared = false
         Log.d("MusicPlayer", "MediaPlayer released")
     }
 
     fun getCurrentSong(): Song? {
         return currentSong
+    }
+
+    fun isPrepared(): Boolean {
+        return isPrepared
     }
 }
