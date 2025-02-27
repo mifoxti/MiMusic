@@ -1,4 +1,4 @@
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
     <corners android:radius="24dp" /> <!-- Измените значение для настройки радиуса -->
-    <solid android:color="#80C58C8C" /> <!-- Полупрозрачный цвет фона -->
+    <solid android:color="#60C58C8C" /> <!-- Полупрозрачный цвет фона -->
 </shape>
