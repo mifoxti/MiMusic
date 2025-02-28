@@ -3,9 +3,16 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/rounded_bottom_nav_background"
+    android:background="@drawable/background"
     android:orientation="vertical"
     android:padding="16dp"> <!-- Фон с закругленными углами -->
+
+    <!-- Drag handle for accessibility -->
+    <com.google.android.material.bottomsheet.BottomSheetDragHandleView
+        android:id="@+id/drag_handle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
 
     <com.google.android.material.imageview.ShapeableImageView
         android:layout_width="300dp"
@@ -14,6 +21,7 @@
         android:layout_gravity="center"
         android:src="@drawable/music_image"
         android:elevation="32dp"
+        android:layout_marginTop="40dp"
         android:outlineProvider="background"
         android:backgroundTint="@color/md_theme_scrim"
     app:shapeAppearanceOverlay="@style/CircleSongBigViewStyle" />
@@ -123,5 +131,15 @@
             android:layout_height="wrap_content"
             app:icon="@drawable/ic_skip_next" />
     </LinearLayout>
+
+    <Button
+        style="?attr/materialIconButtonStyle"
+        android:id="@+id/galleryBtnLove"
+        android:layout_marginTop="40dp"
+        android:layout_gravity="center"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:icon="@drawable/ic_heart"
+        />
 
 </LinearLayout>

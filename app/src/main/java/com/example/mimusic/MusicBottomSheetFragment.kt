@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.fragment.app.FragmentManager
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 
@@ -113,6 +114,16 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         })
 
         return view
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Устанавливаем BottomSheet в развернутое состояние
+        val bottomSheet = dialog?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+        bottomSheet?.let {
+            val behavior = BottomSheetBehavior.from(it)
+            behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        }
     }
 
     private fun updatePlayButtonState() {

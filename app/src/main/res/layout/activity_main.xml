@@ -1,5 +1,4 @@
-<!-- res/layout/activity_main.xml -->
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -14,13 +13,23 @@
     <FrameLayout
         android:id="@+id/contentContainer"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_above="@+id/bottomNavigationContainer" />
+        android:layout_height="match_parent" />
 
-    <!-- Контейнер для фрагмента с BottomNavigationView -->
+    <!-- Контейнер для мини-плеера -->
+    <include
+        android:id="@+id/miniPlayerContainer"
+        layout="@layout/miniplayer"
+        android:layout_width="380dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="128dp" /> <!-- Отступ для BottomNavigationView -->
+
+    <!-- Контейнер для BottomNavigationView -->
     <FrameLayout
         android:id="@+id/bottomNavigationContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true" />
-</RelativeLayout>
+        android:layout_gravity="bottom"
+        android:elevation="8dp"
+        android:layout_marginBottom="16dp" />
+</FrameLayout>

@@ -7,13 +7,23 @@ import android.util.Log
 object MusicPlayer {
     private var mediaPlayer: MediaPlayer? = null
     private var currentSong: Song? = null
-    private var isPrepared = false // Флаг для отслеживания состояния подготовки
+    private var isPrepared = false
+    private var onSongChangedListener: (() -> Unit)? = null
+    private var onPlaybackStartedListener: (() -> Unit)? = null // Новый слушатель
+
+    fun setOnSongChangedListener(listener: () -> Unit) {
+        onSongChangedListener = listener
+    }
+
+    fun setOnPlaybackStartedListener(listener: () -> Unit) {
+        onPlaybackStartedListener = listener
+    }
 
     fun playSong(context: Context, song: Song, onPrepared: (() -> Unit)? = null) {
         if (mediaPlayer == null) {
             mediaPlayer = MediaPlayer()
         } else {
-            mediaPlayer?.reset() // Сбрасываем текущий MediaPlayer
+            mediaPlayer?.reset()
         }
 
         try {
@@ -33,13 +43,16 @@ object MusicPlayer {
                     start()
                     currentSong = song
                     Log.d("MusicPlayer", "Song started: ${song.title}, duration: ${duration}")
-                    onPrepared?.invoke() // Вызываем колбэк после подготовки
+                    onPrepared?.invoke()
+                    onSongChangedListener?.invoke()
+                    onPlaybackStartedListener?.invoke() // Уведомляем о начале воспроизведения
                 }
 
                 setOnCompletionListener {
                     Log.d("MusicPlayer", "Song completed: ${song.title}")
                     currentSong = null
                     isPrepared = false
+                    onSongChangedListener?.invoke()
                 }
 
                 setOnErrorListener { _, what, extra ->
@@ -47,7 +60,7 @@ object MusicPlayer {
                     false
                 }
 
-                prepareAsync() // Асинхронная подготовка
+                prepareAsync()
             }
         } catch (e: Exception) {
             Log.e("MusicPlayer", "Error initializing MediaPlayer for song: ${song.title}", e)
