@@ -22,7 +22,7 @@
         android:layout_width="380dp"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="128dp" /> <!-- Отступ для BottomNavigationView -->
+        android:layout_marginBottom="108dp" /> <!-- Отступ для BottomNavigationView -->
 
     <!-- Контейнер для BottomNavigationView -->
     <FrameLayout

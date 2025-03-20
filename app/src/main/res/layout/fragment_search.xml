@@ -30,7 +30,6 @@
                 android:textColorHint="@color/md_theme_secondary"
                 android:singleLine="true"
                 android:imeOptions="actionSearch" />
-
             <ImageView
                 android:id="@+id/search_icon"
                 android:layout_width="24dp"
@@ -47,6 +46,30 @@
                 android:visibility="gone"
                 android:layout_marginStart="8dp" />
 
+        </LinearLayout>
+
+        <!-- Offline error placeholder -->
+        <LinearLayout
+            android:id="@+id/offlineErrorView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:gravity="center"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Поиск не удался. Нет соединения"
+                android:gravity="center" />
+
+            <Button
+                android:id="@+id/refreshButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Обновить"
+                android:layout_marginTop="8dp" />
         </LinearLayout>
 
         <!-- Empty state placeholder -->

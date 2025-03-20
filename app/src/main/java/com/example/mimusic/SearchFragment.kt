@@ -30,6 +30,8 @@ class SearchFragment : Fragment() {
     private lateinit var emptyView: TextView
     private lateinit var errorView: LinearLayout
     private lateinit var retryButton: Button
+    private lateinit var offlineErrorView: LinearLayout
+    private lateinit var refreshButton: Button
     private var lastQuery: String = ""
 
     private val apiService: GeniusApiService by lazy {
@@ -65,6 +67,8 @@ class SearchFragment : Fragment() {
         emptyView = view.findViewById(R.id.emptyView)
         errorView = view.findViewById(R.id.errorView)
         retryButton = view.findViewById(R.id.retryButton)
+        offlineErrorView = view.findViewById(R.id.offlineErrorView)
+        refreshButton = view.findViewById(R.id.refreshButton)
 
         recyclerView.layoutManager = LinearLayoutManager(context)
         adapter = SearchResultsAdapter(emptyList())
@@ -72,6 +76,11 @@ class SearchFragment : Fragment() {
 
         // Retry button handling
         retryButton.setOnClickListener {
+            searchSongs(lastQuery)
+        }
+
+        // Refresh button handling
+        refreshButton.setOnClickListener {
             searchSongs(lastQuery)
         }
 
@@ -94,7 +103,6 @@ class SearchFragment : Fragment() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                // Показываем или скрываем кнопку очистки
                 clearButton.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
             }
 
@@ -135,11 +143,17 @@ class SearchFragment : Fragment() {
                 }
             })
         } else {
+            // Показываем фейковые песни и сообщение об оффлайн-режиме
+            offlineErrorView.visibility = View.VISIBLE
+            emptyView.visibility = View.GONE
+            errorView.visibility = View.GONE
+            recyclerView.visibility = View.VISIBLE
             adapter.updateData(fakeSongs)
         }
     }
 
     private fun showResults(results: List<SongEl>) {
+        offlineErrorView.visibility = View.GONE
         if (results.isEmpty()) {
             emptyView.visibility = View.VISIBLE
             errorView.visibility = View.GONE
@@ -152,6 +166,7 @@ class SearchFragment : Fragment() {
     }
 
     private fun showErrorPlaceholder() {
+        offlineErrorView.visibility = View.GONE
         emptyView.visibility = View.GONE
         errorView.visibility = View.VISIBLE
         recyclerView.visibility = View.GONE
