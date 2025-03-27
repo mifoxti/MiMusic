@@ -1,14 +1,19 @@
 package com.example.mimusic
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.fragment.app.FragmentManager
 import com.google.android.material.button.MaterialButton
 
 class ProfileFragment : Fragment() {
+
+    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -16,10 +21,22 @@ class ProfileFragment : Fragment() {
     ): View? {
         val view = inflater.inflate(R.layout.fragment_profile, container, false)
 
-        // Находим кнопку настроек
-        val settingsButton = view.findViewById<MaterialButton>(R.id.settingsButton)
+        sharedPreferences = requireContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-        // Обработчик нажатия на кнопку настроек
+        // Устанавливаем сохраненную тему при запуске
+        val isDarkMode = sharedPreferences.getBoolean("dark_mode", false)
+        setTheme(isDarkMode)
+
+        // Кнопка переключения темы
+        val themeToggleButton = view.findViewById<MaterialButton>(R.id.themeToggleButton)
+        themeToggleButton.setOnClickListener {
+            val newTheme = !sharedPreferences.getBoolean("dark_mode", false)
+            sharedPreferences.edit().putBoolean("dark_mode", newTheme).apply()
+            setTheme(newTheme)
+        }
+
+        // Кнопка настроек
+        val settingsButton = view.findViewById<MaterialButton>(R.id.settingsButton)
         settingsButton.setOnClickListener {
             clearFragmentsAndOpenRegister()
         }
@@ -27,23 +44,23 @@ class ProfileFragment : Fragment() {
         return view
     }
 
-    private fun clearFragmentsAndOpenRegister() {
-        // Получаем FragmentManager
-        val fragmentManager: FragmentManager = parentFragmentManager
+    private fun setTheme(isDarkMode: Boolean) {
+        val mode = if (isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        AppCompatDelegate.setDefaultNightMode(mode)
+    }
 
-        // Очищаем все фрагменты из back stack
+    private fun clearFragmentsAndOpenRegister() {
+        val fragmentManager = parentFragmentManager
         fragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
 
-        // Заменяем фрагмент в contentContainer на RegisterFragment
         fragmentManager.beginTransaction()
             .replace(R.id.contentContainer, RegisterFragment())
-            .addToBackStack("register_fragment") // Добавляем транзакцию в back stack
+            .addToBackStack("register_fragment")
             .commit()
 
-        // Очищаем bottomNavigationContainer (если нужно)
         fragmentManager.beginTransaction()
-            .replace(R.id.bottomNavigationContainer, EmptyFragment()) // Замените EmptyFragment на нужный фрагмент или оставьте пустым
-            .addToBackStack("empty_fragment") // Добавляем транзакцию в back stack
+            .replace(R.id.bottomNavigationContainer, EmptyFragment())
+            .addToBackStack("empty_fragment")
             .commit()
     }
 }

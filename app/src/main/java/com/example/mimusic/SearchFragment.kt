@@ -1,20 +1,19 @@
 package com.example.mimusic
 
 import android.content.Context
-import android.net.ConnectivityManager
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
-import android.util.Log
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -23,16 +22,21 @@ import retrofit2.*
 import retrofit2.converter.gson.GsonConverterFactory
 
 class SearchFragment : Fragment() {
+
     private lateinit var searchEditText: EditText
     private lateinit var clearButton: ImageView
     private lateinit var recyclerView: RecyclerView
+    private lateinit var historyRecyclerView: RecyclerView
     private lateinit var adapter: SearchResultsAdapter
+    private lateinit var historyAdapter: SearchHistoryAdapter
     private lateinit var emptyView: TextView
-    private lateinit var errorView: LinearLayout
-    private lateinit var retryButton: Button
-    private lateinit var offlineErrorView: LinearLayout
-    private lateinit var refreshButton: Button
+    private lateinit var clearHistoryButton: Button
+    private lateinit var progressBar: ProgressBar
     private var lastQuery: String = ""
+
+    private val PREFS_NAME = "search_prefs"
+    private val HISTORY_KEY = "search_history"
+    private val MAX_HISTORY_SIZE = 10
 
     private val apiService: GeniusApiService by lazy {
         Retrofit.Builder()
@@ -41,19 +45,6 @@ class SearchFragment : Fragment() {
             .build()
             .create(GeniusApiService::class.java)
     }
-
-    private val isApiAvailable: Boolean
-        get() {
-            val connectivityManager =
-                context?.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val networkInfo = connectivityManager.activeNetworkInfo
-            return networkInfo != null && networkInfo.isConnected
-        }
-
-    private val fakeSongs = listOf(
-        SongEl(1, "Fake Song 1", "mifoxti", "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png"),
-        SongEl(2, "Fake Song 2", "mifoxti", "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png")
-    )
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -64,33 +55,54 @@ class SearchFragment : Fragment() {
         searchEditText = view.findViewById(R.id.search_edit_text)
         clearButton = view.findViewById(R.id.clear_button)
         recyclerView = view.findViewById(R.id.search_results_recycler_view)
+        historyRecyclerView = view.findViewById(R.id.history_recycler_view)
         emptyView = view.findViewById(R.id.emptyView)
-        errorView = view.findViewById(R.id.errorView)
-        retryButton = view.findViewById(R.id.retryButton)
-        offlineErrorView = view.findViewById(R.id.offlineErrorView)
-        refreshButton = view.findViewById(R.id.refreshButton)
+        clearHistoryButton = view.findViewById(R.id.clear_history_button)
+        progressBar = view.findViewById(R.id.progress_bar)
 
         recyclerView.layoutManager = LinearLayoutManager(context)
+        historyRecyclerView.layoutManager = LinearLayoutManager(context)
+
         adapter = SearchResultsAdapter(emptyList())
+        historyAdapter = SearchHistoryAdapter(emptyList()) { query ->
+            searchEditText.setText(query)
+            performSearch(query)
+        }
+
         recyclerView.adapter = adapter
+        historyRecyclerView.adapter = historyAdapter
 
-        // Retry button handling
-        retryButton.setOnClickListener {
-            searchSongs(lastQuery)
+        clearHistoryButton.setOnClickListener { clearSearchHistory() }
+
+        clearButton.setOnClickListener {
+            searchEditText.setText("")
+            showSearchHistory()
+            clearButton.visibility = View.GONE
+            emptyView.visibility = View.GONE
         }
 
-        // Refresh button handling
-        refreshButton.setOnClickListener {
-            searchSongs(lastQuery)
-        }
+        searchEditText.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val query = s.toString()
 
-        // Обработка кнопки Enter
-        searchEditText.setOnKeyListener { _, keyCode, event ->
-            if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
-                val query = searchEditText.text.toString()
+                // Показываем кнопку очистки, если есть текст
+                clearButton.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
+
+                // Показываем историю, если текст пустой и поле в фокусе
+                if (query.isEmpty() && searchEditText.hasFocus()) {
+                    showSearchHistory()
+                }
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        searchEditText.setOnEditorActionListener { _, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == KeyEvent.KEYCODE_ENTER)) {
+                val query = searchEditText.text.toString().trim()
                 if (query.isNotEmpty()) {
-                    searchSongs(query)
-                    hideKeyboard()
+                    performSearch(query)
                 }
                 true
             } else {
@@ -98,93 +110,91 @@ class SearchFragment : Fragment() {
             }
         }
 
-        // Настройка TextWatcher для EditText
-        searchEditText.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                clearButton.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
+        searchEditText.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus && searchEditText.text.isEmpty()) {
+                showSearchHistory()
             }
-
-            override fun afterTextChanged(s: Editable?) {}
-        })
-
-        // Обработка кнопки очистки
-        clearButton.setOnClickListener {
-            searchEditText.text.clear()
-            hideKeyboard()
-            clearButton.visibility = View.GONE
         }
 
         return view
     }
 
-    private fun searchSongs(query: String) {
-        lastQuery = query
-        if (isApiAvailable) {
-            Log.d("SearchFragment", "Searching for: $query")
-            val token = "не дам"
-            apiService.searchSongs(token, query).enqueue(object : Callback<GeniusResponse> {
-                override fun onResponse(
-                    call: Call<GeniusResponse>,
-                    response: Response<GeniusResponse>
-                ) {
-                    if (response.isSuccessful) {
-                        response.body()?.response?.hits?.map { it.result }?.let {
-                            showResults(it)
-                        }
-                    } else {
-                        showErrorPlaceholder()
-                    }
-                }
+    private fun performSearch(query: String) {
+        if (query == lastQuery) return
 
-                override fun onFailure(call: Call<GeniusResponse>, t: Throwable) {
+        lastQuery = query
+        saveSearchQuery(query)
+
+        progressBar.visibility = View.VISIBLE  // Показываем ProgressBar
+
+        apiService.searchSongs(
+            "Bearer 9pUXlzf6HUyVHh5A6CVNEc-NHzSf85S0HqzrXAGVwZTAEoMMWDgyHbZOESWxA0Ub",
+            query
+        ).enqueue(object : Callback<GeniusResponse> {
+            override fun onResponse(call: Call<GeniusResponse>, response: Response<GeniusResponse>) {
+                progressBar.visibility = View.GONE  // Скрываем ProgressBar
+
+                if (response.isSuccessful) {
+                    response.body()?.response?.hits?.map { it.result }?.let { showResults(it) }
+                } else {
                     showErrorPlaceholder()
                 }
-            })
-        } else {
-            // Показываем фейковые песни и сообщение об оффлайн-режиме
-            offlineErrorView.visibility = View.VISIBLE
-            emptyView.visibility = View.GONE
-            errorView.visibility = View.GONE
-            recyclerView.visibility = View.VISIBLE
-            adapter.updateData(fakeSongs)
-        }
+            }
+
+            override fun onFailure(call: Call<GeniusResponse>, t: Throwable) {
+                progressBar.visibility = View.GONE  // Скрываем ProgressBar
+                showErrorPlaceholder()
+            }
+        })
     }
 
-    private fun showResults(results: List<SongEl>) {
-        offlineErrorView.visibility = View.GONE
-        if (results.isEmpty()) {
+
+    private fun saveSearchQuery(query: String) {
+        val sharedPreferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val history = getSearchHistory().toMutableList()
+
+        history.remove(query)
+        history.add(0, query)
+
+        if (history.size > MAX_HISTORY_SIZE) {
+            history.removeAt(history.size - 1)
+        }
+
+        sharedPreferences.edit().putStringSet(HISTORY_KEY, history.toSet()).apply()
+    }
+
+    private fun getSearchHistory(): List<String> {
+        val sharedPreferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return sharedPreferences.getStringSet(HISTORY_KEY, emptySet())?.toList() ?: emptyList()
+    }
+
+    private fun showSearchHistory() {
+        val history = getSearchHistory()
+        historyAdapter.updateData(history)
+
+        historyRecyclerView.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
+        clearHistoryButton.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun clearSearchHistory() {
+        val sharedPreferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        sharedPreferences.edit().remove(HISTORY_KEY).apply()
+        showSearchHistory()
+    }
+
+    private fun showResults(songs: List<SongEl>) {
+        adapter.updateData(songs)
+
+        if (songs.isEmpty()) {
             emptyView.visibility = View.VISIBLE
-            errorView.visibility = View.GONE
+            emptyView.text = "Нет результатов"
         } else {
             emptyView.visibility = View.GONE
-            errorView.visibility = View.GONE
         }
-        recyclerView.visibility = View.VISIBLE
-        adapter.updateData(results)
     }
 
     private fun showErrorPlaceholder() {
-        offlineErrorView.visibility = View.GONE
-        emptyView.visibility = View.GONE
-        errorView.visibility = View.VISIBLE
-        recyclerView.visibility = View.GONE
-    }
-
-    private fun hideKeyboard() {
-        val imm = context?.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-        imm?.hideSoftInputFromWindow(view?.windowToken, 0)
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putString("searchQuery", searchEditText.text.toString())
-    }
-
-    override fun onViewStateRestored(savedInstanceState: Bundle?) {
-        super.onViewStateRestored(savedInstanceState)
-        val savedQuery = savedInstanceState?.getString("searchQuery")
-        searchEditText.setText(savedQuery ?: "")
+        emptyView.visibility = View.VISIBLE
+        emptyView.text = "Произошла ошибка. Попробуйте снова."
     }
 }
