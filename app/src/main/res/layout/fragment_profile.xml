@@ -21,6 +21,18 @@
             android:src="@drawable/profile_pic"
             app:shapeAppearanceOverlay="@style/CircleImageViewStyle" />
 
+        <!-- Add theme toggle button in top right corner -->
+        <com.google.android.material.button.MaterialButton
+            style="?attr/materialIconButtonFilledTonalStyle"
+            android:id="@+id/themeToggleButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_margin="16dp"
+            app:icon="@drawable/ic_theme_toggle"
+             app:iconTint="?attr/colorOnSurface" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -60,6 +72,8 @@
             app:layout_constraintBottom_toBottomOf="@id/profile_pic"
             app:icon="@drawable/ic_settings"
             />
+
+
 
         <TextView
             android:layout_width="wrap_content"
