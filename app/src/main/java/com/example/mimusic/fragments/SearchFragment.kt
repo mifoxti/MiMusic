@@ -19,6 +19,10 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.mimusic.adapters.SearchResultsAdapter
+import com.example.mimusic.serverSide.GeniusApiService
+import com.example.mimusic.serverSide.GeniusResponse
+import com.example.mimusic.serverSide.SongEl
 import retrofit2.*
 import retrofit2.converter.gson.GsonConverterFactory
 
@@ -123,7 +127,7 @@ class SearchFragment : Fragment() {
         lastQuery = query
         if (isApiAvailable) {
             Log.d("SearchFragment", "Searching for: $query")
-            val token = "не дам"
+            val token = "Bearer F7SMuBxsuCpznlmzMqdhcvT5hTuCbbULXJ3pGES8HbFfaTVOJFXgUMpTMFiU7nfA"
             apiService.searchSongs(token, query).enqueue(object : Callback<GeniusResponse> {
                 override fun onResponse(
                     call: Call<GeniusResponse>,

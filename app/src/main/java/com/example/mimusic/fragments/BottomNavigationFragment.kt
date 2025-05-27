@@ -5,7 +5,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import com.example.mimusic.ProfileFragment
 import com.example.mimusic.R
+import com.example.mimusic.SearchFragment
 import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class BottomNavigationFragment : Fragment() {
