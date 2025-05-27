@@ -1,4 +1,4 @@
-package com.example.mimusic
+package com.example.mimusic.fragments
 
 import android.os.Bundle
 import android.os.Handler
@@ -9,7 +9,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.fragment.app.FragmentManager
+import com.example.mimusic.R
+import com.example.mimusic.datas.Song
+import com.example.mimusic.services.MusicPlayer
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
@@ -61,7 +63,9 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         // Инициализация элементов интерфейса
         val songTitleTextView = view.findViewById<TextView>(R.id.songTitleTextView)
         val artistTextView = view.findViewById<TextView>(R.id.artistTextView)
-        val profilePic = view.findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.profile_pic)
+        val profilePic = view.findViewById<com.google.android.material.imageview.ShapeableImageView>(
+            R.id.profile_pic
+        )
         seekBar = view.findViewById(R.id.seekBar)
         currentTimeTextView = view.findViewById(R.id.currentTimeTextView)
         totalTimeTextView = view.findViewById(R.id.totalTimeTextView)

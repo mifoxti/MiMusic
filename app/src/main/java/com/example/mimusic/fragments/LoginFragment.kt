@@ -1,14 +1,13 @@
-package com.example.mimusic
+package com.example.mimusic.fragments
 
 import android.os.Bundle
-import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.fragment.app.Fragment
+import com.example.mimusic.R
 
-
-
-class ArtistFragment : Fragment() {
+class LoginFragment : Fragment() {
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,7 +19,7 @@ class ArtistFragment : Fragment() {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        return inflater.inflate(R.layout.fragment_artist, container, false)
+        return inflater.inflate(R.layout.fragment_login, container, false)
     }
 
 }

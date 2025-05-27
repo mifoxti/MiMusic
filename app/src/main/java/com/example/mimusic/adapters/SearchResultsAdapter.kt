@@ -1,4 +1,4 @@
-package com.example.mimusic
+package com.example.mimusic.adapters
 
 import android.util.Log
 import android.view.LayoutInflater
@@ -9,6 +9,8 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.example.mimusic.R
+import com.example.mimusic.serverSide.SongEl
 
 class SearchResultsAdapter(private var songs: List<SongEl>) :
     RecyclerView.Adapter<SearchResultsAdapter.SongViewHolder>() {

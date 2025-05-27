@@ -1,4 +1,4 @@
-package com.example.mimusic
+package com.example.mimusic.services
 
 import android.content.Context
 import android.graphics.drawable.ClipDrawable
@@ -8,6 +8,8 @@ import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.fragment.app.FragmentActivity
+import com.example.mimusic.fragments.MusicBottomSheetFragment
+import com.example.mimusic.R
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 

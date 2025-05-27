@@ -1,4 +1,4 @@
-package com.example.mimusic
+package com.example.mimusic.datas
 
 import android.graphics.Bitmap
 import android.os.Parcel

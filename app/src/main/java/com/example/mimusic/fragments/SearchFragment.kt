@@ -1,4 +1,4 @@
-package com.example.mimusic
+package com.example.mimusic.fragments
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -19,7 +19,15 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import retrofit2.*
+import com.example.mimusic.R
+import com.example.mimusic.adapters.SearchResultsAdapter
+import com.example.mimusic.serverSide.GeniusApiService
+import com.example.mimusic.serverSide.GeniusResponse
+import com.example.mimusic.serverSide.SongEl
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
+import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 class SearchFragment : Fragment() {
@@ -51,8 +59,18 @@ class SearchFragment : Fragment() {
         }
 
     private val fakeSongs = listOf(
-        SongEl(1, "Fake Song 1", "mifoxti", "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png"),
-        SongEl(2, "Fake Song 2", "mifoxti", "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png")
+        SongEl(
+            1,
+            "Fake Song 1",
+            "mifoxti",
+            "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png"
+        ),
+        SongEl(
+            2,
+            "Fake Song 2",
+            "mifoxti",
+            "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png"
+        )
     )
 
     override fun onCreateView(

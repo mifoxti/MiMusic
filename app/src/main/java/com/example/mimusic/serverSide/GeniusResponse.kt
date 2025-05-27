@@ -1,6 +1,4 @@
-package com.example.mimusic
-
-import com.google.gson.annotations.SerializedName
+package com.example.mimusic.serverSide
 
 data class GeniusResponse(
     val response: HitsWrapper

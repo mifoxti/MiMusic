@@ -1,4 +1,4 @@
-package com.example.mimusic
+package com.example.mimusic.serverSide
 
 import retrofit2.Call
 import retrofit2.http.GET

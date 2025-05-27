@@ -3,6 +3,10 @@ package com.example.mimusic
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import com.example.mimusic.fragments.BottomNavigationFragment
+import com.example.mimusic.fragments.FragmentMain
+import com.example.mimusic.services.MiniPlayerHandler
+import com.example.mimusic.services.MusicPlayer
 
 class MainActivity : AppCompatActivity() {
     private lateinit var miniPlayerHandler: MiniPlayerHandler

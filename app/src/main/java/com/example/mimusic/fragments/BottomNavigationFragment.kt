@@ -1,12 +1,12 @@
-package com.example.mimusic
+package com.example.mimusic.fragments
 
 import android.os.Bundle
-import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.fragment.app.Fragment
+import com.example.mimusic.R
 import com.google.android.material.bottomnavigation.BottomNavigationView
-
 
 class BottomNavigationFragment : Fragment() {
 
