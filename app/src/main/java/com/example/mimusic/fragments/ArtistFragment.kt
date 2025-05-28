@@ -8,18 +8,23 @@ import androidx.fragment.app.Fragment
 import com.example.mimusic.R
 
 class ArtistFragment : Fragment() {
-
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-    }
-
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
         return inflater.inflate(R.layout.fragment_artist, container, false)
     }
 
+    companion object {
+        private const val ARG_ARTIST_NAME = "artist_name"
+
+        fun newInstance(artistName: String): ArtistFragment {
+            val fragment = ArtistFragment()
+            val args = Bundle()
+            args.putString(ARG_ARTIST_NAME, artistName)
+            fragment.arguments = args
+            return fragment
+        }
+    }
 }

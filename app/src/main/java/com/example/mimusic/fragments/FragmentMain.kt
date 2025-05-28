@@ -87,7 +87,7 @@ class FragmentMain : Fragment() {
                 val songName = file.name.replace("_", " ") // Убираем подчеркивания
                 val filePath = "android.resource://$packageName/$resourceId"
                 val coverArt = extractCoverArt(context, resourceId)
-                songs.add(Song(songName, filePath, coverArt))
+                songs.add(Song(songName, filePath, "None", coverArt))
                 Log.d("FragmentMain", "Found song: $songName, path: $filePath")
             } else {
                 Log.d("FragmentMain", "Resource ID is 0 for file: ${file.name}")

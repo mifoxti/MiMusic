@@ -7,17 +7,20 @@ import android.os.Parcelable
 data class Song(
     val title: String,
     val filePath: String,
+    val artist: String,
     val coverArt: Bitmap? = null
 ) : Parcelable {
     constructor(parcel: Parcel) : this(
-        parcel.readString() ?: "",
-        parcel.readString() ?: "",
-        parcel.readParcelable(Bitmap::class.java.classLoader)
+        title = parcel.readString() ?: "",
+        filePath = parcel.readString() ?: "",
+        artist = parcel.readString() ?: "",  // Added artist field
+        coverArt = parcel.readParcelable(Bitmap::class.java.classLoader)
     )
 
     override fun writeToParcel(parcel: Parcel, flags: Int) {
         parcel.writeString(title)
         parcel.writeString(filePath)
+        parcel.writeString(artist)  // Added artist field
         parcel.writeParcelable(coverArt, flags)
     }
 
