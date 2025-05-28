@@ -7,6 +7,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.example.mimusic.R
 import com.example.mimusic.datas.Song
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 
 class SongAdapter(
@@ -24,6 +25,11 @@ class SongAdapter(
         val song = songs[position]
         holder.bind(song)
         holder.itemView.setOnClickListener { onItemClick(song) }
+
+        // Обработка кнопки "лайка"
+        holder.loveButton.setOnClickListener {
+            // Логика добавления/удаления из любимых
+        }
     }
 
     override fun getItemCount(): Int = songs.size
@@ -31,13 +37,14 @@ class SongAdapter(
     class SongViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val poster: ShapeableImageView = itemView.findViewById(R.id.galleryposter)
         private val title: TextView = itemView.findViewById(R.id.gallerytext)
+        val loveButton: MaterialButton = itemView.findViewById(R.id.galleryBtnLove)
 
         fun bind(song: Song) {
             title.text = song.title
             if (song.coverArt != null) {
                 poster.setImageBitmap(song.coverArt)
             } else {
-                poster.setImageResource(R.drawable.music_image) // Обложка по умолчанию
+                poster.setImageResource(R.drawable.music_image)
             }
         }
     }

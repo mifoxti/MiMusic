@@ -22,6 +22,7 @@
         android:layout_height="wrap_content"
         android:id="@+id/artistNickname"
         android:text="ArtistNickname"
+        android:fontFamily="@font/konkhmer"
         android:textSize="24sp"
         android:textStyle="bold"
         android:layout_gravity="center_horizontal"
@@ -33,6 +34,7 @@
         android:layout_height="wrap_content"
         android:text="Думает..."
         android:textSize="16sp"
+        android:fontFamily="@font/konkhmer"
         android:textColor="?attr/colorPrimary"
         android:layout_marginBottom="8dp"/>
 
@@ -42,6 +44,7 @@
         android:layout_height="wrap_content"
         android:id="@+id/artistThoughts"
         android:hint="Введите мысли артиста..."
+        android:fontFamily="@font/konkhmer"
         android:inputType="textMultiLine"
         android:gravity="center"
         android:minHeight="48dp"
@@ -53,6 +56,7 @@
         android:layout_height="wrap_content"
         android:text="Треки:"
         android:textSize="18sp"
+        android:fontFamily="@font/konkhmer"
         android:textStyle="bold"
         android:layout_marginBottom="8dp"/>
 
