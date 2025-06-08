@@ -1,64 +1,82 @@
 package com.example.mimusic.fragments
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.FragmentTransaction
+import com.example.mimusic.MainActivity
 import com.example.mimusic.R
+import com.example.mimusic.services.UserManager
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.button.MaterialButton
 
 class RegisterFragment : Fragment() {
 
+    private lateinit var loginText: TextInputEditText
+    private lateinit var passwordText1: TextInputEditText
+    private lateinit var passwordText2: TextInputEditText
+
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
         val view = inflater.inflate(R.layout.fragment_register, container, false)
 
-        // Находим кнопку registerButton
-        val registerButton = view.findViewById<MaterialButton>(R.id.registerButton)
+        // Инициализация полей ввода
+        loginText = view.findViewById(R.id.loginText)
+        passwordText1 = view.findViewById(R.id.passwordText1)
+        passwordText2 = view.findViewById(R.id.passwordText)
 
-        // Обработчик нажатия на кнопку registerButton
-        registerButton.setOnClickListener {
-            navigateToLoginFragment()
-        }
+        // Кнопки
+        val registerButton = view.findViewById<MaterialButton>(R.id.registerButton)
+        val loginBtn = view.findViewById<MaterialButton>(R.id.lgnBtn)
+
+        // Слушатели
+        registerButton.setOnClickListener { tryRegister() }
+        loginBtn.setOnClickListener { navigateToLoginFragment() }
 
         return view
     }
 
-    private fun navigateToLoginFragment() {
-        // Создаем экземпляр LoginFragment
-        val loginFragment = LoginFragment()
+    private fun tryRegister() {
+        val login = loginText.text.toString()
+        val password1 = passwordText1.text.toString()
+        val password2 = passwordText2.text.toString()
 
-        // Начинаем транзакцию
-        val transaction: FragmentTransaction = parentFragmentManager.beginTransaction()
-
-        // Заменяем текущий фрагмент на LoginFragment
-        transaction.replace(R.id.contentContainer, loginFragment)
-
-        // Добавляем транзакцию в back stack, чтобы можно было вернуться назад
-        transaction.addToBackStack(null)
-
-        // Выполняем транзакцию
-        transaction.commit()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Восстанавливаем навигационный бар при возврате на RegisterFragment
-        restoreNavigationBar()
-    }
-
-    private fun restoreNavigationBar() {
-        // Проверяем, есть ли навигационный бар в bottomNavigationContainer
-        val navigationFragment = parentFragmentManager.findFragmentById(R.id.bottomNavigationContainer)
-        if (navigationFragment == null) {
-            // Если навигационного бара нет, добавляем его
-            val transaction: FragmentTransaction = parentFragmentManager.beginTransaction()
-            transaction.replace(R.id.bottomNavigationContainer, BottomNavigationFragment())
-            transaction.commit()
+        if (login.isEmpty() || password1.isEmpty()) {
+            showSnackbar("Логин и пароль не могут быть пустыми")
+            return
         }
+
+        if (password1 != password2) {
+            showSnackbar("Пароли не совпадают")
+            return
+        }
+
+        if (UserManager.register(login, password1)) {
+            Log.d("MainActivity", "UserManager.currentUser = ${UserManager.currentUser}")
+            showSnackbar("Регистрация успешна!")
+            UserManager.login(login, password1)
+            (activity as? MainActivity)?.onLoginSuccess()
+        } else {
+            showSnackbar("Пользователь с таким логином уже существует")
+        }
+    }
+
+    private fun showSnackbar(message: String) {
+        view?.let {
+            Snackbar.make(it, message, Snackbar.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun navigateToLoginFragment() {
+        parentFragmentManager.beginTransaction()
+            .replace(R.id.contentContainer, LoginFragment())
+            .addToBackStack("login")
+            .commit()
     }
 }

@@ -35,7 +35,7 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
                 seekBar.progress = currentPosition
                 currentTimeTextView.text = formatTime(currentPosition)
             }
-            handler.postDelayed(this, 1000)
+            handler.postDelayed(this, 100)
         }
     }
 

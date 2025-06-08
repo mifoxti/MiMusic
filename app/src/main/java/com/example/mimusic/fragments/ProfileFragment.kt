@@ -9,9 +9,11 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.fragment.app.FragmentManager
+import com.example.mimusic.MainActivity
 import com.example.mimusic.R
 import com.example.mimusic.fragments.EmptyFragment
 import com.example.mimusic.fragments.RegisterFragment
+import com.example.mimusic.services.UserManager
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 
@@ -21,6 +23,13 @@ class ProfileFragment : Fragment() {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
+        if (UserManager.currentUser == null) {
+            // Перенаправляем на экран входа
+            parentFragmentManager.beginTransaction()
+                .replace(R.id.contentContainer, LoginFragment())
+                .commit()
+            return null
+        }
         val view = inflater.inflate(R.layout.fragment_profile, container, false)
 
         // Находим кнопку настроек
@@ -51,7 +60,8 @@ class ProfileFragment : Fragment() {
 
         // Обработчик нажатия на кнопку настроек
         settingsButton.setOnClickListener {
-            clearFragmentsAndOpenRegister()
+            UserManager.logout()
+            (requireActivity() as MainActivity).showLoginScreen()
         }
 
         // Обработчик нажатия на кнопку "Мысли"
@@ -61,8 +71,6 @@ class ProfileFragment : Fragment() {
 
         return view
     }
-
-
 
     private fun clearFragmentsAndOpenRegister() {
         val fragmentManager: FragmentManager = parentFragmentManager

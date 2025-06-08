@@ -8,6 +8,7 @@ import androidx.fragment.app.Fragment
 import com.example.mimusic.fragments.ProfileFragment
 import com.example.mimusic.R
 import com.example.mimusic.SearchFragment
+import com.example.mimusic.services.UserManager
 import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class BottomNavigationFragment : Fragment() {
@@ -50,10 +51,17 @@ class BottomNavigationFragment : Fragment() {
     private fun replaceFragment(fragment: Fragment) {
         val fragmentManager = parentFragmentManager
         val fragmentTransaction = fragmentManager.beginTransaction()
+
+        // Не добавляем в back stack для основных экранов
         fragmentTransaction.replace(R.id.contentContainer, fragment)
+
+        // Для ProfileFragment проверяем авторизацию
+        if (fragment is ProfileFragment && UserManager.currentUser == null) {
+            fragmentTransaction.replace(R.id.contentContainer, LoginFragment())
+        }
+
         fragmentTransaction.commit()
         currentFragment = fragment
-
     }
 
 }
