@@ -30,15 +30,36 @@ class MiniPlayerHandler(
         }
     }
 
+    private val songChangedListener: () -> Unit = {
+        handler.post {
+            updatePlayerState()
+            updatePlayerProgress()
+        }
+    }
+
+    private val playbackStateListener: () -> Unit = {
+        handler.post {
+            updatePlayButtonState()
+            updatePlayerProgress()
+        }
+    }
+
     init {
         setupListeners()
+        MusicPlayer.addSongChangedListener(songChangedListener)
+        MusicPlayer.addPlaybackStateListener(playbackStateListener)
         updatePlayerState()
         handler.post(updateProgress)
+    }
 
-        // Устанавливаем слушатель изменения песни
-        MusicPlayer.setOnSongChangedListener {
-            updatePlayerState()
-        }
+    private fun registerMusicPlayerListeners() {
+        MusicPlayer.addSongChangedListener(songChangedListener)
+        MusicPlayer.addPlaybackStateListener(playbackStateListener)
+    }
+
+    private fun unregisterMusicPlayerListeners() {
+        MusicPlayer.removeSongChangedListener(songChangedListener)
+        MusicPlayer.removePlaybackStateListener(playbackStateListener)
     }
 
     private fun setupListeners() {
@@ -48,12 +69,10 @@ class MiniPlayerHandler(
             } else {
                 MusicPlayer.resume()
             }
-            updatePlayerState()
         }
 
         rootView.setOnClickListener {
-            val currentSong = MusicPlayer.getCurrentSong()
-            if (currentSong != null) {
+            MusicPlayer.getCurrentSong()?.let { currentSong ->
                 val bottomSheet = MusicBottomSheetFragment.newInstance(currentSong)
                 bottomSheet.show((context as FragmentActivity).supportFragmentManager, bottomSheet.tag)
             }
@@ -61,32 +80,40 @@ class MiniPlayerHandler(
     }
 
     private fun updatePlayerState() {
-        val currentSong = MusicPlayer.getCurrentSong()
-        if (currentSong != null) {
+        MusicPlayer.getCurrentSong()?.let { currentSong ->
             playerText.text = currentSong.title
             playerImage.setImageBitmap(currentSong.coverArt)
-        }
-
-        if (MusicPlayer.isPlaying()) {
-            playButton.setIconResource(R.drawable.ic_pause)
-        } else {
+            updatePlayButtonState()
+        } ?: run {
+            playerText.text = context.getString(R.string.no_song_playing)
+            playerImage.setImageResource(R.drawable.music_image)
             playButton.setIconResource(R.drawable.ic_play)
         }
     }
 
+    private fun updatePlayButtonState() {
+        playButton.setIconResource(
+            if (MusicPlayer.isPlaying()) R.drawable.ic_pause else R.drawable.ic_play
+        )
+    }
+
     private fun updatePlayerProgress() {
-        if (MusicPlayer.isPlaying()) {
+        if (MusicPlayer.isPrepared()) {
             val duration = MusicPlayer.getDuration()
             if (duration > 0) {
                 val progress = MusicPlayer.getCurrentPosition().toFloat() / duration
-                val progressDrawable = playerBackground.background as LayerDrawable
-                val clipDrawable = progressDrawable.findDrawableByLayerId(android.R.id.progress) as ClipDrawable
-                clipDrawable.level = (progress * 10000).toInt()
+                val progressDrawable = playerBackground.background as? LayerDrawable
+                progressDrawable?.let {
+                    val clipDrawable = it.findDrawableByLayerId(android.R.id.progress) as? ClipDrawable
+                    clipDrawable?.level = (progress * 10000).toInt()
+                }
             }
         }
     }
 
     fun release() {
         handler.removeCallbacks(updateProgress)
+        MusicPlayer.removeSongChangedListener(songChangedListener)
+        MusicPlayer.removePlaybackStateListener(playbackStateListener)
     }
 }

@@ -1,11 +1,9 @@
 package com.example.mimusic
 
 import android.content.Context
-import android.net.ConnectivityManager
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
-import android.util.Log
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -20,11 +18,11 @@ import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.mimusic.adapters.SearchResultsAdapter
-import com.example.mimusic.serverSide.GeniusApiService
-import com.example.mimusic.serverSide.GeniusResponse
-import com.example.mimusic.serverSide.SongEl
-import retrofit2.*
-import retrofit2.converter.gson.GsonConverterFactory
+import com.example.mimusic.datas.Song
+import com.example.mimusic.datas.SongEl
+import com.example.mimusic.fragments.MusicBottomSheetFragment
+import com.example.mimusic.services.MusicPlayer
+import com.example.mimusic.utils.Mp3MetadataExtractor
 
 class SearchFragment : Fragment() {
     private lateinit var searchEditText: EditText
@@ -34,30 +32,8 @@ class SearchFragment : Fragment() {
     private lateinit var emptyView: TextView
     private lateinit var errorView: LinearLayout
     private lateinit var retryButton: Button
-    private lateinit var offlineErrorView: LinearLayout
-    private lateinit var refreshButton: Button
     private var lastQuery: String = ""
-
-    private val apiService: GeniusApiService by lazy {
-        Retrofit.Builder()
-            .baseUrl("https://api.genius.com/")
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(GeniusApiService::class.java)
-    }
-
-    private val isApiAvailable: Boolean
-        get() {
-            val connectivityManager =
-                context?.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val networkInfo = connectivityManager.activeNetworkInfo
-            return networkInfo != null && networkInfo.isConnected
-        }
-
-    private val fakeSongs = listOf(
-        SongEl(1, "Fake Song 1", "mifoxti", "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png"),
-        SongEl(2, "Fake Song 2", "mifoxti", "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png")
-    )
+    private var allSongs: List<Song> = emptyList()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -71,24 +47,29 @@ class SearchFragment : Fragment() {
         emptyView = view.findViewById(R.id.emptyView)
         errorView = view.findViewById(R.id.errorView)
         retryButton = view.findViewById(R.id.retryButton)
-        offlineErrorView = view.findViewById(R.id.offlineErrorView)
-        refreshButton = view.findViewById(R.id.refreshButton)
+
+        // Загружаем все песни из raw
+        allSongs = Mp3MetadataExtractor.getRawSongs(requireContext())
 
         recyclerView.layoutManager = LinearLayoutManager(context)
-        adapter = SearchResultsAdapter(emptyList())
+        adapter = SearchResultsAdapter(
+            songs = emptyList(),
+            onItemClick = { songEl ->
+                val originalSong = allSongs.find { it.hashCode() == songEl.id }
+                originalSong?.let { song ->
+                    playSong(song)
+                }
+            },
+            onLoveClick = { songEl ->
+                toggleFavorite(songEl.id)
+            }
+        )
         recyclerView.adapter = adapter
 
-        // Retry button handling
         retryButton.setOnClickListener {
             searchSongs(lastQuery)
         }
 
-        // Refresh button handling
-        refreshButton.setOnClickListener {
-            searchSongs(lastQuery)
-        }
-
-        // Обработка кнопки Enter
         searchEditText.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
                 val query = searchEditText.text.toString()
@@ -102,22 +83,38 @@ class SearchFragment : Fragment() {
             }
         }
 
-        // Настройка TextWatcher для EditText
+        adapter = SearchResultsAdapter(
+            songs = emptyList(),
+            onItemClick = { song ->
+                // Обработка клика на песню
+                val originalSong = allSongs.find { it.hashCode() == song.id }
+                originalSong?.let { playSong(it) }
+            },
+            onLoveClick = { //
+            }
+        )
+        recyclerView.adapter = adapter
+
         searchEditText.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 clearButton.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
+                if (!s.isNullOrEmpty()) {
+                    searchSongs(s.toString())
+                } else {
+                    showResults(emptyList())
+                }
             }
 
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        // Обработка кнопки очистки
         clearButton.setOnClickListener {
             searchEditText.text.clear()
             hideKeyboard()
             clearButton.visibility = View.GONE
+            showResults(emptyList())
         }
 
         return view
@@ -125,39 +122,23 @@ class SearchFragment : Fragment() {
 
     private fun searchSongs(query: String) {
         lastQuery = query
-        if (isApiAvailable) {
-            Log.d("SearchFragment", "Searching for: $query")
-            val token = "Bearer F7SMuBxsuCpznlmzMqdhcvT5hTuCbbULXJ3pGES8HbFfaTVOJFXgUMpTMFiU7nfA"
-            apiService.searchSongs(token, query).enqueue(object : Callback<GeniusResponse> {
-                override fun onResponse(
-                    call: Call<GeniusResponse>,
-                    response: Response<GeniusResponse>
-                ) {
-                    if (response.isSuccessful) {
-                        response.body()?.response?.hits?.map { it.result }?.let {
-                            showResults(it)
-                        }
-                    } else {
-                        showErrorPlaceholder()
-                    }
-                }
+        val normalizedQuery = query.lowercase().trim()
 
-                override fun onFailure(call: Call<GeniusResponse>, t: Throwable) {
-                    showErrorPlaceholder()
-                }
-            })
-        } else {
-            // Показываем фейковые песни и сообщение об оффлайн-режиме
-            offlineErrorView.visibility = View.VISIBLE
-            emptyView.visibility = View.GONE
-            errorView.visibility = View.GONE
-            recyclerView.visibility = View.VISIBLE
-            adapter.updateData(fakeSongs)
+        if (normalizedQuery.isEmpty()) {
+            showResults(emptyList())
+            return
         }
+
+        val results = allSongs.filter { song ->
+            song.title.lowercase().contains(normalizedQuery) ||
+                    song.artist.lowercase().contains(normalizedQuery) ||
+                    song.album.lowercase().contains(normalizedQuery)
+        }.map { it.toSongEl() }
+
+        showResults(results)
     }
 
     private fun showResults(results: List<SongEl>) {
-        offlineErrorView.visibility = View.GONE
         if (results.isEmpty()) {
             emptyView.visibility = View.VISIBLE
             errorView.visibility = View.GONE
@@ -170,7 +151,6 @@ class SearchFragment : Fragment() {
     }
 
     private fun showErrorPlaceholder() {
-        offlineErrorView.visibility = View.GONE
         emptyView.visibility = View.GONE
         errorView.visibility = View.VISIBLE
         recyclerView.visibility = View.GONE
@@ -181,14 +161,29 @@ class SearchFragment : Fragment() {
         imm?.hideSoftInputFromWindow(view?.windowToken, 0)
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putString("searchQuery", searchEditText.text.toString())
+    private fun playSong(song: Song) {
+        // Воспроизводим песню через MusicPlayer
+        MusicPlayer.playSong(requireContext(), song) {
+            // Дополнительные действия после подготовки
+            showNowPlaying(song)
+        }
     }
 
-    override fun onViewStateRestored(savedInstanceState: Bundle?) {
-        super.onViewStateRestored(savedInstanceState)
-        val savedQuery = savedInstanceState?.getString("searchQuery")
-        searchEditText.setText(savedQuery ?: "")
+    private fun showNowPlaying(song: Song) {
+        // Показываем bottom sheet или обновляем UI
+        val bottomSheet = MusicBottomSheetFragment.newInstance(song)
+        bottomSheet.show(parentFragmentManager, bottomSheet.tag)
     }
+
+    private fun toggleFavorite(songId: Int) {
+        // Реализация добавления/удаления из избранного
+        // Например:
+        val song = allSongs.find { it.hashCode() == songId }
+        song?.let {
+            // Ваша логика работы с избранным
+            // Например, через SharedPreferences или базу данных
+        }
+    }
+
+
 }

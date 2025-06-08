@@ -14,6 +14,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var miniPlayerHandler: MiniPlayerHandler
     private lateinit var miniPlayerView: View
 
+
+
+    // Слушатель изменений текущей песни
+    private val songChangedListener = {
+        updateMiniPlayerVisibility()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         applyTheme()
@@ -24,15 +31,14 @@ class MainActivity : AppCompatActivity() {
         miniPlayerView = findViewById(R.id.miniPlayerContainer)
         miniPlayerHandler = MiniPlayerHandler(this, miniPlayerView)
 
-        // Показываем или скрываем мини-плеер в зависимости от состояния MusicPlayer
+        // Добавляем слушатели
+
+        MusicPlayer.addSongChangedListener(songChangedListener)
+
+        // Обновляем видимость мини-плеера
         updateMiniPlayerVisibility()
 
-        // Подписываемся на уведомления о начале воспроизведения
-        MusicPlayer.setOnPlaybackStartedListener {
-            updateMiniPlayerVisibility()
-        }
-
-        // Загружаем начальный фрагмент (например, FragmentMain)
+        // Загружаем начальный фрагмент (FragmentMain)
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
                 .replace(R.id.contentContainer, FragmentMain())
@@ -66,16 +72,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        miniPlayerHandler.release() // Останавливаем обновление прогресса
+        // Удаляем слушатели
+
+        MusicPlayer.removeSongChangedListener(songChangedListener)
+        miniPlayerHandler.release()
     }
 
     override fun onBackPressed() {
-        // Проверяем, есть ли фрагменты в back stack
         if (supportFragmentManager.backStackEntryCount > 0) {
-            // Возвращаемся на предыдущий фрагмент
             supportFragmentManager.popBackStack()
         } else {
-            // Если back stack пуст, завершаем Activity
             super.onBackPressed()
         }
     }

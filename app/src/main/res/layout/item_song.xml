@@ -16,7 +16,8 @@
         android:id="@+id/galleryposter"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
-
+        android:adjustViewBounds="true"
+        android:scaleType="centerCrop"
         app:layout_constraintStart_toStartOf="parent"
         android:src="@drawable/music_image"
         app:shapeAppearanceOverlay="@style/CircleSongViewStyle" />

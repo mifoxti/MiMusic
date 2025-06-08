@@ -12,18 +12,20 @@ import android.widget.TextView
 import com.example.mimusic.R
 import com.example.mimusic.datas.Song
 import com.example.mimusic.services.MusicPlayer
+import com.example.mimusic.utils.Mp3MetadataExtractor
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
-
+import com.google.android.material.imageview.ShapeableImageView
 
 class MusicBottomSheetFragment : BottomSheetDialogFragment() {
-
     private lateinit var song: Song
     private lateinit var seekBar: SeekBar
     private lateinit var currentTimeTextView: TextView
     private lateinit var totalTimeTextView: TextView
     private lateinit var playButton: MaterialButton
+    private lateinit var songTitleTextView: TextView
+    private lateinit var profilePic: ShapeableImageView
     private lateinit var artistTextView: TextView
     private val handler = Handler(Looper.getMainLooper())
     private val updateSeekBar = object : Runnable {
@@ -32,9 +34,25 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
                 val currentPosition = MusicPlayer.getCurrentPosition()
                 seekBar.progress = currentPosition
                 currentTimeTextView.text = formatTime(currentPosition)
-                Log.d("MusicBottomSheetFragment", "Updating SeekBar: $currentPosition")
             }
             handler.postDelayed(this, 1000)
+        }
+    }
+
+    private val songChangedListener: () -> Unit = {
+        handler.post {
+            MusicPlayer.getCurrentSong()?.let { currentSong ->
+                updateSongInfo(currentSong)
+                updatePlayButtonState()
+                seekBar.max = MusicPlayer.getDuration()
+                totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
+            }
+        }
+    }
+
+    private val playbackStateListener: () -> Unit = {
+        handler.post {
+            updatePlayButtonState()
         }
     }
 
@@ -52,7 +70,14 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        MusicPlayer.addSongChangedListener(songChangedListener)
+        MusicPlayer.addPlaybackStateListener(playbackStateListener)
+
         song = arguments?.getParcelable(ARG_SONG) ?: throw IllegalStateException("Song argument is missing")
+        val songs = Mp3MetadataExtractor.getRawSongs(requireContext())
+        MusicPlayer.setSongList(songs)
+        Log.d("MusicBottomSheet", "Song list set with ${songs.size} songs")
     }
 
     override fun onCreateView(
@@ -61,30 +86,22 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
     ): View? {
         val view = inflater.inflate(R.layout.modal_bottom_sheet_music, container, false)
 
-        // Инициализация элементов интерфейса
-        val songTitleTextView = view.findViewById<TextView>(R.id.songTitleTextView)
+        songTitleTextView = view.findViewById(R.id.songTitleTextView)
         artistTextView = view.findViewById(R.id.artistTextView)
-        val profilePic = view.findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.profile_pic)
+        profilePic = view.findViewById(R.id.profile_pic)
         seekBar = view.findViewById(R.id.seekBar)
         currentTimeTextView = view.findViewById(R.id.currentTimeTextView)
         totalTimeTextView = view.findViewById(R.id.totalTimeTextView)
         playButton = view.findViewById(R.id.playButton)
+        val nextButton = view.findViewById<MaterialButton>(R.id.nextButton)
+        val prevButton = view.findViewById<MaterialButton>(R.id.iconButton)
 
-        // Установка данных
-        songTitleTextView.text = song.title
-        artistTextView.text = song.artist ?: "Artist" // Используем реального исполнителя, если есть
+        updateSongInfo(song)
         profilePic.setImageBitmap(song.coverArt)
 
-        // Обработка нажатия на имя артиста
-        artistTextView.setOnClickListener {
-            // Сворачиваем bottom sheet
-            dismiss()
+        MusicPlayer.addSongChangedListener(songChangedListener)
+        MusicPlayer.addPlaybackStateListener(playbackStateListener)
 
-            // Открываем фрагмент профиля артиста
-            openArtistProfile(song.artist ?: "Unknown Artist")
-        }
-
-        // Инициализация MediaPlayer
         if (MusicPlayer.getCurrentSong() != song || !MusicPlayer.isPrepared()) {
             MusicPlayer.playSong(requireContext(), song) {
                 updatePlayButtonState()
@@ -99,25 +116,28 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
             handler.post(updateSeekBar)
         }
 
-        // Обработка нажатия на кнопку Play/Pause
         playButton.setOnClickListener {
             if (MusicPlayer.isPlaying()) {
                 MusicPlayer.pause()
-                playButton.setIconResource(R.drawable.ic_play)
             } else {
                 MusicPlayer.resume()
-                playButton.setIconResource(R.drawable.ic_pause)
             }
         }
 
-        // Обработка изменения SeekBar
+        nextButton.setOnClickListener {
+            MusicPlayer.playNext(requireContext())
+        }
+
+        prevButton.setOnClickListener {
+            MusicPlayer.playPrevious(requireContext())
+        }
+
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     MusicPlayer.seekTo(progress)
                 }
             }
-
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
@@ -125,29 +145,16 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         return view
     }
 
-    private fun openArtistProfile(artistName: String) {
-        dismiss()
-        parentFragmentManager.beginTransaction()
-            .replace(R.id.contentContainer, ArtistFragment.newInstance(artistName))
-            .addToBackStack("artist_profile")
-            .commit()
-    }
-
-    override fun onStart() {
-        super.onStart()
-        val bottomSheet = dialog?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
-        bottomSheet?.let {
-            val behavior = BottomSheetBehavior.from(it)
-            behavior.state = BottomSheetBehavior.STATE_EXPANDED
-        }
+    private fun updateSongInfo(song: Song) {
+        songTitleTextView.text = song.title
+        artistTextView.text = song.artist ?: "Artist"
+        profilePic.setImageBitmap(song.coverArt)
     }
 
     private fun updatePlayButtonState() {
-        if (MusicPlayer.isPlaying()) {
-            playButton.setIconResource(R.drawable.ic_pause)
-        } else {
-            playButton.setIconResource(R.drawable.ic_play)
-        }
+        playButton.setIconResource(
+            if (MusicPlayer.isPlaying()) R.drawable.ic_pause else R.drawable.ic_play
+        )
     }
 
     private fun formatTime(milliseconds: Int): String {
@@ -159,5 +166,16 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         handler.removeCallbacks(updateSeekBar)
+        MusicPlayer.removeSongChangedListener(songChangedListener)
+        MusicPlayer.removePlaybackStateListener(playbackStateListener)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val bottomSheet = dialog?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+        bottomSheet?.let {
+            val behavior = BottomSheetBehavior.from(it)
+            behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        }
     }
 }
