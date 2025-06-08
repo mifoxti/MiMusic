@@ -1,6 +1,6 @@
 <!-- res/drawable/rounded_bottom_nav_background.xml -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="#FFC0CB"/> <!-- Полупрозрачный розовый цвет -->
+    <solid android:color="@color/md_theme_tertiaryContainer"/> <!-- Полупрозрачный розовый цвет -->
     <corners
         android:topLeftRadius="24dp"
         android:topRightRadius="24dp"

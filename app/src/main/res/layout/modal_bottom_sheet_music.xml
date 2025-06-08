@@ -23,8 +23,8 @@
         android:elevation="32dp"
         android:layout_marginTop="40dp"
         android:outlineProvider="background"
-        android:backgroundTint="@color/md_theme_scrim"
-    app:shapeAppearanceOverlay="@style/CircleSongBigViewStyle" />
+        android:backgroundTint="?attr/colorSurfaceContainerHighest"
+        app:shapeAppearanceOverlay="@style/CircleSongBigViewStyle" />
 
     <!-- Название песни -->
     <TextView
@@ -35,7 +35,7 @@
         android:fontFamily="@font/saira_var"
         android:gravity="center"
         android:text="Snowfall"
-        android:textColor="@color/md_theme_scrim"
+        android:textColor="@color/md_theme_primary_highContrast"
         android:textSize="24sp"
         android:textStyle="bold" />
 
@@ -48,9 +48,8 @@
         android:fontFamily="@font/saira_var"
         android:gravity="center"
         android:text="Oneheart, reidenshi"
-        android:textColor="@color/md_theme_scrim"
+        android:textColor="@color/md_theme_primary_highContrast"
         android:textSize="16sp" />
-
 
     <!-- Прогресс воспроизведения -->
     <LinearLayout
@@ -64,7 +63,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:max="100"
-            android:progress="0" />
+            android:progress="0"
+            android:progressTint="@color/md_theme_tertiaryFixedDim"
+            android:thumbTint="@color/md_theme_tertiaryContainer"
+            android:backgroundTint="?attr/colorSurfaceVariant"/>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -77,7 +79,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="0:00"
-                android:textColor="@color/md_theme_scrim"
+                android:textColor="@color/md_theme_primary_highContrast"
                 android:textSize="12sp" />
 
             <TextView
@@ -86,7 +88,7 @@
                 android:layout_weight="1"
                 android:gravity="center"
                 android:text=""
-                android:textColor="@color/md_theme_scrim"
+                android:textColor="@color/md_theme_inversePrimary"
                 android:textSize="12sp" />
 
             <TextView
@@ -94,7 +96,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="3:45"
-                android:textColor="@color/md_theme_scrim"
+                android:textColor="@color/md_theme_primary_highContrast"
                 android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
@@ -106,15 +108,13 @@
         android:gravity="center"
         android:orientation="horizontal">
 
-
         <Button
             android:id="@+id/iconButton"
             style="?attr/materialIconButtonOutlinedStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             app:icon="@drawable/ic_skip_prev"
-
-            />
+            app:iconTint="@color/md_theme_primary_highContrast"/>
 
         <Button
             android:id="@+id/playButton"
@@ -122,14 +122,16 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="64dp"
-            app:icon="@drawable/ic_play" />
+            app:icon="@drawable/ic_play"
+            app:iconTint="@color/md_theme_primary_highContrast"/>
 
         <Button
             android:id="@+id/nextButton"
             style="?attr/materialIconButtonOutlinedStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            app:icon="@drawable/ic_skip_next" />
+            app:icon="@drawable/ic_skip_next"
+            app:iconTint="@color/md_theme_primary_highContrast"/>
     </LinearLayout>
 
     <Button
@@ -140,6 +142,5 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         app:icon="@drawable/ic_heart"
-        />
-
+        app:iconTint="@color/md_theme_primary_highContrast"/>
 </LinearLayout>

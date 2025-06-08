@@ -3,6 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".SearchFragment"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:padding="8dp">
 
     <LinearLayout
@@ -24,10 +25,11 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:hint="Введите название трека"
+                android:hint="Введите название трека или автора"
+                app:hintTextColor="@color/md_theme_tertiaryContainer"
+                app:cursorColor="@color/md_theme_tertiaryContainer"
                 android:background="@null"
-                android:textColor="@color/md_theme_primary"
-                android:textColorHint="@color/md_theme_secondary"
+                android:textColor="@color/md_theme_tertiaryContainer"
                 android:singleLine="true"
                 android:imeOptions="actionSearch" />
             <ImageView
@@ -62,6 +64,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Поиск не удался. Нет соединения"
+                android:textColor="@color/md_theme_tertiaryContainer"
                 android:gravity="center" />
 
             <Button
@@ -69,6 +72,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Обновить"
+                android:textColor="@color/md_theme_tertiaryContainer"
                 android:layout_marginTop="8dp" />
         </LinearLayout>
 
@@ -80,6 +84,7 @@
             android:text="Нет результатов"
             android:visibility="gone"
             android:gravity="center"
+            android:textColor="@color/md_theme_tertiaryContainer"
             android:layout_marginTop="16dp" />
 
         <!-- Error placeholder -->
@@ -96,12 +101,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Ошибка при загрузке данных"
+                android:textColor="@color/md_theme_tertiaryContainer"
                 android:gravity="center" />
 
             <Button
                 android:id="@+id/retryButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:textColor="@color/md_theme_tertiaryContainer"
                 android:text="Повторить"
                 android:layout_marginTop="8dp" />
         </LinearLayout>

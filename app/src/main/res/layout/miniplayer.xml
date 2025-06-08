@@ -41,6 +41,7 @@
         android:textSize="24dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toEndOf="@id/playButton"
+        android:textColor="@color/md_theme_primary_highContrast"
         app:layout_constraintTop_toTopOf="parent" />
 
     <!-- Используем MaterialButton вместо Button -->
@@ -53,7 +54,8 @@
         app:icon="@drawable/ic_play"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:iconTint="@color/md_theme_primary_highContrast"/>
 
 
 </androidx.constraintlayout.widget.ConstraintLayout>

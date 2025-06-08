@@ -2,16 +2,16 @@
     <!-- Основной фон -->
     <item android:id="@android:id/background">
         <shape android:shape="rectangle">
-            <solid android:color="#FCD6EA" /> <!-- Цвет по умолчанию -->
-            <corners android:radius="24dp" /> <!-- Закругленные углы -->
+            <solid android:color="@color/md_theme_tertiaryFixedDim" />
+            <corners android:radius="24dp" />
         </shape>
     </item>
     <!-- Прогресс -->
     <item android:id="@android:id/progress">
         <clip>
             <shape android:shape="rectangle">
-                <solid android:color="#FAA2D2" /> <!-- Цвет прогресса -->
-                <corners android:radius="24dp" /> <!-- Закругленные углы -->
+                <solid android:color="@color/md_theme_tertiaryContainer" />
+                <corners android:radius="24dp" />
             </shape>
         </clip>
     </item>

@@ -1,11 +1,13 @@
 package com.example.mimusic.fragments
 
+import android.content.Context
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.fragment.app.FragmentManager
 import com.example.mimusic.R
 import com.example.mimusic.fragments.EmptyFragment
@@ -25,6 +27,14 @@ class ProfileFragment : Fragment() {
         val settingsButton = view.findViewById<MaterialButton>(R.id.settingsButton)
         // Находим кнопку "Мысли"
         val thoughtsButton = view.findViewById<MaterialButton>(R.id.thoughtsBtn)
+        // Находим кнопку переключения темы
+        val themeToggleButton = view.findViewById<MaterialButton>(R.id.themeToggleButton)
+
+        // Обработчик нажатия на кнопку переключения темы (был вырезан в прошлой версии, т.к. вызывал проблемы)
+        themeToggleButton.setOnClickListener {
+            toggleTheme()
+        }
+
 
         val lovedImage = view.findViewById<ShapeableImageView>(R.id.loved_image)
         val lovedText = view.findViewById<TextView>(R.id.text_loved)
@@ -74,5 +84,22 @@ class ProfileFragment : Fragment() {
             .replace(R.id.contentContainer, ThoughtsFragment())
             .addToBackStack("thoughts_fragment") // Добавляем в back stack для возврата
             .commit()
+    }
+
+    private fun toggleTheme() {
+        val sharedPref = requireContext().getSharedPreferences("AppTheme", Context.MODE_PRIVATE)
+        val isDarkTheme = sharedPref.getBoolean("isDarkTheme", false)
+        val newTheme = !isDarkTheme
+
+        sharedPref.edit().putBoolean("isDarkTheme", newTheme).apply()
+
+        // Применяем новую тему
+        if (newTheme) {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+        } else {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+        }
+
+
     }
 }

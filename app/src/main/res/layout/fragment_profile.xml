@@ -8,7 +8,8 @@
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:layout_marginTop="16dp">
 
         <com.google.android.material.imageview.ShapeableImageView
             android:layout_width="156dp"
@@ -23,15 +24,14 @@
 
         <!-- Add theme toggle button in top right corner -->
         <com.google.android.material.button.MaterialButton
-            style="?attr/materialIconButtonFilledStyle"
+            style="?attr/materialIconButtonFilledTonalStyle"
             android:id="@+id/themeToggleButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             android:layout_margin="16dp"
-            app:icon="@drawable/ic_theme_toggle"
-            android:tint="?attr/colorOnSurface"/>
+            app:icon="@drawable/ic_theme_toggle" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -44,7 +44,7 @@
             android:fontFamily="@font/saira_var"
             android:textSize="48sp"
             android:textStyle="bold"
-            android:textColor="#000000"
+            android:textColor="@color/md_theme_tertiaryContainer"
             />
 
         <Button
@@ -58,8 +58,7 @@
             app:layout_constraintStart_toEndOf="@id/profile_pic"
             app:layout_constraintEnd_toEndOf="parent"
             android:textSize="12dp"
-            android:textColor="@color/md_theme_onPrimaryFixed"
-
+            android:textColor="@color/md_theme_tertiaryContainer"
             />
 
         <Button
@@ -85,7 +84,7 @@
             app:layout_constraintEnd_toEndOf="@id/profile_pic"
             android:text="Любимые песни"
             android:id="@+id/text_loved"
-            android:textColor="#000000"
+            android:textColor="@color/md_theme_tertiaryContainer"
             android:layout_marginTop="24dp"
             android:textStyle="bold"
             />

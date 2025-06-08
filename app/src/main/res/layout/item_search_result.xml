@@ -26,6 +26,7 @@
         app:layout_constraintStart_toEndOf="@+id/galleryposter"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
+        android:textColor="@color/md_theme_primary_highContrast"
         android:layout_marginStart="24dp"
         android:textSize="24dp" />
 

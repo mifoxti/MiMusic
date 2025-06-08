@@ -13,7 +13,7 @@
         android:layout_marginTop="72dp"
         android:fontFamily="@font/konkhmer"
         android:text="MiMusic"
-        android:textColor="#754270"
+        android:textColor="@color/md_theme_tertiaryContainer"
         android:textSize="48sp"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
@@ -28,14 +28,17 @@
         android:layout_marginTop="200dp"
         android:hint="Login"
         app:layout_constraintEnd_toEndOf="parent"
-        app:hintTextColor="@color/md_theme_onPrimaryFixed"
-        android:textColorHint="@color/md_theme_onPrimaryFixed"
+        android:textColorHint="@color/md_theme_tertiaryContainer"
+        app:boxStrokeColor="@color/md_theme_tertiaryContainer"
+        app:hintTextColor="@color/md_theme_tertiaryContainer"
+        app:cursorColor="@color/md_theme_tertiaryContainer"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/loginText"
             android:layout_width="match_parent"
+            android:textColor="@color/md_theme_tertiaryContainer"
             android:layout_height="wrap_content" />
 
     </com.google.android.material.textfield.TextInputLayout>
@@ -48,8 +51,11 @@
         android:layout_marginTop="20dp"
         android:hint="Password"
         app:endIconMode="password_toggle"
-        app:hintTextColor="@color/md_theme_onPrimaryFixed"
-        android:textColorHint="@color/md_theme_onPrimaryFixed"
+        android:textColorHint="@color/md_theme_tertiaryContainer"
+        app:boxStrokeColor="@color/md_theme_tertiaryContainer"
+        app:hintTextColor="@color/md_theme_tertiaryContainer"
+        app:cursorColor="@color/md_theme_tertiaryContainer"
+        app:endIconTint="@color/md_theme_tertiaryContainer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/loginField">
@@ -58,6 +64,7 @@
             android:id="@+id/passwordText1"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:textColor="@color/md_theme_tertiaryContainer"
             android:inputType="textPassword" />
 
     </com.google.android.material.textfield.TextInputLayout>
@@ -69,8 +76,11 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp"
         android:hint="Password"
-        app:hintTextColor="@color/md_theme_onPrimaryFixed"
-        android:textColorHint="@color/md_theme_onPrimaryFixed"
+        android:textColorHint="@color/md_theme_tertiaryContainer"
+        app:boxStrokeColor="@color/md_theme_tertiaryContainer"
+        app:hintTextColor="@color/md_theme_tertiaryContainer"
+        app:cursorColor="@color/md_theme_tertiaryContainer"
+        app:endIconTint="@color/md_theme_tertiaryContainer"
         app:endIconMode="password_toggle"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -80,6 +90,7 @@
             android:id="@+id/passwordText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:textColor="@color/md_theme_tertiaryContainer"
             android:inputType="textPassword" />
 
     </com.google.android.material.textfield.TextInputLayout>
@@ -91,7 +102,7 @@
         android:layout_height="wrap_content"
         android:text="Register"
         android:layout_marginTop="20dp"
-        android:textColor="@color/md_theme_onPrimaryFixed"
+        android:textColor="@color/md_theme_tertiaryContainer"
         app:layout_constraintEnd_toEndOf="@id/passwordField"
         app:layout_constraintStart_toStartOf="@id/passwordField"
         app:layout_constraintTop_toBottomOf="@id/passwordField" />

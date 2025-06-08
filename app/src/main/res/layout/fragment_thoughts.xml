@@ -12,8 +12,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:fontFamily="@font/konkhmer"
-        android:text="thoughts"
-        android:textColor="#754270"
+        android:text="Мысли"
+        android:textColor="@color/md_theme_tertiaryContainer"
         android:textSize="48sp"
         app:layout_constraintBottom_toTopOf="@+id/linearLayout"
         app:layout_constraintEnd_toEndOf="parent"
@@ -42,12 +42,17 @@
             app:boxCornerRadiusBottomStart="8dp"
             app:boxCornerRadiusBottomEnd="8dp"
             app:boxBackgroundMode="outline"
+            android:textColorHint="@color/md_theme_tertiaryContainer"
+            app:boxStrokeColor="@color/md_theme_tertiaryContainer"
+            app:hintTextColor="@color/md_theme_tertiaryContainer"
+            app:cursorColor="@color/md_theme_tertiaryContainer"
             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:layout_width="match_parent"
                 android:layout_height="150dp"
                 android:hint="Введите ваш текст"
+                android:textColorHint="@color/md_theme_tertiaryContainer"
                 android:gravity="start|top"
                 android:padding="12dp"/>
 
@@ -70,6 +75,8 @@
                 android:layout_marginEnd="8dp"
                 android:layout_weight="1"
                 android:text="Отмена"
+                android:textColor="@color/md_theme_tertiaryContainer"
+
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
 
             <!-- Кнопка Сохранить (Filled) -->
@@ -77,8 +84,10 @@
                 android:id="@+id/saveButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:textColor="@color/md_theme_tertiaryContainer"
                 android:layout_weight="1"
                 android:text="Сохранить"
+                android:backgroundTint="@color/md_theme_tertiaryFixedDim"
                 style="@style/Widget.MaterialComponents.Button"/>
 
         </LinearLayout>
