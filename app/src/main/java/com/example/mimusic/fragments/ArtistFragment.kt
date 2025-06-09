@@ -7,20 +7,22 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import com.example.mimusic.R
 import com.example.mimusic.datas.Song
-import com.example.mimusic.datas.SongEl
+import com.example.mimusic.services.MusicPlayer
+import com.example.mimusic.services.UserManager
 import com.example.mimusic.utils.Mp3MetadataExtractor
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.google.android.material.imageview.ShapeableImageView
-import android.graphics.BitmapFactory
 import androidx.core.view.setPadding
 import android.util.TypedValue
 import android.widget.Button
 import androidx.constraintlayout.widget.ConstraintLayout
-import com.example.mimusic.services.MusicPlayer
+import com.google.android.material.button.MaterialButton
 
 class ArtistFragment : Fragment() {
     private lateinit var artistName: String
+    private val songs = mutableListOf<Song>()
+    private val songViews = mutableListOf<View>()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -29,26 +31,18 @@ class ArtistFragment : Fragment() {
     ): View? {
         val view = inflater.inflate(R.layout.fragment_artist, container, false)
 
-        // Получаем имя артиста из аргументов
         artistName = arguments?.getString(ARG_ARTIST_NAME) ?: "Unknown Artist"
-
-        // Устанавливаем имя артиста в TextView
         view.findViewById<TextView>(R.id.artistNickname).text = artistName
 
-        // Получаем все песни
         val allSongs = Mp3MetadataExtractor.getRawSongs(requireContext())
+        songs.clear()
+        songs.addAll(allSongs.filter { it.artist == artistName })
 
-        // Фильтруем песни по артисту
-        val artistSongs = allSongs.filter { it.artist == artistName }
-
-        // Получаем контейнер для треков
         val tracksContainer = view.findViewById<LinearLayout>(R.id.tracksContainer)
-
-        // Очищаем контейнер перед добавлением новых элементов
         tracksContainer.removeAllViews()
+        songViews.clear()
 
-        // Добавляем каждый трек артиста в контейнер
-        artistSongs.forEach { song ->
+        songs.forEach { song ->
             addSongToContainer(tracksContainer, song)
         }
 
@@ -56,36 +50,60 @@ class ArtistFragment : Fragment() {
     }
 
     private fun addSongToContainer(container: LinearLayout, song: Song) {
-        // Создаем новый элемент трека на основе макета
         val songView = LayoutInflater.from(context).inflate(
             R.layout.item_song,
             container,
             false
         ) as ConstraintLayout
 
-        // Находим View внутри элемента
         val poster = songView.findViewById<ShapeableImageView>(R.id.galleryposter)
         val title = songView.findViewById<TextView>(R.id.gallerytext)
-        val loveButton = songView.findViewById<Button>(R.id.galleryBtnLove)
+        val loveButton = songView.findViewById<MaterialButton>(R.id.galleryBtnLove)
 
-        // Устанавливаем данные песни
         title.text = song.title
         poster.setImageBitmap(song.coverArt)
 
-        // Обработчик клика на элемент
+        // Обновляем состояние кнопки лайка
+        updateLoveButton(loveButton, song)
+
         songView.setOnClickListener {
-            // Воспроизводим песню
-            MusicPlayer.playSong(requireContext(), song) {
-                // Callback после подготовки
-            }
+            MusicPlayer.playSong(requireContext(), song)
         }
 
-        // Обработчик клика на кнопку "лайка"
         loveButton.setOnClickListener {
+            toggleFavorite(song, loveButton)
         }
 
-        // Добавляем элемент в контейнер
         container.addView(songView)
+        songViews.add(songView)
+    }
+
+    private fun toggleFavorite(song: Song, button: MaterialButton) {
+        UserManager.currentUser?.let { user ->
+            val isLiked = user.likedSongs.contains(song.filePath)
+            if (isLiked) {
+                UserManager.removeLikedSong(song.filePath)
+            } else {
+                UserManager.addLikedSong(song.filePath)
+            }
+            updateLoveButton(button, song)
+        } ?: run {
+
+        }
+    }
+
+    private fun updateLoveButton(button: MaterialButton, song: Song) {
+        val isLiked = UserManager.currentUser?.likedSongs?.contains(song.filePath) ?: false
+        button.setIconResource(
+            if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
+        )
+    }
+
+    fun updateLikedSongs() {
+        songViews.forEachIndexed { index, view ->
+            val loveButton = view.findViewById<MaterialButton>(R.id.galleryBtnLove)
+            updateLoveButton(loveButton, songs[index])
+        }
     }
 
     companion object {
