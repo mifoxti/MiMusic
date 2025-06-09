@@ -102,24 +102,26 @@ object UserManager {
         }
     }
 
-    // Добавление понравившейся песни
-    fun addLikedSong(song: String) {
+    fun addLikedSong(filePath: String) {
         currentUser?.let { user ->
-            if (!user.likedSongs.contains(song)) {
-                user.likedSongs.add(song)
+            if (!user.likedSongs.contains(filePath)) {
+                user.likedSongs.add(filePath)
                 saveLikedSongs(user)
             }
         }
     }
 
-    // Удаление понравившейся песни
-    fun removeLikedSong(song: String) {
+    fun removeLikedSong(filePath: String) {
         currentUser?.let { user ->
-            if (user.likedSongs.contains(song)) {
-                user.likedSongs.remove(song)
+            if (user.likedSongs.contains(filePath)) {
+                user.likedSongs.remove(filePath)
                 saveLikedSongs(user)
             }
         }
+    }
+
+    fun isSongLiked(filePath: String): Boolean {
+        return currentUser?.likedSongs?.contains(filePath) ?: false
     }
 
     // Сохранение списка понравившихся песен

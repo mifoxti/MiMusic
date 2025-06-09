@@ -58,4 +58,10 @@ class SearchResultsAdapter(
         songs = newSongs
         notifyDataSetChanged()
     }
+    fun updateSongLikeStatus(songId: Int, isLiked: Boolean) {
+        songs = songs.map { song ->
+            if (song.id == songId) song.copy(isLoved = isLiked) else song
+        }
+        notifyDataSetChanged()
+    }
 }

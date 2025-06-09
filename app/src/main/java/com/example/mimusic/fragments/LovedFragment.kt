@@ -10,6 +10,10 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.mimusic.R
 import com.example.mimusic.adapters.SongAdapter
 import com.example.mimusic.datas.Song
+import com.example.mimusic.services.MusicPlayer
+import com.example.mimusic.services.MusicPlayer.playSong
+import com.example.mimusic.services.UserManager
+import com.example.mimusic.utils.Mp3MetadataExtractor
 
 class LovedFragment : Fragment() {
 
@@ -27,16 +31,16 @@ class LovedFragment : Fragment() {
         val recyclerView = view.findViewById<RecyclerView>(R.id.lovedRecyclerView)
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
 
-        // Временные данные для примера - замените на реальные из вашего источника
-        val lovedSongs = listOf(
-            Song("Tramontane", "path1", "Artist 1"),
-            Song("Favorite Song", "path2", "Artist 2"),
-            Song("Best Track", "path3", "Artist 3")
-        )
+        // Получаем список всех песен
+        val allSongs = Mp3MetadataExtractor.getRawSongs(requireContext())
 
+        // Фильтруем только лайкнутые песни
+        val lovedSongs = allSongs.filter { song ->
+            UserManager.currentUser?.likedSongs?.contains(song.filePath) ?: false
+        }
+        MusicPlayer.setSongList(lovedSongs)
         recyclerView.adapter = SongAdapter(lovedSongs) { song ->
-            // Обработка клика по песне
-            // Например, воспроизведение
+            playSong(requireContext(), song)
         }
     }
 }

@@ -12,6 +12,7 @@ import android.widget.TextView
 import com.example.mimusic.R
 import com.example.mimusic.datas.Song
 import com.example.mimusic.services.MusicPlayer
+import com.example.mimusic.services.UserManager
 import com.example.mimusic.utils.Mp3MetadataExtractor
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -24,9 +25,11 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
     private lateinit var currentTimeTextView: TextView
     private lateinit var totalTimeTextView: TextView
     private lateinit var playButton: MaterialButton
+    private lateinit var loveButton: MaterialButton
     private lateinit var songTitleTextView: TextView
     private lateinit var profilePic: ShapeableImageView
     private lateinit var artistTextView: TextView
+
     private val handler = Handler(Looper.getMainLooper())
     private val updateSeekBar = object : Runnable {
         override fun run() {
@@ -42,7 +45,7 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
     private val songChangedListener: () -> Unit = {
         handler.post {
             MusicPlayer.getCurrentSong()?.let { currentSong ->
-                updateSongInfo(currentSong)
+                updateSongInfo(currentSong) // Обновляем всю информацию, включая лайк
                 updatePlayButtonState()
                 seekBar.max = MusicPlayer.getDuration()
                 totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
@@ -86,6 +89,7 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
     ): View? {
         val view = inflater.inflate(R.layout.modal_bottom_sheet_music, container, false)
 
+        // Инициализация всех view
         songTitleTextView = view.findViewById(R.id.songTitleTextView)
         artistTextView = view.findViewById(R.id.artistTextView)
         profilePic = view.findViewById(R.id.profile_pic)
@@ -93,35 +97,26 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         currentTimeTextView = view.findViewById(R.id.currentTimeTextView)
         totalTimeTextView = view.findViewById(R.id.totalTimeTextView)
         playButton = view.findViewById(R.id.playButton)
+        loveButton = view.findViewById(R.id.galleryBtnLove)
         val nextButton = view.findViewById<MaterialButton>(R.id.nextButton)
         val prevButton = view.findViewById<MaterialButton>(R.id.iconButton)
 
-        updateSongInfo(song)
-        profilePic.setImageBitmap(song.coverArt)
-
-        MusicPlayer.addSongChangedListener(songChangedListener)
-        MusicPlayer.addPlaybackStateListener(playbackStateListener)
-
-        if (MusicPlayer.getCurrentSong() != song || !MusicPlayer.isPrepared()) {
-            MusicPlayer.playSong(requireContext(), song) {
-                updatePlayButtonState()
-                seekBar.max = MusicPlayer.getDuration()
-                totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
-                handler.post(updateSeekBar)
-            }
-        } else {
-            updatePlayButtonState()
-            seekBar.max = MusicPlayer.getDuration()
-            totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
-            handler.post(updateSeekBar)
-        }
-
+        // Настройка обработчиков
         playButton.setOnClickListener {
             if (MusicPlayer.isPlaying()) {
                 MusicPlayer.pause()
             } else {
                 MusicPlayer.resume()
             }
+        }
+
+        loveButton.setOnClickListener {
+            toggleFavorite()
+        }
+
+        artistTextView.setOnClickListener {
+            dismiss()
+            openArtistProfile(song.artist ?: "Unknown Artist")
         }
 
         nextButton.setOnClickListener {
@@ -142,6 +137,24 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
 
+        // Первоначальная настройка состояния
+        updateSongInfo(song)
+        profilePic.setImageBitmap(song.coverArt)
+
+        if (MusicPlayer.getCurrentSong() != song || !MusicPlayer.isPrepared()) {
+            MusicPlayer.playSong(requireContext(), song) {
+                updatePlayButtonState()
+                seekBar.max = MusicPlayer.getDuration()
+                totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
+                handler.post(updateSeekBar)
+            }
+        } else {
+            updatePlayButtonState()
+            seekBar.max = MusicPlayer.getDuration()
+            totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
+            handler.post(updateSeekBar)
+        }
+
         return view
     }
 
@@ -149,6 +162,46 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         songTitleTextView.text = song.title
         artistTextView.text = song.artist ?: "Artist"
         profilePic.setImageBitmap(song.coverArt)
+        updateLikeButtonState(song)
+    }
+
+    private fun updateLikeButtonState(song: Song) {
+        val isLiked = UserManager.currentUser?.likedSongs?.contains(song.filePath) ?: false
+        loveButton.animate()
+            .scaleX(1.2f)
+            .scaleY(1.2f)
+            .setDuration(150)
+            .withEndAction {
+                loveButton.setIconResource(
+                    if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
+                )
+                loveButton.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(150)
+                    .start()
+            }
+            .start()
+        loveButton.setIconResource(
+            if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
+        )
+    }
+
+    private fun toggleFavorite() {
+        MusicPlayer.getCurrentSong()?.let { currentSong ->
+            if (UserManager.currentUser == null) {
+                Log.d("UNLOGGED", "UserManager.currentUser")
+                return
+            }
+
+            val isLiked = UserManager.currentUser?.likedSongs?.contains(currentSong.filePath) ?: false
+            if (isLiked) {
+                UserManager.removeLikedSong(currentSong.filePath)
+            } else {
+                UserManager.addLikedSong(currentSong.filePath)
+            }
+            updateLikeButtonState(currentSong)
+        }
     }
 
     private fun updatePlayButtonState() {
@@ -161,6 +214,13 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         val minutes = milliseconds / 1000 / 60
         val seconds = milliseconds / 1000 % 60
         return String.format("%02d:%02d", minutes, seconds)
+    }
+
+    private fun openArtistProfile(artistName: String) {
+        parentFragmentManager.beginTransaction()
+            .replace(R.id.contentContainer, ArtistFragment.newInstance(artistName))
+            .addToBackStack("artist_profile")
+            .commit()
     }
 
     override fun onDestroyView() {

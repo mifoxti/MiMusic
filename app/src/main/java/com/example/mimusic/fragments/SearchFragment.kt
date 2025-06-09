@@ -22,6 +22,7 @@ import com.example.mimusic.datas.Song
 import com.example.mimusic.datas.SongEl
 import com.example.mimusic.fragments.MusicBottomSheetFragment
 import com.example.mimusic.services.MusicPlayer
+import com.example.mimusic.services.UserManager
 import com.example.mimusic.utils.Mp3MetadataExtractor
 
 class SearchFragment : Fragment() {
@@ -48,15 +49,21 @@ class SearchFragment : Fragment() {
         errorView = view.findViewById(R.id.errorView)
         retryButton = view.findViewById(R.id.retryButton)
 
-        // Загружаем все песни из raw
         allSongs = Mp3MetadataExtractor.getRawSongs(requireContext())
 
+        setupRecyclerView()
+        setupSearchListeners()
+        setupRetryButton()
+
+        return view
+    }
+
+    private fun setupRecyclerView() {
         recyclerView.layoutManager = LinearLayoutManager(context)
         adapter = SearchResultsAdapter(
             songs = emptyList(),
             onItemClick = { songEl ->
-                val originalSong = allSongs.find { it.hashCode() == songEl.id }
-                originalSong?.let { song ->
+                allSongs.find { it.hashCode() == songEl.id }?.let { song ->
                     playSong(song)
                 }
             },
@@ -65,11 +72,9 @@ class SearchFragment : Fragment() {
             }
         )
         recyclerView.adapter = adapter
+    }
 
-        retryButton.setOnClickListener {
-            searchSongs(lastQuery)
-        }
-
+    private fun setupSearchListeners() {
         searchEditText.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
                 val query = searchEditText.text.toString()
@@ -82,18 +87,6 @@ class SearchFragment : Fragment() {
                 false
             }
         }
-
-        adapter = SearchResultsAdapter(
-            songs = emptyList(),
-            onItemClick = { song ->
-                // Обработка клика на песню
-                val originalSong = allSongs.find { it.hashCode() == song.id }
-                originalSong?.let { playSong(it) }
-            },
-            onLoveClick = { //
-            }
-        )
-        recyclerView.adapter = adapter
 
         searchEditText.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -116,8 +109,12 @@ class SearchFragment : Fragment() {
             clearButton.visibility = View.GONE
             showResults(emptyList())
         }
+    }
 
-        return view
+    private fun setupRetryButton() {
+        retryButton.setOnClickListener {
+            searchSongs(lastQuery)
+        }
     }
 
     private fun searchSongs(query: String) {
@@ -133,7 +130,11 @@ class SearchFragment : Fragment() {
             song.title.lowercase().contains(normalizedQuery) ||
                     song.artist.lowercase().contains(normalizedQuery) ||
                     song.album.lowercase().contains(normalizedQuery)
-        }.map { it.toSongEl() }
+        }.map { song ->
+            song.toSongEl().copy(
+                isLoved = UserManager.currentUser?.likedSongs?.contains(song.filePath) ?: false
+            )
+        }
 
         showResults(results)
     }
@@ -142,12 +143,19 @@ class SearchFragment : Fragment() {
         if (results.isEmpty()) {
             emptyView.visibility = View.VISIBLE
             errorView.visibility = View.GONE
+            recyclerView.visibility = View.GONE
         } else {
             emptyView.visibility = View.GONE
             errorView.visibility = View.GONE
+            recyclerView.visibility = View.VISIBLE
+
+            val foundSongs = results.mapNotNull { songEl ->
+                allSongs.find { it.hashCode() == songEl.id }
+            }
+            MusicPlayer.setSongList(foundSongs)
+
+            adapter.updateData(results)
         }
-        recyclerView.visibility = View.VISIBLE
-        adapter.updateData(results)
     }
 
     private fun showErrorPlaceholder() {
@@ -162,26 +170,31 @@ class SearchFragment : Fragment() {
     }
 
     private fun playSong(song: Song) {
-        // Воспроизводим песню через MusicPlayer
         MusicPlayer.playSong(requireContext(), song) {
-            // Дополнительные действия после подготовки
             showNowPlaying(song)
         }
     }
 
     private fun showNowPlaying(song: Song) {
-        // Показываем bottom sheet или обновляем UI
         val bottomSheet = MusicBottomSheetFragment.newInstance(song)
         bottomSheet.show(parentFragmentManager, bottomSheet.tag)
     }
 
     private fun toggleFavorite(songId: Int) {
-        // Реализация добавления/удаления из избранного
-        // Например:
         val song = allSongs.find { it.hashCode() == songId }
         song?.let {
-            // Ваша логика работы с избранным
-            // Например, через SharedPreferences или базу данных
+            val currentUser = UserManager.currentUser
+            if (currentUser != null) {
+                val isLiked = currentUser.likedSongs.contains(it.filePath)
+                if (isLiked) {
+                    UserManager.removeLikedSong(it.filePath)
+                } else {
+                    UserManager.addLikedSong(it.filePath)
+                }
+
+                // Обновляем отображение в адаптере
+                adapter.updateSongLikeStatus(songId, !isLiked)
+            }
         }
     }
 

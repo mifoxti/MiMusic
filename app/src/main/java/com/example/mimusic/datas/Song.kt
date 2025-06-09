@@ -5,6 +5,7 @@ import android.os.Parcel
 import android.os.Parcelable
 
 data class Song(
+    val id: Int? = null,
     val title: String,
     val filePath: String,
     val artist: String,
@@ -76,7 +77,7 @@ data class Song(
             title = this.title,
             artist = this.artist,
             coverArt = this.coverArt,
-            isLoved = false // или загружайте из хранилища
+            isLoved = false
         )
     }
 }
