@@ -28,11 +28,11 @@ class MainActivity : AppCompatActivity() {
         updateMiniPlayerVisibility()
 
         // Подписываемся на уведомления о начале воспроизведения
-        MusicPlayer.setOnPlaybackStartedListener {
+        MusicPlayer.addPlaybackStateListener {
             updateMiniPlayerVisibility()
         }
 
-        // Загружаем начальный фрагмент (например, FragmentMain)
+        // Загружаем начальный фрагмент
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
                 .replace(R.id.contentContainer, FragmentMain())
@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         miniPlayerHandler.release() // Останавливаем обновление прогресса
+
     }
 
     override fun onBackPressed() {

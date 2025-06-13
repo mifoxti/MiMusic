@@ -27,11 +27,6 @@ class ThoughtsFragment : Fragment() {
 
         // Обработка нажатия "Сохранить" - сохраняем данные (если нужно) и закрываем
         saveButton.setOnClickListener {
-            // Здесь можно добавить логику сохранения данных
-            // Например:
-            // val editText = view.findViewById<TextInputEditText>(R.id.your_edit_text_id)
-            // val text = editText.text.toString()
-            // saveText(text)
 
             requireActivity().supportFragmentManager.popBackStack()
         }
@@ -39,8 +34,8 @@ class ThoughtsFragment : Fragment() {
         return view
     }
 
-    // Пример функции для сохранения текста (реализуйте по необходимости)
+
     private fun saveText(text: String) {
-        // Реализация сохранения (в SharedPreferences, БД и т.д.)
+
     }
 }

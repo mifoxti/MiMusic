@@ -3,13 +3,11 @@ package com.example.mimusic.services
 import android.content.Context
 import android.graphics.drawable.ClipDrawable
 import android.graphics.drawable.LayerDrawable
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.fragment.app.FragmentActivity
-import com.example.mimusic.fragments.MusicBottomSheetFragment
 import com.example.mimusic.R
+import com.example.mimusic.fragments.MusicBottomSheetFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 
@@ -22,23 +20,33 @@ class MiniPlayerHandler(
     private val playButton: MaterialButton = rootView.findViewById(R.id.playButton)
     private val playerBackground: View = rootView.findViewById(R.id.playerBackground)
 
-    private val handler = Handler(Looper.getMainLooper())
-    private val updateProgress = object : Runnable {
-        override fun run() {
-            updatePlayerProgress()
-            handler.postDelayed(this, 1000)
-        }
+    // Храним слушатели для удаления
+    private val songChangedListener = {
+        updatePlayerState()
+        rootView.visibility = View.VISIBLE
+    }
+
+    private val playbackStateListener = {
+        updatePlayerState()
+    }
+
+    private val progressUpdateListener = { currentPos: Int, duration: Int ->
+        updateProgress(currentPos, duration)
     }
 
     init {
         setupListeners()
         updatePlayerState()
-        handler.post(updateProgress)
 
-        // Устанавливаем слушатель изменения песни
-        MusicPlayer.setOnSongChangedListener {
-            updatePlayerState()
+        // Подписка на обновления плеера
+        MusicPlayer.apply {
+            addSongChangedListener(songChangedListener)
+            addPlaybackStateListener(playbackStateListener)
+            addProgressUpdateListener(progressUpdateListener)
         }
+
+        // Показываем миниплеер, если песня уже есть
+        rootView.visibility = if (MusicPlayer.getCurrentSong() != null) View.VISIBLE else View.GONE
     }
 
     private fun setupListeners() {
@@ -48,45 +56,46 @@ class MiniPlayerHandler(
             } else {
                 MusicPlayer.resume()
             }
-            updatePlayerState()
         }
 
         rootView.setOnClickListener {
-            val currentSong = MusicPlayer.getCurrentSong()
-            if (currentSong != null) {
-                val bottomSheet = MusicBottomSheetFragment.newInstance(currentSong)
-                bottomSheet.show((context as FragmentActivity).supportFragmentManager, bottomSheet.tag)
+            MusicPlayer.getCurrentSong()?.let { song ->
+                MusicBottomSheetFragment.newInstance(song).show(
+                    (context as FragmentActivity).supportFragmentManager,
+                    "bottom_sheet"
+                )
             }
         }
     }
 
     private fun updatePlayerState() {
-        val currentSong = MusicPlayer.getCurrentSong()
-        if (currentSong != null) {
-            playerText.text = currentSong.title
-            playerImage.setImageBitmap(currentSong.coverArt)
+        MusicPlayer.getCurrentSong()?.let { song ->
+            playerText.text = song.title
+            song.coverArt?.let { playerImage.setImageBitmap(it) }
         }
 
-        if (MusicPlayer.isPlaying()) {
-            playButton.setIconResource(R.drawable.ic_pause)
-        } else {
-            playButton.setIconResource(R.drawable.ic_play)
-        }
+        // Обновление иконки кнопки
+        playButton.setIconResource(
+            if (MusicPlayer.isPlaying()) R.drawable.ic_pause else R.drawable.ic_play
+        )
     }
 
-    private fun updatePlayerProgress() {
-        if (MusicPlayer.isPlaying()) {
-            val duration = MusicPlayer.getDuration()
-            if (duration > 0) {
-                val progress = MusicPlayer.getCurrentPosition().toFloat() / duration
-                val progressDrawable = playerBackground.background as LayerDrawable
-                val clipDrawable = progressDrawable.findDrawableByLayerId(android.R.id.progress) as ClipDrawable
-                clipDrawable.level = (progress * 10000).toInt()
+    private fun updateProgress(currentPos: Int, duration: Int) {
+        if (duration > 0) {
+            val progress = currentPos.toFloat() / duration
+            (playerBackground.background as? LayerDrawable)?.let { layerDrawable ->
+                (layerDrawable.findDrawableByLayerId(android.R.id.progress) as? ClipDrawable)?.let { clip ->
+                    clip.level = (progress * 10000).toInt()
+                }
             }
         }
     }
 
     fun release() {
-        handler.removeCallbacks(updateProgress)
+        MusicPlayer.apply {
+            removeSongChangedListener(songChangedListener)
+            removePlaybackStateListener(playbackStateListener)
+            removeProgressUpdateListener(progressUpdateListener)
+        }
     }
 }

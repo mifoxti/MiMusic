@@ -4,116 +4,202 @@ import android.content.Context
 import android.media.MediaPlayer
 import android.util.Log
 import com.example.mimusic.datas.Song
+import com.example.mimusic.serverSide.ApiClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import okhttp3.ResponseBody
+import java.io.File
+import java.io.FileOutputStream
 
 object MusicPlayer {
     private var mediaPlayer: MediaPlayer? = null
     private var currentSong: Song? = null
+    private var tempFile: File? = null
     private var isPrepared = false
-    private var onSongChangedListener: (() -> Unit)? = null
-    private var onPlaybackStartedListener: (() -> Unit)? = null // Новый слушатель
+    private var currentPosition = -1
+    private var songList: List<Song> = emptyList()
 
-    fun setOnSongChangedListener(listener: () -> Unit) {
-        onSongChangedListener = listener
+    private val songChangedListeners = mutableListOf<() -> Unit>()
+    private val playbackStateListeners = mutableListOf<() -> Unit>()
+    private val progressUpdateListeners = mutableListOf<(Int, Int) -> Unit>()
+
+    private val playerScope = CoroutineScope(Dispatchers.IO)
+    private var progressUpdateJob: Job? = null
+
+    fun setSongList(list: List<Song>) {
+        songList = list
+        if (songList.isNotEmpty() && currentPosition == -1) {
+            currentPosition = 0
+        }
     }
 
-    fun setOnPlaybackStartedListener(listener: () -> Unit) {
-        onPlaybackStartedListener = listener
+    fun addSongChangedListener(listener: () -> Unit) {
+        songChangedListeners.add(listener)
+    }
+
+    fun removeSongChangedListener(listener: () -> Unit) {
+        songChangedListeners.remove(listener)
+    }
+
+    fun addPlaybackStateListener(listener: () -> Unit) {
+        playbackStateListeners.add(listener)
+    }
+
+    fun removePlaybackStateListener(listener: () -> Unit) {
+        playbackStateListeners.remove(listener)
+    }
+
+    fun addProgressUpdateListener(listener: (Int, Int) -> Unit) {
+        progressUpdateListeners.add(listener)
+    }
+
+    fun removeProgressUpdateListener(listener: (Int, Int) -> Unit) {
+        progressUpdateListeners.remove(listener)
     }
 
     fun playSong(context: Context, song: Song, onPrepared: (() -> Unit)? = null) {
-        if (mediaPlayer == null) {
-            mediaPlayer = MediaPlayer()
-        } else {
-            mediaPlayer?.reset()
+        currentPosition = songList.indexOfFirst { it.idOnServer == song.idOnServer }
+            .takeIf { it != -1 } ?: run {
+            Log.e("MusicPlayer", "Song not found in list: ${song.title}")
+            return
         }
 
-        try {
-            val resourceId = context.resources.getIdentifier(song.title.replace(" ", "_"), "raw", context.packageName)
-            if (resourceId == 0) {
-                Log.e("MusicPlayer", "Resource not found for song: ${song.title}")
-                return
+        playerScope.launch {
+            try {
+                val response = ApiClient.apiService.streamTrack(song.idOnServer ?: return@launch)
+                if (response.isSuccessful) {
+                    response.body()?.let { body ->
+                        tempFile = createTempFile(context, "music_${song.idOnServer}", ".mp3")
+                        tempFile?.let { file ->
+                            saveResponseToFile(body, file)
+                            launch(Dispatchers.Main) {
+                                playFile(context, file, song, onPrepared)
+                            }
+                        }
+                    }
+                } else {
+                    Log.e("MusicPlayer", "Server error: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("MusicPlayer", "Streaming error", e)
             }
-
-            val assetFileDescriptor = context.resources.openRawResourceFd(resourceId)
-            mediaPlayer?.apply {
-                setDataSource(assetFileDescriptor.fileDescriptor, assetFileDescriptor.startOffset, assetFileDescriptor.length)
-                assetFileDescriptor.close()
-
-                setOnPreparedListener {
-                    isPrepared = true
-                    start()
-                    currentSong = song
-                    Log.d("MusicPlayer", "Song started: ${song.title}, duration: ${duration}")
-                    onPrepared?.invoke()
-                    onSongChangedListener?.invoke()
-                    onPlaybackStartedListener?.invoke() // Уведомляем о начале воспроизведения
-                }
-
-                setOnCompletionListener {
-                    Log.d("MusicPlayer", "Song completed: ${song.title}")
-                    currentSong = null
-                    isPrepared = false
-                    onSongChangedListener?.invoke()
-                }
-
-                setOnErrorListener { _, what, extra ->
-                    Log.e("MusicPlayer", "MediaPlayer error: what=$what, extra=$extra")
-                    false
-                }
-
-                prepareAsync()
-            }
-        } catch (e: Exception) {
-            Log.e("MusicPlayer", "Error initializing MediaPlayer for song: ${song.title}", e)
         }
     }
 
-    fun seekTo(position: Int) {
-        if (mediaPlayer != null && position in 0..(mediaPlayer!!.duration)) {
-            mediaPlayer?.seekTo(position)
-            Log.d("MusicPlayer", "Seek to: $position")
-        }
+    fun playNext(context: Context) {
+        if (songList.isEmpty() || currentPosition == -1) return
+        val nextPosition = (currentPosition + 1) % songList.size
+        playSong(context, songList[nextPosition])
+    }
+
+    fun playPrevious(context: Context) {
+        if (songList.isEmpty() || currentPosition == -1) return
+        val prevPosition = if (currentPosition - 1 < 0) songList.size - 1 else currentPosition - 1
+        playSong(context, songList[prevPosition])
     }
 
     fun pause() {
-        if (mediaPlayer?.isPlaying == true) {
+        if (isPlaying()) {
             mediaPlayer?.pause()
-            Log.d("MusicPlayer", "Song paused")
+            notifyPlaybackStateChanged()
         }
     }
 
     fun resume() {
-        if (mediaPlayer != null && !mediaPlayer!!.isPlaying && isPrepared) {
+        if (isPrepared && !isPlaying()) {
             mediaPlayer?.start()
-            Log.d("MusicPlayer", "Song resumed")
+            notifyPlaybackStateChanged()
+            startProgressUpdates()
         }
     }
 
-    fun isPlaying(): Boolean {
-        return mediaPlayer?.isPlaying ?: false
+    fun seekTo(position: Int) {
+        if (isPrepared && position in 0..getDuration()) {
+            mediaPlayer?.seekTo(position)
+        }
     }
 
-    fun getCurrentPosition(): Int {
-        return mediaPlayer?.currentPosition ?: 0
-    }
+    fun isPlaying(): Boolean = mediaPlayer?.isPlaying ?: false
 
-    fun getDuration(): Int {
-        return mediaPlayer?.duration ?: 0
-    }
+    fun getCurrentPosition(): Int = mediaPlayer?.currentPosition ?: 0
+
+    fun getDuration(): Int = mediaPlayer?.duration ?: 0
+
+    fun getCurrentSong(): Song? = currentSong
+
+    fun isPrepared(): Boolean = isPrepared
 
     fun release() {
         mediaPlayer?.release()
+        tempFile?.delete()
         mediaPlayer = null
         currentSong = null
         isPrepared = false
-        Log.d("MusicPlayer", "MediaPlayer released")
+        currentPosition = -1
+        progressUpdateJob?.cancel()
+        songChangedListeners.clear()
+        playbackStateListeners.clear()
+        progressUpdateListeners.clear()
     }
 
-    fun getCurrentSong(): Song? {
-        return currentSong
+    private fun createTempFile(context: Context, prefix: String, suffix: String): File {
+        return File(context.cacheDir, "$prefix$suffix").apply {
+            createNewFile()
+        }
     }
 
-    fun isPrepared(): Boolean {
-        return isPrepared
+    private fun saveResponseToFile(body: ResponseBody, file: File) {
+        FileOutputStream(file).use { output ->
+            body.byteStream().use { input ->
+                input.copyTo(output)
+            }
+        }
+    }
+
+    private fun playFile(context: Context, file: File, song: Song, onPrepared: (() -> Unit)?) {
+        mediaPlayer?.release()
+        mediaPlayer = MediaPlayer().apply {
+            setDataSource(file.path)
+            setOnPreparedListener {
+                isPrepared = true
+                start()
+                currentSong = song
+                onPrepared?.invoke()
+                notifySongChanged()
+                notifyPlaybackStateChanged()
+                startProgressUpdates()
+            }
+            setOnCompletionListener {
+                notifyPlaybackStateChanged()
+                playNext(context)
+            }
+            setOnErrorListener { _, what, extra ->
+                Log.e("MusicPlayer", "Playback error: what=$what, extra=$extra")
+                false
+            }
+            prepareAsync()
+        }
+    }
+
+    private fun startProgressUpdates() {
+        progressUpdateJob?.cancel()
+        progressUpdateJob = playerScope.launch {
+            while (isPrepared && mediaPlayer?.isPlaying == true) {
+                val pos = getCurrentPosition()
+                val dur = getDuration()
+                progressUpdateListeners.forEach { it.invoke(pos, dur) }
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
+
+    private fun notifySongChanged() {
+        songChangedListeners.forEach { it.invoke() }
+    }
+
+    private fun notifyPlaybackStateChanged() {
+        playbackStateListeners.forEach { it.invoke() }
     }
 }

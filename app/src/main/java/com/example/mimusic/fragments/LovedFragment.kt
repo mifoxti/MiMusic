@@ -27,16 +27,15 @@ class LovedFragment : Fragment() {
         val recyclerView = view.findViewById<RecyclerView>(R.id.lovedRecyclerView)
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
 
-        // Временные данные для примера - замените на реальные из вашего источника
-        val lovedSongs = listOf(
-            Song("Tramontane", "path1", "Artist 1"),
-            Song("Favorite Song", "path2", "Artist 2"),
-            Song("Best Track", "path3", "Artist 3")
-        )
+//        val lovedSongs = listOf(
+//            Song("Tramontane", , "Artist 1"),
+//            Song("Favorite Song", ", "Artist 2"),
+//            Song("Best Track", "path3", "Artist 3")
+//        )
 
-        recyclerView.adapter = SongAdapter(lovedSongs) { song ->
-            // Обработка клика по песне
-            // Например, воспроизведение
-        }
+//        recyclerView.adapter = SongAdapter(lovedSongs) { song ->
+//            // Обработка клика по песне
+//            // Например, воспроизведение
+//        }
     }
 }

@@ -23,6 +23,8 @@
         android:elevation="32dp"
         android:layout_marginTop="40dp"
         android:outlineProvider="background"
+        android:adjustViewBounds="true"
+        android:scaleType="centerCrop"
         android:backgroundTint="?attr/colorSurfaceContainerHighest"
         app:shapeAppearanceOverlay="@style/CircleSongBigViewStyle" />
 
