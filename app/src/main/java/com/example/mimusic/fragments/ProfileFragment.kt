@@ -7,11 +7,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.fragment.app.FragmentManager
 import com.example.mimusic.R
-import com.example.mimusic.fragments.EmptyFragment
-import com.example.mimusic.fragments.RegisterFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 
@@ -23,18 +22,13 @@ class ProfileFragment : Fragment() {
     ): View? {
         val view = inflater.inflate(R.layout.fragment_profile, container, false)
 
-        // Находим кнопку настроек
         val settingsButton = view.findViewById<MaterialButton>(R.id.settingsButton)
-        // Находим кнопку "Мысли"
         val thoughtsButton = view.findViewById<MaterialButton>(R.id.thoughtsBtn)
-        // Находим кнопку переключения темы
         val themeToggleButton = view.findViewById<MaterialButton>(R.id.themeToggleButton)
 
-        // Обработчик нажатия на кнопку переключения темы (был вырезан в прошлой версии, т.к. вызывал проблемы)
         themeToggleButton.setOnClickListener {
             toggleTheme()
         }
-
 
         val lovedImage = view.findViewById<ShapeableImageView>(R.id.loved_image)
         val lovedText = view.findViewById<TextView>(R.id.text_loved)
@@ -51,7 +45,7 @@ class ProfileFragment : Fragment() {
 
         // Обработчик нажатия на кнопку настроек
         settingsButton.setOnClickListener {
-            clearFragmentsAndOpenRegister()
+            showLogoutConfirmationDialog()
         }
 
         // Обработчик нажатия на кнопку "Мысли"
@@ -62,9 +56,23 @@ class ProfileFragment : Fragment() {
         return view
     }
 
+    private fun showLogoutConfirmationDialog() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Выход из аккаунта")
+            .setMessage("Вы действительно хотите выйти?")
+            .setPositiveButton("Да") { _, _ ->
+                logoutAndOpenRegister()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
 
+    private fun logoutAndOpenRegister() {
+        // Очистка SharedPreferences
+        val sharedPref = requireContext().getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+        sharedPref.edit().clear().apply()
 
-    private fun clearFragmentsAndOpenRegister() {
+        // Очистка фрагментов и переход к экрану регистрации
         val fragmentManager: FragmentManager = parentFragmentManager
         fragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
 
@@ -82,7 +90,7 @@ class ProfileFragment : Fragment() {
     private fun openThoughtsFragment() {
         parentFragmentManager.beginTransaction()
             .replace(R.id.contentContainer, ThoughtsFragment())
-            .addToBackStack("thoughts_fragment") // Добавляем в back stack для возврата
+            .addToBackStack("thoughts_fragment")
             .commit()
     }
 
@@ -93,13 +101,10 @@ class ProfileFragment : Fragment() {
 
         sharedPref.edit().putBoolean("isDarkTheme", newTheme).apply()
 
-        // Применяем новую тему
         if (newTheme) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         } else {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         }
-
-
     }
 }

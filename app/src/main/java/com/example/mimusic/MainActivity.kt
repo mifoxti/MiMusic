@@ -67,7 +67,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMiniPlayerVisibility() {
-        if (MusicPlayer.getCurrentSong() != null && MusicPlayer.isPlaying()) {
+        if (MusicPlayer.getCurrentSong() != null) {
             miniPlayerView.visibility = View.VISIBLE
         } else {
             miniPlayerView.visibility = View.GONE

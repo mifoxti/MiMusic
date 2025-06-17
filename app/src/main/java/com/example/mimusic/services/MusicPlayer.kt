@@ -88,16 +88,18 @@ object MusicPlayer {
         }
     }
 
-    fun playNext(context: Context) {
-        if (songList.isEmpty() || currentPosition == -1) return
-        val nextPosition = (currentPosition + 1) % songList.size
-        playSong(context, songList[nextPosition])
+    fun playNext(context: Context, onPrepared: (() -> Unit)? = null) {
+        if (songList.isEmpty()) return
+
+        currentPosition = (currentPosition + 1) % songList.size
+        playSong(context, songList[currentPosition], onPrepared)
     }
 
-    fun playPrevious(context: Context) {
-        if (songList.isEmpty() || currentPosition == -1) return
-        val prevPosition = if (currentPosition - 1 < 0) songList.size - 1 else currentPosition - 1
-        playSong(context, songList[prevPosition])
+    fun playPrevious(context: Context, onPrepared: (() -> Unit)? = null) {
+        if (songList.isEmpty()) return
+
+        currentPosition = if (currentPosition - 1 < 0) songList.size - 1 else currentPosition - 1
+        playSong(context, songList[currentPosition], onPrepared)
     }
 
     fun pause() {

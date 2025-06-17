@@ -69,10 +69,24 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         currentTimeTextView = view.findViewById(R.id.currentTimeTextView)
         totalTimeTextView = view.findViewById(R.id.totalTimeTextView)
         playButton = view.findViewById(R.id.playButton)
+        val prevButton = view.findViewById<MaterialButton>(R.id.iconButton)
+        val nextButton = view.findViewById<MaterialButton>(R.id.nextButton)
+
+        prevButton.setOnClickListener {
+            MusicPlayer.playPrevious(requireContext()) {
+                refreshUI()
+            }
+        }
+
+        nextButton.setOnClickListener {
+            MusicPlayer.playNext(requireContext()) {
+                refreshUI()
+            }
+        }
 
         // Установка данных
         songTitleTextView.text = song.title
-        artistTextView.text = song.artist ?: "Artist" // Используем реального исполнителя, если есть
+        artistTextView.text = song.artist ?: "Artist"
         profilePic.setImageBitmap(song.coverArt)
 
         // Обработка нажатия на имя артиста
@@ -159,5 +173,20 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         handler.removeCallbacks(updateSeekBar)
+    }
+
+    private fun refreshUI() {
+        val newSong = MusicPlayer.getCurrentSong() ?: return
+        song = newSong
+
+        view?.findViewById<TextView>(R.id.songTitleTextView)?.text = song.title
+        artistTextView.text = song.artist ?: "Artist"
+        view?.findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.profile_pic)
+            ?.setImageBitmap(song.coverArt)
+
+        updatePlayButtonState()
+        seekBar.max = MusicPlayer.getDuration()
+        totalTimeTextView.text = formatTime(MusicPlayer.getDuration())
+        handler.post(updateSeekBar)
     }
 }
