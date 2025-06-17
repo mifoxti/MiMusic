@@ -18,6 +18,12 @@ interface ApiService {
     suspend fun registerUser(
         @Body body: RegisterRequest
     ): Response<RegisterResponse>
+
+    @POST("/login")
+    suspend fun loginUser(
+        @Body body: LoginRequest
+    ): Response<LoginResponse>
+
 //    // Пример GET запроса
 //    @GET("api/items")
 //    suspend fun getItems(): Response<List<Item>>

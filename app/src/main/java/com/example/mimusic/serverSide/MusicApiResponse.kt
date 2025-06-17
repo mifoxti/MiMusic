@@ -8,7 +8,7 @@ data class TrackResponse(
     val cover: String?
 )
 
-data class LoginRespose(
+data class LoginResponse(
     val token: String,
     val id: Int,
 )
