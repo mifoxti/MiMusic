@@ -9,10 +9,15 @@ interface ApiService {
     @GET("/tracks")
     suspend fun getAllTracks(): Response<List<TrackResponse>>
 
-    @GET("tracks/{id}/stream")
+    @GET("/tracks/{id}/stream")
     suspend fun streamTrack(
         @Path("id") id: Int
     ): Response<ResponseBody>
+
+    @POST("/register")
+    suspend fun registerUser(
+        @Body body: RegisterRequest
+    ): Response<RegisterResponse>
 //    // Пример GET запроса
 //    @GET("api/items")
 //    suspend fun getItems(): Response<List<Item>>

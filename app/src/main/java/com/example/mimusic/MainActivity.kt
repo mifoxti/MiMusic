@@ -9,6 +9,7 @@ import com.example.mimusic.fragments.FragmentMain
 import com.example.mimusic.services.MiniPlayerHandler
 import com.example.mimusic.services.MusicPlayer
 import androidx.appcompat.app.AppCompatDelegate
+import com.example.mimusic.fragments.RegisterFragment
 
 class MainActivity : AppCompatActivity() {
     private lateinit var miniPlayerHandler: MiniPlayerHandler
@@ -20,28 +21,25 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Инициализация мини-плеера
         miniPlayerView = findViewById(R.id.miniPlayerContainer)
         miniPlayerHandler = MiniPlayerHandler(this, miniPlayerView)
 
-        // Показываем или скрываем мини-плеер в зависимости от состояния MusicPlayer
-        updateMiniPlayerVisibility()
-
-        // Подписываемся на уведомления о начале воспроизведения
         MusicPlayer.addPlaybackStateListener {
             updateMiniPlayerVisibility()
         }
 
-        // Загружаем начальный фрагмент
         if (savedInstanceState == null) {
-            supportFragmentManager.beginTransaction()
-                .replace(R.id.contentContainer, FragmentMain())
-                .commit()
+            val sharedPref = getSharedPreferences("UserPrefs", MODE_PRIVATE)
+            val userId = sharedPref.getInt("currentUserId", -1)
 
-            // Добавляем навигационный бар
-            supportFragmentManager.beginTransaction()
-                .replace(R.id.bottomNavigationContainer, BottomNavigationFragment())
-                .commit()
+            if (userId != -1) {
+                showMainScreen()
+            } else {
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.contentContainer, RegisterFragment())
+                    .commit()
+                hideMiniPlayer()
+            }
         }
     }
 
@@ -56,6 +54,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun showMainScreen() {
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.contentContainer, FragmentMain())
+            .commit()
+
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.bottomNavigationContainer, BottomNavigationFragment())
+            .commit()
+
+        updateMiniPlayerVisibility()
+    }
+
     private fun updateMiniPlayerVisibility() {
         if (MusicPlayer.getCurrentSong() != null && MusicPlayer.isPlaying()) {
             miniPlayerView.visibility = View.VISIBLE
@@ -64,19 +74,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun hideMiniPlayer() {
+        miniPlayerView.visibility = View.GONE
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        miniPlayerHandler.release() // Останавливаем обновление прогресса
-
+        miniPlayerHandler.release()
     }
 
     override fun onBackPressed() {
-        // Проверяем, есть ли фрагменты в back stack
         if (supportFragmentManager.backStackEntryCount > 0) {
-            // Возвращаемся на предыдущий фрагмент
             supportFragmentManager.popBackStack()
         } else {
-            // Если back stack пуст, завершаем Activity
             super.onBackPressed()
         }
     }
