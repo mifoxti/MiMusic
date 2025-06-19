@@ -1,5 +1,6 @@
 package com.example.mimusic.fragments
 
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,13 +10,18 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.lifecycle.lifecycleScope
 import com.example.mimusic.R
 import com.example.mimusic.datas.Song
+import com.example.mimusic.serverSide.ApiClient
+import com.example.mimusic.serverSide.ToggleLikeRequest
 import com.example.mimusic.services.MusicPlayer
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
-
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MusicBottomSheetFragment : BottomSheetDialogFragment() {
 
@@ -24,6 +30,7 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
     private lateinit var currentTimeTextView: TextView
     private lateinit var totalTimeTextView: TextView
     private lateinit var playButton: MaterialButton
+    private lateinit var btnLike: MaterialButton
     private lateinit var artistTextView: TextView
     private val handler = Handler(Looper.getMainLooper())
     private val updateSeekBar = object : Runnable {
@@ -69,6 +76,7 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         currentTimeTextView = view.findViewById(R.id.currentTimeTextView)
         totalTimeTextView = view.findViewById(R.id.totalTimeTextView)
         playButton = view.findViewById(R.id.playButton)
+        btnLike = view.findViewById(R.id.galleryBtnLove)
         val prevButton = view.findViewById<MaterialButton>(R.id.iconButton)
         val nextButton = view.findViewById<MaterialButton>(R.id.nextButton)
 
@@ -136,7 +144,36 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
 
+        btnLike.setOnClickListener {
+            toggleFavorite()
+        }
+
+        loadLikeStatus()
+
         return view
+    }
+
+    private fun loadLikeStatus() {
+        val userId = requireContext()
+            .getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+            .getInt("currentUserId", -1)
+        val trackId = song.idOnServer
+
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val response = ApiClient.apiService.isTrackLiked(trackId, userId)
+                if (response.isSuccessful) {
+                    val isLiked = response.body()?.status ?: false
+                    withContext(Dispatchers.Main) {
+                        updateLikeButtonState(isLiked)
+                    }
+                } else {
+                    Log.e("LikeCheck", "Server error: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("LikeCheck", "Exception checking like", e)
+            }
+        }
     }
 
     private fun openArtistProfile(artistName: String) {
@@ -175,10 +212,60 @@ class MusicBottomSheetFragment : BottomSheetDialogFragment() {
         handler.removeCallbacks(updateSeekBar)
     }
 
+    private fun toggleFavorite() {
+        val currentSong = MusicPlayer.getCurrentSong() ?: return
+        val currentUserId = requireContext()
+            .getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+            .getInt("currentUserId", -1)
+        val trackId = currentSong.idOnServer
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val response = ApiClient.apiService.toggleLike(
+                    trackId = trackId,
+                    request = ToggleLikeRequest(currentUserId)
+                )
+
+                if (response.isSuccessful) {
+                    val result = response.body()
+                    val isLiked = result?.status ?: false
+                    withContext(Dispatchers.Main) {
+                        updateLikeButtonState(isLiked)
+                    }
+                } else {
+                    Log.e("Like", "Error toggling like: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("Like", "Exception toggling like", e)
+            }
+        }
+    }
+
+
+    private fun updateLikeButtonState(isLiked: Boolean) {
+        btnLike.animate()
+            .scaleX(1.2f)
+            .scaleY(1.2f)
+            .setDuration(150)
+            .withEndAction {
+                btnLike.setIconResource(
+                    if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
+                )
+                btnLike.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(150)
+                    .start()
+            }
+            .start()
+        btnLike.setIconResource(
+            if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
+        )
+    }
+
     private fun refreshUI() {
         val newSong = MusicPlayer.getCurrentSong() ?: return
         song = newSong
-
+        loadLikeStatus()
         view?.findViewById<TextView>(R.id.songTitleTextView)?.text = song.title
         artistTextView.text = song.artist ?: "Artist"
         view?.findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.profile_pic)

@@ -24,6 +24,17 @@ interface ApiService {
         @Body body: LoginRequest
     ): Response<LoginResponse>
 
+    @POST("/tracks/{trackId}/like")
+    suspend fun toggleLike(
+        @Path("trackId") trackId: Int,
+        @Body request: ToggleLikeRequest
+    ): Response<ToggleLikeResponse>
+
+    @GET("tracks/{trackId}/like")
+    suspend fun isTrackLiked(
+        @Path("trackId") trackId: Int,
+        @Query("userId") userId: Int
+    ): Response<ToggleLikeResponse>
 //    // Пример GET запроса
 //    @GET("api/items")
 //    suspend fun getItems(): Response<List<Item>>

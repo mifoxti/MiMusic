@@ -13,14 +13,14 @@ data class Song(
     constructor(parcel: Parcel) : this(
         title = parcel.readString() ?: "",
         idOnServer = parcel.readInt() ?: 0,
-        artist = parcel.readString() ?: "",  // Added artist field
+        artist = parcel.readString() ?: "",
         coverArt = parcel.readParcelable(Bitmap::class.java.classLoader)
     )
 
     override fun writeToParcel(parcel: Parcel, flags: Int) {
         parcel.writeString(title)
         parcel.writeInt(idOnServer)
-        parcel.writeString(artist)  // Added artist field
+        parcel.writeString(artist)
         parcel.writeParcelable(coverArt, flags)
     }
 

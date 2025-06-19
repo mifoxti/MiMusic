@@ -161,29 +161,37 @@ object MusicPlayer {
     }
 
     private fun playFile(context: Context, file: File, song: Song, onPrepared: (() -> Unit)?) {
-        mediaPlayer?.release()
-        mediaPlayer = MediaPlayer().apply {
-            setDataSource(file.path)
-            setOnPreparedListener {
+        if (mediaPlayer == null) {
+            mediaPlayer = MediaPlayer()
+        } else {
+            mediaPlayer?.reset() // Сброс перед новой загрузкой
+        }
+
+        try {
+            mediaPlayer?.setDataSource(file.path)
+            mediaPlayer?.setOnPreparedListener {
                 isPrepared = true
-                start()
+                mediaPlayer?.start()
                 currentSong = song
                 onPrepared?.invoke()
                 notifySongChanged()
                 notifyPlaybackStateChanged()
                 startProgressUpdates()
             }
-            setOnCompletionListener {
+            mediaPlayer?.setOnCompletionListener {
                 notifyPlaybackStateChanged()
                 playNext(context)
             }
-            setOnErrorListener { _, what, extra ->
+            mediaPlayer?.setOnErrorListener { _, what, extra ->
                 Log.e("MusicPlayer", "Playback error: what=$what, extra=$extra")
                 false
             }
-            prepareAsync()
+            mediaPlayer?.prepareAsync()
+        } catch (e: Exception) {
+            Log.e("MusicPlayer", "Error setting data source", e)
         }
     }
+
 
     private fun startProgressUpdates() {
         progressUpdateJob?.cancel()

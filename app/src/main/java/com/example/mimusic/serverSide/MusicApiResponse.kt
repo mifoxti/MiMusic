@@ -25,3 +25,9 @@ data class SearchRemote(
     val duration: Int?,
     val coverArt: String?,
 )
+
+data class ToggleLikeRequest(val userId: Int)
+
+data class ToggleLikeResponse(
+    val status: Boolean,
+)
