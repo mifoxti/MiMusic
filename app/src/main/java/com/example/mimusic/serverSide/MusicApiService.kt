@@ -35,6 +35,12 @@ interface ApiService {
         @Path("trackId") trackId: Int,
         @Query("userId") userId: Int
     ): Response<ToggleLikeResponse>
+
+    @GET("/search")
+    suspend fun searchTracks(
+        @Query("q") query: String,
+        @Query("userId") userId: Int
+    ): Response<List<SearchRemote>>
 //    // Пример GET запроса
 //    @GET("api/items")
 //    suspend fun getItems(): Response<List<Item>>

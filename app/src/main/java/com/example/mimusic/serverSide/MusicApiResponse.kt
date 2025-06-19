@@ -24,6 +24,7 @@ data class SearchRemote(
     val artist: String?,
     val duration: Int?,
     val coverArt: String?,
+    val isLiked: Boolean?
 )
 
 data class ToggleLikeRequest(val userId: Int)

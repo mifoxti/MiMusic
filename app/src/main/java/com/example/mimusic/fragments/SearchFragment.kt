@@ -16,13 +16,20 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.mimusic.adapters.SearchResultsAdapter
+import com.example.mimusic.fragments.MusicBottomSheetFragment
+import com.example.mimusic.serverSide.ApiClient
 import com.example.mimusic.serverSide.GeniusApiService
 import com.example.mimusic.serverSide.GeniusResponse
+import com.example.mimusic.serverSide.SearchRemote
 import com.example.mimusic.serverSide.SongEl
+import com.example.mimusic.serverSide.ToggleLikeRequest
+import kotlinx.coroutines.launch
 import retrofit2.*
 import retrofit2.converter.gson.GsonConverterFactory
 
@@ -37,27 +44,6 @@ class SearchFragment : Fragment() {
     private lateinit var offlineErrorView: LinearLayout
     private lateinit var refreshButton: Button
     private var lastQuery: String = ""
-
-    private val apiService: GeniusApiService by lazy {
-        Retrofit.Builder()
-            .baseUrl("https://api.genius.com/")
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(GeniusApiService::class.java)
-    }
-
-    private val isApiAvailable: Boolean
-        get() {
-            val connectivityManager =
-                context?.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val networkInfo = connectivityManager.activeNetworkInfo
-            return networkInfo != null && networkInfo.isConnected
-        }
-
-    private val fakeSongs = listOf(
-        SongEl(1, "Fake Song 1", "mifoxti", "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png"),
-        SongEl(2, "Fake Song 2", "mifoxti", "https://images.genius.com/95cfea0187b37c7731e11d54b07d2415.1000x1000x1.png")
-    )
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -75,7 +61,10 @@ class SearchFragment : Fragment() {
         refreshButton = view.findViewById(R.id.refreshButton)
 
         recyclerView.layoutManager = LinearLayoutManager(context)
-        adapter = SearchResultsAdapter(emptyList())
+        adapter = SearchResultsAdapter(emptyList(),
+            onLikeClick = { song, position -> toggleLike(song, position) },
+            onItemClick = { song -> playSelectedSong(song) }
+        )
         recyclerView.adapter = adapter
 
         // Retry button handling
@@ -125,38 +114,76 @@ class SearchFragment : Fragment() {
 
     private fun searchSongs(query: String) {
         lastQuery = query
-        if (isApiAvailable) {
-            Log.d("SearchFragment", "Searching for: $query")
-            val token = "Bearer F7SMuBxsuCpznlmzMqdhcvT5hTuCbbULXJ3pGES8HbFfaTVOJFXgUMpTMFiU7nfA"
-            apiService.searchSongs(token, query).enqueue(object : Callback<GeniusResponse> {
-                override fun onResponse(
-                    call: Call<GeniusResponse>,
-                    response: Response<GeniusResponse>
-                ) {
-                    if (response.isSuccessful) {
-                        response.body()?.response?.hits?.map { it.result }?.let {
-                            showResults(it)
-                        }
-                    } else {
-                        showErrorPlaceholder()
-                    }
-                }
+        val userId = requireContext()
+            .getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+            .getInt("currentUserId", -1)
 
-                override fun onFailure(call: Call<GeniusResponse>, t: Throwable) {
+        if (userId == -1) {
+            showErrorPlaceholder()
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                val response = ApiClient.apiService.searchTracks(query, userId)
+                if (response.isSuccessful) {
+                    val songs = response.body() ?: emptyList()
+                    showResults(songs)
+                } else {
                     showErrorPlaceholder()
                 }
-            })
-        } else {
-            // Показываем фейковые песни и сообщение об оффлайн-режиме
-            offlineErrorView.visibility = View.VISIBLE
-            emptyView.visibility = View.GONE
-            errorView.visibility = View.GONE
-            recyclerView.visibility = View.VISIBLE
-            adapter.updateData(fakeSongs)
+            } catch (e: Exception) {
+                Log.e("SearchFragment", "Ошибка поиска", e)
+                showErrorPlaceholder()
+            }
         }
     }
 
-    private fun showResults(results: List<SongEl>) {
+    private fun playSelectedSong(song: SearchRemote) {
+        val convertedList = adapter.songs.map {
+            com.example.mimusic.datas.Song(
+                idOnServer = it.id,
+                title = it.title,
+                artist = it.artist ?: "",
+                coverArt = it.coverArt?.let { base64 ->
+                    val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                },
+            )
+        }
+
+        val selected = convertedList.find { it.idOnServer == song.id }
+        if (selected != null) {
+            com.example.mimusic.services.MusicPlayer.setSongList(convertedList)
+            com.example.mimusic.services.MusicPlayer.playSong(requireContext(), selected)
+            val bottomSheetFragment = MusicBottomSheetFragment.newInstance(selected)
+            bottomSheetFragment.show(parentFragmentManager, bottomSheetFragment.tag)
+        }
+    }
+
+    private fun toggleLike(song: SearchRemote, position: Int) {
+        val userId = requireContext()
+            .getSharedPreferences("UserPrefs", Context.MODE_PRIVATE)
+            .getInt("currentUserId", -1)
+
+        lifecycleScope.launch {
+            try {
+                val response = ApiClient.apiService.toggleLike(song.id, ToggleLikeRequest(userId))
+                if (response.isSuccessful) {
+                    val updated = response.body()?.status == true
+                    adapter.updateData(
+                        adapter.songs.toMutableList().apply {
+                            this[position] = this[position].copy(isLiked = updated)
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                Toast.makeText(requireContext(), "Ошибка лайка", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun showResults(results: List<SearchRemote>) {
         offlineErrorView.visibility = View.GONE
         if (results.isEmpty()) {
             emptyView.visibility = View.VISIBLE
