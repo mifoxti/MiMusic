@@ -51,6 +51,11 @@ interface ApiService {
         @Query("th") newThought: String
     ): Response<Map<String, String>>
 
+    @GET("/users/{id}/loved")
+    suspend fun getLikedTracks(
+        @Path("id") userId: Int)
+    : Response<List<LovedRemote>>
+
 //    // Пример GET запроса
 //    @GET("api/items")
 //    suspend fun getItems(): Response<List<Item>>

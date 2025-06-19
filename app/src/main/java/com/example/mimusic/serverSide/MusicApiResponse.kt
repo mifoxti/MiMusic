@@ -32,3 +32,10 @@ data class ToggleLikeRequest(val userId: Int)
 data class ToggleLikeResponse(
     val status: Boolean,
 )
+
+data class LovedRemote(
+    val id: Int,
+    val title: String,
+    val artist: String?,
+    val coverArt: String?,
+)
