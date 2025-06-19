@@ -39,3 +39,16 @@ data class LovedRemote(
     val artist: String?,
     val coverArt: String?,
 )
+
+data class ArtistRemote(
+    val thoughts: String,
+    val songs: List<ArtistTrackRemote>
+)
+
+data class ArtistTrackRemote(
+    val id: Int,
+    val title: String,
+    val artist: String,
+    val coverArt: String?,
+    var isLiked: Boolean
+)

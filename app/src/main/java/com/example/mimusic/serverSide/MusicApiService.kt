@@ -56,19 +56,10 @@ interface ApiService {
         @Path("id") userId: Int)
     : Response<List<LovedRemote>>
 
-//    // Пример GET запроса
-//    @GET("api/items")
-//    suspend fun getItems(): Response<List<Item>>
-//
-//    // Пример POST запроса с телом
-//    @POST("api/items")
-//    suspend fun createItem(@Body item: Item): Response<Item>
-//
-//    // Пример запроса с параметрами
-//    @GET("api/items/{id}")
-//    suspend fun getItemById(@Path("id") id: String): Response<Item>
-//
-//    // Пример запроса с query параметрами
-//    @GET("api/items")
-//    suspend fun searchItems(@Query("query") query: String): Response<List<Item>>
+    @GET("/artist")
+    suspend fun getArtistInfo(
+        @Query("name") name: String,
+        @Query("userId") userId: Int
+    ): Response<ArtistRemote>
+    // Примеры запросов больше не нужны, я закончил, Я СВОБООООДЕЕЕЕН (пока не настанет время диплома)
 }
