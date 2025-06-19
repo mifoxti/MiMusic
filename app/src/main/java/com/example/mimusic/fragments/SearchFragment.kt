@@ -1,7 +1,6 @@
 package com.example.mimusic
 
 import android.content.Context
-import android.net.ConnectivityManager
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -24,14 +23,9 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.mimusic.adapters.SearchResultsAdapter
 import com.example.mimusic.fragments.MusicBottomSheetFragment
 import com.example.mimusic.serverSide.ApiClient
-import com.example.mimusic.serverSide.GeniusApiService
-import com.example.mimusic.serverSide.GeniusResponse
 import com.example.mimusic.serverSide.SearchRemote
-import com.example.mimusic.serverSide.SongEl
 import com.example.mimusic.serverSide.ToggleLikeRequest
 import kotlinx.coroutines.launch
-import retrofit2.*
-import retrofit2.converter.gson.GsonConverterFactory
 
 class SearchFragment : Fragment() {
     private lateinit var searchEditText: EditText

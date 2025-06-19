@@ -41,6 +41,16 @@ interface ApiService {
         @Query("q") query: String,
         @Query("userId") userId: Int
     ): Response<List<SearchRemote>>
+
+    @GET("/users/{id}/thought")
+    suspend fun getThought(@Path("id") userId: Int): Response<Map<String, String>>
+
+    @POST("/users/{id}/thought")
+    suspend fun updateThought(
+        @Path("id") userId: Int,
+        @Query("th") newThought: String
+    ): Response<Map<String, String>>
+
 //    // Пример GET запроса
 //    @GET("api/items")
 //    suspend fun getItems(): Response<List<Item>>
