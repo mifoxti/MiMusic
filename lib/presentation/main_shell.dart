@@ -1,9 +1,14 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
+import '../core/settings/app_settings.dart';
+import '../core/settings/settings_repository.dart';
 import '../core/theme/app_theme.dart';
 import '../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/home/presentation/widgets/floating_mini_player.dart';
+import 'pages/profile_page.dart';
 
 /// Главный shell приложения: одна активность — много фрагментов.
 /// Мини-плеер и боттом-бар остаются на месте при переключении вкладок.
@@ -11,9 +16,17 @@ class MainShell extends StatefulWidget {
   const MainShell({
     super.key,
     required this.getHomeSectionUseCase,
+    required this.themeMode,
+    required this.onThemeChanged,
+    required this.settingsRepository,
+    required this.initialSettings,
   });
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeChanged;
+  final SettingsRepository settingsRepository;
+  final AppSettings initialSettings;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -68,9 +81,11 @@ class _MainShellState extends State<MainShell> {
                     icon: Icons.search_rounded,
                     label: 'Search',
                   ),
-                  _PlaceholderFragment(
-                    icon: Icons.person_rounded,
-                    label: 'Profile',
+                  ProfilePage(
+                    themeMode: widget.themeMode,
+                    onThemeChanged: widget.onThemeChanged,
+                    settingsRepository: widget.settingsRepository,
+                    initialSettings: widget.initialSettings,
                   ),
                 ],
               ),
@@ -142,41 +157,54 @@ class _BottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-      decoration: BoxDecoration(
-        color: palette.navBarBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
+    const barRadius = 36.0;
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(barRadius)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+          decoration: BoxDecoration(
+            color: palette.navBarBackground.withValues(alpha: 0.65),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(barRadius)),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.15),
+                width: 1,
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 16,
+                offset: const Offset(0, -2),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _NavItem(
-            icon: Icons.music_note_rounded,
-            label: 'Music',
-            isSelected: selectedIndex == 0,
-            onTap: () => onTap(0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _NavItem(
+                icon: Icons.music_note_rounded,
+                label: 'Music',
+                isSelected: selectedIndex == 0,
+                onTap: () => onTap(0),
+              ),
+              _NavItem(
+                icon: Icons.search_rounded,
+                label: 'Search',
+                isSelected: selectedIndex == 1,
+                onTap: () => onTap(1),
+              ),
+              _NavItem(
+                icon: Icons.person_rounded,
+                label: 'Profile',
+                isSelected: selectedIndex == 2,
+                onTap: () => onTap(2),
+              ),
+            ],
           ),
-          _NavItem(
-            icon: Icons.search_rounded,
-            label: 'Search',
-            isSelected: selectedIndex == 1,
-            onTap: () => onTap(1),
-          ),
-          _NavItem(
-            icon: Icons.person_rounded,
-            label: 'Profile',
-            isSelected: selectedIndex == 2,
-            onTap: () => onTap(2),
-          ),
-        ],
+        ),
       ),
     );
   }

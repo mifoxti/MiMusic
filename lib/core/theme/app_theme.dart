@@ -39,6 +39,11 @@ abstract final class AppTheme {
         onSurface: p.textPrimary,
         secondary: p.primaryDark,
         onSecondary: p.textPrimary,
+        outline: p.textMuted,
+        outlineVariant: p.primaryDark,
+        surfaceContainerHighest: p.cardBackground,
+        surfaceContainerHigh: p.primary,
+        surfaceContainer: p.primaryLight,
       ),
       scaffoldBackgroundColor: p.primaryLight,
       fontFamily: 'Roboto',
@@ -47,6 +52,7 @@ abstract final class AppTheme {
         elevation: 0,
         centerTitle: true,
       ),
+      iconTheme: IconThemeData(color: p.textSecondary),
       cardTheme: CardThemeData(
         color: p.cardBackground,
         elevation: 0,
@@ -60,6 +66,7 @@ abstract final class AppTheme {
         unselectedItemColor: p.textMuted,
         type: BottomNavigationBarType.fixed,
       ),
+      dividerColor: p.primaryDark,
       extensions: [const AppPaletteExtension(palette: LightPalette())],
     );
   }

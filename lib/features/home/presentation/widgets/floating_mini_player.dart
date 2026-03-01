@@ -31,106 +31,133 @@ class FloatingMiniPlayer extends StatelessWidget {
     const coverRadius = AppConstants.radiusMedium;
     const height = 64.0;
     const coverSize = 48.0;
-    // Ярче в тёмной теме: выше alpha и более насыщенные цвета
+    // Фон плеера и прогрессия: в светлой теме — светлые пастельные розовые без серого
     final progressColor = isDark
-        ? palette.accent.withValues(alpha: 0.75)
-        : palette.accent.withValues(alpha: 0.55);
+        ? palette.accent.withValues(alpha: 0.65)
+        : palette.accent;
     final progressRemainColor = isDark
-        ? palette.primary.withValues(alpha: 0.5)
-        : palette.primaryDark.withValues(alpha: 0.4);
+        ? const Color(0xFF5C3A48)
+        : const Color(0xFFE8D4DE); // светлый пастельно-розовый (светлая тема, без серого)
+    final cardColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.white.withValues(alpha: 0.82); // светлее, без серого оттенка
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(radius),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(radius),
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            height: height,
-            child: Stack(
-              clipBehavior: Clip.antiAlias,
-              children: [
-                // Подложка: прогресс трека (скругления по краям для чистого левого края)
-                Positioned.fill(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final progress = trackProgress.clamp(0.0, 1.0);
-                      return Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(radius),
-                              bottomLeft: Radius.circular(radius),
-                            ),
-                            child: SizedBox(
-                              width: constraints.maxWidth * progress,
-                              child: Container(color: progressColor),
-                            ),
-                          ),
-                          Expanded(
-                            child: Container(color: progressRemainColor),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                // Контент: play, название, квадратная обложка справа
-                // Positioned с left: -2 — перекрывает артефакт на левом крае
-                Positioned(
-                  left: -2,
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: palette.cardBackground.withValues(alpha: 0.98),
-                      borderRadius: BorderRadius.circular(radius),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: isDark
+                  ? palette.textMuted.withValues(alpha: 0.45)
+                  : palette.primaryDark.withValues(alpha: 0.7),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            clipBehavior: Clip.antiAlias,
+            child: SizedBox(
+              height: height,
+              child: Stack(
+                clipBehavior: Clip.antiAlias,
+                children: [
+                  // Подложка: сначала фон целиком, поверх — проигранная часть со скруглением справа (без стыка двух клипов)
+                  Positioned.fill(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final progress = trackProgress.clamp(0.0, 1.0);
+                        final progressWidth = constraints.maxWidth * progress;
+                        return Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            Container(color: progressRemainColor),
+                            if (progressWidth > 0)
+                              Container(
+                                width: progressWidth,
+                                height: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: progressColor,
+                                  borderRadius: BorderRadius.horizontal(
+                                    left: const Radius.circular(radius),
+                                    right: const Radius.circular(radius),
+                                  ),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? palette.textMuted.withValues(alpha: 0.5)
+                                        : palette.primaryDark.withValues(alpha: 0.85),
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        size: 28,
-                        color: palette.textPrimary,
+                  ),
+                  // Контент: play, название, квадратная обложка справа
+                  Positioned(
+                    left: -2,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(radius),
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          trackTitle,
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
+                      child: Row(
+                        children: [
+                          Icon(
+                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            size: 28,
                             color: palette.textPrimary,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      // Обложка: null = заглушка; позже с сервера — URL в coverAssetPath.
-                      buildCoverImage(
-                        imageUrl: coverAssetPath,
-                        width: coverSize,
-                        height: coverSize,
-                        borderRadius: BorderRadius.circular(coverRadius),
-                        placeholder: Container(
-                          color: palette.accent.withValues(alpha: 0.75),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.music_note_rounded,
-                            color: Colors.white.withValues(alpha: 0.95),
-                            size: 26,
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              trackTitle,
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                color: palette.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 14),
+                          buildCoverImage(
+                            imageUrl: coverAssetPath,
+                            width: coverSize,
+                            height: coverSize,
+                            borderRadius: BorderRadius.circular(coverRadius),
+                            placeholder: Container(
+                              color: palette.accent.withValues(alpha: 0.8),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.music_note_rounded,
+                                color: Colors.white.withValues(alpha: 0.95),
+                                size: 26,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

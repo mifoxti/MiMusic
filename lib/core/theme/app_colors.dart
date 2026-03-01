@@ -24,46 +24,46 @@ abstract class AppColorPalette {
   Color get playbackButtonIcon;
 }
 
-/// Светлая тема — розовая гамма.
+/// Светлая тема — пастельная розовая гамма без серого, с усиленным контрастом.
 class LightPalette implements AppColorPalette {
   const LightPalette();
 
   @override
-  Color get primaryLight => const Color(0xFFFDF2F5);
+  Color get primaryLight => const Color(0xFFFDF0F4);
   @override
-  Color get primary => const Color(0xFFF8E4E9);
+  Color get primary => const Color(0xFFF8DCE6);
   @override
-  Color get primaryDark => const Color(0xFFF0D4DC);
+  Color get primaryDark => const Color(0xFFF0CCDC);
   @override
   Color get accent => const Color(0xFFD84A7A);
   @override
   Color get accentDark => const Color(0xFFB83A65);
 
   @override
-  Color get textPrimary => const Color(0xFF2D2528);
+  Color get textPrimary => const Color(0xFF2E1C26);
   @override
-  Color get textSecondary => const Color(0xFF5C5054);
+  Color get textSecondary => const Color(0xFF6B4D5C);
   @override
-  Color get textMuted => const Color(0xFF8E8488);
+  Color get textMuted => const Color(0xFF9A7A8A);
 
   @override
-  Color get cardBackground => const Color(0xFFF5E6EB);
+  Color get cardBackground => const Color(0xFFF5DCE8);
   @override
-  Color get navBarBackground => const Color(0xFFFBF5F7);
+  Color get navBarBackground => const Color(0xFFFBF2F5);
   @override
-  Color get navActiveBackground => const Color(0xFFF5E6EB);
+  Color get navActiveBackground => const Color(0xFFF2DEE6);
 
   @override
-  Color get gradientStart => const Color(0xFFFDF2F5);
+  Color get gradientStart => const Color(0xFFFDF0F4);
   @override
-  Color get gradientMiddle => const Color(0xFFFAE8ED);
+  Color get gradientMiddle => const Color(0xFFFAE4EC);
   @override
-  Color get gradientEnd => const Color(0xFFF5DCE4);
+  Color get gradientEnd => const Color(0xFFF5D8E4);
 
   @override
-  Color get playbackButtonBg => const Color(0xFFE8E0E4);
+  Color get playbackButtonBg => const Color(0xFFE8D4DE);
   @override
-  Color get playbackButtonIcon => const Color(0xFF4A4050);
+  Color get playbackButtonIcon => const Color(0xFF4A3040);
 }
 
 /// Тёмная тема — розово-тёмная гамма.
