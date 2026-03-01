@@ -10,6 +10,7 @@ class HomeSection {
     this.listeningFriends = const [],
     this.latestReleases = const [],
     this.featuredTrackTitle,
+    this.featuredTrackCoverAsset,
     this.isPlaying = false,
   });
 
@@ -18,5 +19,7 @@ class HomeSection {
   final List<ListeningFriend> listeningFriends;
   final List<ReleaseItem> latestReleases;
   final String? featuredTrackTitle;
+  /// Путь к обложке текущего трека в мини-плеере (например, assets/images/cover.png).
+  final String? featuredTrackCoverAsset;
   final bool isPlaying;
 }

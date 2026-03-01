@@ -1,0 +1,233 @@
+import 'package:flutter/material.dart';
+
+import '../core/theme/app_theme.dart';
+import '../features/home/domain/use_cases/get_home_section_use_case.dart';
+import '../features/home/presentation/pages/home_page.dart';
+import '../features/home/presentation/widgets/floating_mini_player.dart';
+
+/// Главный shell приложения: одна активность — много фрагментов.
+/// Мини-плеер и боттом-бар остаются на месте при переключении вкладок.
+class MainShell extends StatefulWidget {
+  const MainShell({
+    super.key,
+    required this.getHomeSectionUseCase,
+  });
+
+  final GetHomeSectionUseCase getHomeSectionUseCase;
+
+  @override
+  State<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<MainShell> {
+  int _selectedIndex = 0;
+  bool _isPlaying = true;
+  String? _featuredTrackTitle;
+  String? _featuredTrackCoverAsset;
+
+  void _onSectionLoaded(String? featuredTrackTitle, String? featuredTrackCoverAsset, bool isPlaying) {
+    if (mounted) {
+      setState(() {
+        _featuredTrackTitle = featuredTrackTitle;
+        _featuredTrackCoverAsset = featuredTrackCoverAsset;
+        _isPlaying = isPlaying;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              palette.gradientStart,
+              palette.gradientMiddle,
+              palette.gradientEnd,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              IndexedStack(
+                index: _selectedIndex,
+                children: [
+                  HomePage(
+                    getHomeSectionUseCase: widget.getHomeSectionUseCase,
+                    onSectionLoaded: _onSectionLoaded,
+                    isPlaying: _isPlaying,
+                    onPlaybackToggle: () => setState(() => _isPlaying = !_isPlaying),
+                  ),
+                  _PlaceholderFragment(
+                    icon: Icons.search_rounded,
+                    label: 'Search',
+                  ),
+                  _PlaceholderFragment(
+                    icon: Icons.person_rounded,
+                    label: 'Profile',
+                  ),
+                ],
+              ),
+              if (_featuredTrackTitle != null)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 12,
+                  child: FloatingMiniPlayer(
+                    trackTitle: _featuredTrackTitle!,
+                    coverAssetPath: _featuredTrackCoverAsset,
+                    trackProgress: 0.5,
+                    isPlaying: _isPlaying,
+                    onTap: () => setState(() => _isPlaying = !_isPlaying),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: _BottomNavBar(
+        selectedIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+      ),
+    );
+  }
+}
+
+class _PlaceholderFragment extends StatelessWidget {
+  const _PlaceholderFragment({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 64, color: palette.textMuted),
+          const SizedBox(height: 16),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 18,
+              color: palette.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomNavBar extends StatelessWidget {
+  const _BottomNavBar({
+    required this.selectedIndex,
+    required this.onTap,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+      decoration: BoxDecoration(
+        color: palette.navBarBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _NavItem(
+            icon: Icons.music_note_rounded,
+            label: 'Music',
+            isSelected: selectedIndex == 0,
+            onTap: () => onTap(0),
+          ),
+          _NavItem(
+            icon: Icons.search_rounded,
+            label: 'Search',
+            isSelected: selectedIndex == 1,
+            onTap: () => onTap(1),
+          ),
+          _NavItem(
+            icon: Icons.person_rounded,
+            label: 'Profile',
+            isSelected: selectedIndex == 2,
+            onTap: () => onTap(2),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? palette.navActiveBackground : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 26,
+              color: isSelected ? palette.textPrimary : palette.textMuted,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected ? palette.textPrimary : palette.textMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

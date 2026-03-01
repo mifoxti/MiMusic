@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/cover_image.dart';
 import '../../domain/entities/release_item.dart';
 
 /// Горизонтальный карусельный список «Последние релизы» по центру с прокруткой слева направо.
@@ -14,8 +15,8 @@ class ReleasesSection extends StatelessWidget {
   final List<ReleaseItem> releases;
   final void Function(ReleaseItem item)? onItemTap;
 
-  static const double _itemSize = 120.0;
-  static const double _spacing = 14.0;
+  static const double _itemSize = 152.0;
+  static const double _spacing = 16.0;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +36,7 @@ class ReleasesSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 160,
+          height: 200,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: EdgeInsets.symmetric(horizontal: paddingHorizontal),
@@ -65,30 +66,34 @@ class _ReleaseChip extends StatelessWidget {
   final ReleaseItem item;
   final VoidCallback? onTap;
 
+  static const double _coverSize = 152.0;
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
-        width: 120,
+        width: _coverSize,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
+            buildCoverImage(
+              imageUrl: item.coverUrl,
+              width: _coverSize,
+              height: _coverSize,
+              borderRadius: BorderRadius.circular(_coverSize / 2),
+              placeholder: Container(
                 color: palette.primaryDark.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(60),
+                alignment: Alignment.center,
+                child: Icon(Icons.album, size: 64, color: palette.textMuted),
               ),
-              child: Icon(Icons.album, size: 48, color: palette.textMuted),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
               item.title,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w500,
                 color: palette.textPrimary,
               ),
