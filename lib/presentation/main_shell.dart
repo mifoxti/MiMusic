@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../core/audio/audio_player_service.dart';
 import '../core/settings/app_settings.dart';
 import '../core/settings/settings_repository.dart';
 import '../core/theme/app_theme.dart';
@@ -16,6 +17,7 @@ class MainShell extends StatefulWidget {
   const MainShell({
     super.key,
     required this.getHomeSectionUseCase,
+    required this.audioPlayerService,
     required this.themeMode,
     required this.onThemeChanged,
     required this.settingsRepository,
@@ -23,6 +25,7 @@ class MainShell extends StatefulWidget {
   });
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
+  final AudioPlayerService audioPlayerService;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final SettingsRepository settingsRepository;
@@ -34,19 +37,6 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
-  bool _isPlaying = true;
-  String? _featuredTrackTitle;
-  String? _featuredTrackCoverAsset;
-
-  void _onSectionLoaded(String? featuredTrackTitle, String? featuredTrackCoverAsset, bool isPlaying) {
-    if (mounted) {
-      setState(() {
-        _featuredTrackTitle = featuredTrackTitle;
-        _featuredTrackCoverAsset = featuredTrackCoverAsset;
-        _isPlaying = isPlaying;
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,9 +63,7 @@ class _MainShellState extends State<MainShell> {
                 children: [
                   HomePage(
                     getHomeSectionUseCase: widget.getHomeSectionUseCase,
-                    onSectionLoaded: _onSectionLoaded,
-                    isPlaying: _isPlaying,
-                    onPlaybackToggle: () => setState(() => _isPlaying = !_isPlaying),
+                    audioPlayerService: widget.audioPlayerService,
                   ),
                   _PlaceholderFragment(
                     icon: Icons.search_rounded,
@@ -86,22 +74,33 @@ class _MainShellState extends State<MainShell> {
                     onThemeChanged: widget.onThemeChanged,
                     settingsRepository: widget.settingsRepository,
                     initialSettings: widget.initialSettings,
+                    audioPlayerService: widget.audioPlayerService,
                   ),
                 ],
               ),
-              if (_featuredTrackTitle != null)
-                Positioned(
-                  left: 12,
-                  right: 12,
-                  bottom: 12,
-                  child: FloatingMiniPlayer(
-                    trackTitle: _featuredTrackTitle!,
-                    coverAssetPath: _featuredTrackCoverAsset,
-                    trackProgress: 0.5,
-                    isPlaying: _isPlaying,
-                    onTap: () => setState(() => _isPlaying = !_isPlaying),
-                  ),
-                ),
+              ListenableBuilder(
+                listenable: widget.audioPlayerService,
+                builder: (context, _) {
+                  final track = widget.audioPlayerService.currentTrack;
+                  if (track == null) return const SizedBox.shrink();
+                  final dur = widget.audioPlayerService.duration;
+                  final pos = widget.audioPlayerService.position;
+                  final progress = dur != null && dur.inMilliseconds > 0
+                      ? pos.inMilliseconds / dur.inMilliseconds
+                      : 0.0;
+                  return Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: FloatingMiniPlayer(
+                      track: track,
+                      trackProgress: progress,
+                      isPlaying: widget.audioPlayerService.isPlaying,
+                      onTap: () => widget.audioPlayerService.togglePlayPause(),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ),

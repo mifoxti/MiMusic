@@ -1,23 +1,21 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/cover_image.dart';
+import '../../../../core/audio/track.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/track_cover.dart';
 
 /// «Летающий» мини-плеер над боттом-баром: подложка с прогрессом, название трека, обложка справа.
 class FloatingMiniPlayer extends StatelessWidget {
   const FloatingMiniPlayer({
     super.key,
-    required this.trackTitle,
-    this.coverAssetPath,
+    required this.track,
     this.trackProgress = 0.5,
     this.isPlaying = true,
     this.onTap,
   });
 
-  final String trackTitle;
-  /// Путь к обложке в assets (например assets/images/cover.png).
-  final String? coverAssetPath;
+  final Track track;
   /// Прогресс трека 0.0..1.0.
   final double trackProgress;
   final bool isPlaying;
@@ -126,7 +124,7 @@ class FloatingMiniPlayer extends StatelessWidget {
                           const SizedBox(width: 14),
                           Expanded(
                             child: Text(
-                              trackTitle,
+                              track.title,
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w600,
@@ -137,8 +135,8 @@ class FloatingMiniPlayer extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 14),
-                          buildCoverImage(
-                            imageUrl: coverAssetPath,
+                          buildTrackCover(
+                            coverSource: track.coverBytes ?? track.coverFallbackPath,
                             width: coverSize,
                             height: coverSize,
                             borderRadius: BorderRadius.circular(coverRadius),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
@@ -15,12 +16,14 @@ class SettingsPage extends StatefulWidget {
     required this.onThemeChanged,
     required this.settingsRepository,
     required this.initialSettings,
+    required this.audioPlayerService,
   });
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+  final AudioPlayerService audioPlayerService;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -242,6 +245,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 builder: (context) => EqualizerPage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: widget.initialSettings,
+                  audioPlayerService: widget.audioPlayerService,
                 ),
               ),
             );

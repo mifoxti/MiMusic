@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
@@ -15,15 +16,18 @@ class _EqualizerPreset {
 }
 
 /// Отдельный экран, целиком посвящённый эквалайзеру. Загружает/сохраняет через [SettingsRepository].
+/// Применяет настройки к [AudioPlayerService] в реальном времени (Android).
 class EqualizerPage extends StatefulWidget {
   const EqualizerPage({
     super.key,
     required this.settingsRepository,
     required this.initialSettings,
+    required this.audioPlayerService,
   });
 
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+  final AudioPlayerService audioPlayerService;
 
   @override
   State<EqualizerPage> createState() => _EqualizerPageState();
@@ -63,6 +67,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
     await widget.settingsRepository.saveSettings(
       current.copyWith(equalizerGains: List.from(_gains), equalizerPreamp: _preamp),
     );
+    await widget.audioPlayerService.applyEqualizerFromSettings();
   }
 
   @override
@@ -71,19 +76,21 @@ class _EqualizerPageState extends State<EqualizerPage> {
     super.dispose();
   }
 
-  void _applyPreset(int index) {
+  void _applyPreset(int index) async {
     setState(() {
       _selectedPresetIndex = index;
       _gains = List<double>.from(_presets[index].gains);
     });
+    await widget.audioPlayerService.applyEqualizerGains(_gains);
   }
 
-  void _reset() {
+  Future<void> _reset() async {
     setState(() {
       _gains = List.filled(_bands, 0.0);
       _preamp = 0.0;
       _selectedPresetIndex = 0;
     });
+    await _saveEqualizer();
   }
 
   @override
@@ -251,7 +258,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Предусиление',
+                'Басс-буст',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -284,7 +291,10 @@ class _EqualizerPageState extends State<EqualizerPage> {
               min: -12,
               max: 12,
               divisions: 24,
-              onChanged: (v) => setState(() => _preamp = v),
+              onChanged: (v) async {
+                setState(() => _preamp = v);
+                await _saveEqualizer();
+              },
             ),
           ),
         ],
@@ -378,11 +388,12 @@ class _EqualizerPageState extends State<EqualizerPage> {
                                       min: -12,
                                       max: 12,
                                       divisions: 24,
-                                      onChanged: (v) {
+                                      onChanged: (v) async {
                                         setState(() {
                                           _gains[i] = v;
                                           _selectedPresetIndex = null;
                                         });
+                                        await widget.audioPlayerService.applyEqualizerGains(_gains);
                                       },
                                     ),
                                   ),
@@ -427,7 +438,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
 
   Widget _buildResetButton(AppColorPalette palette) {
     return TextButton.icon(
-      onPressed: _reset,
+      onPressed: () async => _reset(),
       icon: Icon(Icons.refresh_rounded, size: 18, color: palette.textSecondary),
       label: Text(
         'Сбросить',

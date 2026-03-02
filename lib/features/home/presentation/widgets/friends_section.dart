@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cover_image.dart';
-import '../../../../core/constants/app_constants.dart';
+import '../../../../core/widgets/marquee_text.dart';
 import '../../domain/entities/friend_playback.dart';
 import '../../domain/entities/listening_friend.dart';
 
@@ -64,11 +66,11 @@ class FriendsSection extends StatelessWidget {
                       },
                     ),
                   ),
-                  // Контент поверх подложки: обложка — квадрат на всю высоту карточки, углы совпадают с карточкой
+                  // Контент: слева обложка + название/автор, справа — блок друзей прижат к правому краю бокса
                   SizedBox(
                     height: 110,
                     child: Container(
-                      padding: const EdgeInsets.only(right: 16),
+                      padding: const EdgeInsets.only(left: 12, top: 10, bottom: 10),
                       decoration: BoxDecoration(
                         color: palette.cardBackground.withValues(alpha: 0.88),
                         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
@@ -76,19 +78,33 @@ class FriendsSection extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          if (friendPlayback != null)
+                          if (friendPlayback != null) ...[
                             _FriendPlaybackContent(playback: friendPlayback!),
-                          if (friendPlayback != null) const SizedBox(width: 12),
+                            const SizedBox(width: 10),
+                          ],
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              child: Column(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: _TrackTitleMarquee(
+                                title: friendPlayback?.title ?? '',
+                                artistName: friendPlayback?.artistName ?? '',
+                                palette: palette,
+                              ),
+                            ),
+                          ),
+                          Flexible(
+                            fit: FlexFit.loose,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 140),
+                                child: Column(
                                 mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.end,
                                 mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Сейчас слушают:',
+                                    'Слушают:',
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
@@ -101,6 +117,7 @@ class FriendsSection extends StatelessWidget {
                               ),
                             ),
                           ),
+                        ),
                         ],
                       ),
                     ),
@@ -115,7 +132,7 @@ class FriendsSection extends StatelessWidget {
   }
 }
 
-/// Левая часть блока: квадратная обложка (углы совпадают с карточкой), рядом название и автор.
+/// Левая часть: только квадратная обложка трека.
 class _FriendPlaybackContent extends StatelessWidget {
   const _FriendPlaybackContent({required this.playback});
 
@@ -125,75 +142,63 @@ class _FriendPlaybackContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     const radius = AppConstants.radiusLarge;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final side = constraints.maxHeight.isFinite && constraints.maxHeight > 0
-            ? constraints.maxHeight
-            : 72.0;
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Квадратная обложка. coverUrl = null → заглушка; позже с сервера — URL в coverUrl.
-            SizedBox(
-              width: side,
-              height: side,
-              child: buildCoverImage(
-                imageUrl: playback.coverUrl,
-                width: side,
-                height: side,
-                borderRadius: BorderRadius.circular(radius),
-                placeholder: Container(
-                  color: palette.accent.withValues(alpha: 0.6),
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.music_note, color: Colors.white54, size: 40),
-                ),
-              ),
+    const side = 90.0;
+    return SizedBox(
+      width: side,
+      height: side,
+      child: buildCoverImage(
+        imageUrl: playback.coverUrl,
+        width: side,
+        height: side,
+        borderRadius: BorderRadius.circular(radius),
+        placeholder: Container(
+          color: palette.accent.withValues(alpha: 0.6),
+          alignment: Alignment.center,
+          child: const Icon(Icons.music_note, color: Colors.white54, size: 40),
+        ),
+      ),
+    );
+  }
+}
+
+/// Название и автор трека; при нехватке места текст крутится (бегущая строка).
+class _TrackTitleMarquee extends StatelessWidget {
+  const _TrackTitleMarquee({
+    required this.title,
+    required this.artistName,
+    required this.palette,
+  });
+
+  final String title;
+  final String artistName;
+  final AppColorPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        MarqueeText(
+          text: title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: palette.textPrimary,
+          ),
+        ),
+        if (artistName.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          MarqueeText(
+            text: artistName,
+            style: TextStyle(
+              fontSize: 12,
+              color: palette.textSecondary,
             ),
-            const SizedBox(width: 12),
-            // Название трека и автор — рядом с обложкой, по центру по вертикали
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  playback.title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircleAvatar(
-                      radius: 6,
-                      backgroundColor: palette.textMuted,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        playback.artistName,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: palette.textSecondary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        );
-      },
+          ),
+        ],
+      ],
     );
   }
 }
@@ -206,7 +211,7 @@ const _avatarShadow = [
   ),
 ];
 
-/// Список «кто слушает»: аватарки слева, ники справа (как на скрине).
+/// Список «кто слушает»: аватарки слева, ники справа. Масштабируется под ширину экрана.
 class _ListeningList extends StatelessWidget {
   const _ListeningList({required this.friends});
 
@@ -227,29 +232,32 @@ class _ListeningList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _AvatarStack(friends: friends),
-          const SizedBox(width: 8),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < friends.length; i++)
-                SizedBox(
-                  height: i < friends.length - 1 ? step : radius * 2,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      friends[i].username,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: palette.textPrimary,
-                        fontWeight: FontWeight.w500,
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < friends.length; i++)
+                  SizedBox(
+                    height: i < friends.length - 1 ? step : radius * 2,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        friends[i].username,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: palette.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

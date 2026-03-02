@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'core/audio/audio_player_service.dart';
 import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
 import 'core/settings/settings_repository.dart';
 import 'core/theme/app_theme.dart';
 import 'features/home/data/repositories/home_repository_impl.dart';
-import 'features/home/domain/repositories/home_repository.dart';
 import 'features/home/domain/use_cases/get_home_section_use_case.dart';
 import 'presentation/main_shell.dart';
 
@@ -68,11 +68,23 @@ class MiMusicApp extends StatefulWidget {
 
 class _MiMusicAppState extends State<MiMusicApp> {
   late ThemeMode _themeMode;
+  late final AudioPlayerService _audioPlayerService;
+  late final GetHomeSectionUseCase _getHomeSectionUseCase;
 
   @override
   void initState() {
     super.initState();
     _themeMode = widget.initialSettings.themeMode;
+    _audioPlayerService = AudioPlayerService(
+      settingsRepository: widget.settingsRepository,
+    );
+    _getHomeSectionUseCase = GetHomeSectionUseCase(HomeRepositoryImpl());
+  }
+
+  @override
+  void dispose() {
+    _audioPlayerService.dispose();
+    super.dispose();
   }
 
   Future<void> _onThemeChanged(ThemeMode mode) async {
@@ -83,9 +95,6 @@ class _MiMusicAppState extends State<MiMusicApp> {
 
   @override
   Widget build(BuildContext context) {
-    final HomeRepository homeRepository = HomeRepositoryImpl();
-    final getHomeSectionUseCase = GetHomeSectionUseCase(homeRepository);
-
     return MaterialApp(
       title: 'MiMusic',
       theme: AppTheme.light,
@@ -93,7 +102,8 @@ class _MiMusicAppState extends State<MiMusicApp> {
       themeMode: _themeMode,
       debugShowCheckedModeBanner: false,
       home: MainShell(
-        getHomeSectionUseCase: getHomeSectionUseCase,
+        getHomeSectionUseCase: _getHomeSectionUseCase,
+        audioPlayerService: _audioPlayerService,
         themeMode: _themeMode,
         onThemeChanged: _onThemeChanged,
         settingsRepository: widget.settingsRepository,
