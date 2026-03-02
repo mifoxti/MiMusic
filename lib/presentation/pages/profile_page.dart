@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
@@ -8,7 +10,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import 'settings_page.dart';
 
-/// Страница профиля: фон-обложка сверху, контент в панели с закруглённым верхом (как боттом-шит, но часть страницы).
+/// Страница профиля: коллапсирующий header с обложкой и аватаром + "поднимающийся" bottom-sheet.
 class ProfilePage extends StatelessWidget {
   const ProfilePage({
     super.key,
@@ -30,131 +32,198 @@ class ProfilePage extends StatelessWidget {
 
   /// Пропорция фона: высота = ширина * коэффициент (обложка не растягивается).
   static const double _coverAspectRatio = 1.25;
-
-  /// С какой доли экрана начинается панель (накладывается на фон).
-  static const double _sheetStartFraction = 0.42;
+  static const double _avatarMaxSize = 84;
+  static const double _avatarMinSize = 40;
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     final size = MediaQuery.sizeOf(context);
     final topPadding = MediaQuery.paddingOf(context).top;
-    // Высота фона по пропорции, но не больше ~55% экрана — картинка сохраняет соотношение сторон
-    final coverHeight = (size.width * _coverAspectRatio).clamp(0.0, size.height * 0.58);
-    final sheetTop = size.height * _sheetStartFraction;
+    // Высота обложки по пропорции, но не больше ~58% экрана.
+    final coverHeight = (size.width * _coverAspectRatio).clamp(260.0, size.height * 0.58);
+    final expandedHeight = coverHeight + 96;
+    final collapsedHeight = kToolbarHeight + topPadding + 12;
 
-    return Stack(
-      children: [
-        // 1. Фон — полноширинная обложка
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          height: coverHeight,
-          child: _buildCoverBackground(context, palette, size.width, coverHeight),
-        ),
-        // 2. Градиент внизу фона для плавного перехода в панель
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          height: coverHeight,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  palette.primaryLight.withValues(alpha: 0.3),
-                  palette.cardBackground.withValues(alpha: 0.98),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              ),
-            ),
-          ),
-        ),
-        // 3. Имя и кнопка «Мысли» поверх фона (над панелью)
-        Positioned(
-          left: 24,
-          right: 24,
-          bottom: size.height - sheetTop + 12,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _profileName,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  letterSpacing: -0.3,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Material(
-                color: Colors.white.withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(24),
-                child: InkWell(
-                  onTap: () {},
-                  borderRadius: BorderRadius.circular(24),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    child: Text(
-                      'Мысли',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        SliverAppBar(
+          pinned: true,
+          automaticallyImplyLeading: false,
+          expandedHeight: expandedHeight,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          forceMaterialTransparency: true,
+          flexibleSpace: LayoutBuilder(
+            builder: (context, constraints) {
+              final currentHeight = constraints.maxHeight;
+              final t = ((currentHeight - collapsedHeight) / (expandedHeight - collapsedHeight))
+                  .clamp(0.0, 1.0);
+              final easedT = Curves.easeInOut.transform(t);
+              final avatarSize = lerpDouble(_avatarMinSize, _avatarMaxSize, t)!;
+              final titleSize = lerpDouble(18, 28, t)!;
+              final alignment = Alignment.lerp(
+                const Alignment(-0.9, -0.2),
+                const Alignment(0, 0.7),
+                t,
+              )!;
+              // Плавное смещение ника и скрытие кнопки \"Мысли\" при прокрутке.
+              final nicknameOffsetY = lerpDouble(
+                0,
+                -10,
+                easedT,
+              )!;
+              final buttonVisibility = easedT;
+
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Обложка
+                  _buildCoverBackground(context, palette, size.width, coverHeight),
+                  // Градиент для плавного перехода к панели
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.35),
+                          Colors.transparent,
+                          palette.cardBackground.withValues(alpha: 0.98),
+                        ],
+                        stops: const [0.0, 0.45, 1.0],
                       ),
                     ),
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // 4. Кнопка настроек в правом верхнем углу
-        Positioned(
-          top: topPadding + 8,
-          right: 8,
-          child: IconButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => SettingsPage(
-                    themeMode: themeMode,
-                    onThemeChanged: onThemeChanged,
-                    settingsRepository: settingsRepository,
-                    initialSettings: initialSettings,
-                    audioPlayerService: audioPlayerService,
+                  // Кнопка настроек
+                  Positioned(
+                    top: topPadding + 8,
+                    right: 8,
+                    child: IconButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (context) => SettingsPage(
+                              themeMode: themeMode,
+                              onThemeChanged: onThemeChanged,
+                              settingsRepository: settingsRepository,
+                              initialSettings: initialSettings,
+                              audioPlayerService: audioPlayerService,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.settings_rounded, color: Colors.white),
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black.withValues(alpha: 0.25),
+                      ),
+                    ),
                   ),
-                ),
+                  // Аватар + ник + кнопка "Мысли" — плавно переходят из центра вниз в левый верхний угол.
+                  Align(
+                    alignment: alignment,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: lerpDouble(16, 24, t)!,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          ClipOval(
+                            child: SizedBox(
+                              width: avatarSize,
+                              height: avatarSize,
+                              child: Image.asset(
+                                _avatarAsset,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: palette.accent.withValues(alpha: 0.6),
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.person_rounded,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Transform.translate(
+                            offset: Offset(0, nicknameOffsetY),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _profileName,
+                                  style: TextStyle(
+                                    fontSize: titleSize,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    letterSpacing: -0.3,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.black.withValues(alpha: 0.4),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(height: 8 * buttonVisibility),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  heightFactor:
+                                      buttonVisibility == 0 ? 0.001 : buttonVisibility,
+                                  child: Opacity(
+                                    opacity: buttonVisibility,
+                                    child: Material(
+                                      color: Colors.white.withValues(alpha: 0.25),
+                                      borderRadius: BorderRadius.circular(24),
+                                      child: InkWell(
+                                        onTap: () {},
+                                        borderRadius: BorderRadius.circular(24),
+                                        child: const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                            vertical: 8,
+                                          ),
+                                          child: Text(
+                                            'Мысли',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
-            icon: Icon(Icons.settings_rounded, color: Colors.white),
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.black.withValues(alpha: 0.25),
-            ),
           ),
         ),
-        // 5. Панель контента (как боттом-шит, но часть страницы)
-        Positioned(
-          left: 0,
-          right: 0,
-          top: sheetTop,
-          bottom: 0,
+        // Поднимающийся "bottom-sheet": сама панель скроллится вместе с контентом.
+        SliverToBoxAdapter(
           child: Container(
             decoration: BoxDecoration(
               color: palette.cardBackground,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppConstants.radiusXLarge)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppConstants.radiusXLarge),
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.08),
@@ -163,34 +232,31 @@ class ProfilePage extends StatelessWidget {
                 ),
               ],
             ),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppConstants.radiusXLarge)),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildActionRow(context, palette),
-                    const SizedBox(height: 24),
-                    _buildStatsSection(palette),
-                    const SizedBox(height: 20),
-                    _buildSectionCard(
-                      palette,
-                      title: 'Популярные треки',
-                      subtitle: 'Треки, которые вы слушаете чаще всего',
-                      icon: Icons.music_note_rounded,
-                      onTap: () {},
-                    ),
-                    const SizedBox(height: 12),
-                    _buildSectionCard(
-                      palette,
-                      title: 'Любимые жанры',
-                      subtitle: 'Electronic, Ambient, Lo-Fi',
-                      icon: Icons.library_music_rounded,
-                      onTap: () {},
-                    ),
-                  ],
-                ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildActionRow(context, palette),
+                  const SizedBox(height: 24),
+                  _buildStatsSection(palette),
+                  const SizedBox(height: 20),
+                  _buildSectionCard(
+                    palette,
+                    title: 'Популярные треки',
+                    subtitle: 'Треки, которые вы слушаете чаще всего',
+                    icon: Icons.music_note_rounded,
+                    onTap: () {},
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSectionCard(
+                    palette,
+                    title: 'Любимые жанры',
+                    subtitle: 'Electronic, Ambient, Lo-Fi',
+                    icon: Icons.library_music_rounded,
+                    onTap: () {},
+                  ),
+                ],
               ),
             ),
           ),
