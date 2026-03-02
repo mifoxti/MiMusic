@@ -65,7 +65,7 @@ class _HomePageState extends State<HomePage> {
     if (widget.audioPlayerService.currentTrack?.assetPath == track.assetPath) {
       await widget.audioPlayerService.togglePlayPause();
     } else {
-      await widget.audioPlayerService.playTrack(track);
+      await widget.audioPlayerService.playTrack(track, queue: _localTracks);
     }
   }
 

@@ -1,6 +1,8 @@
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 
 import 'core/audio/audio_player_service.dart';
+import 'core/audio/mimusic_audio_handler.dart';
 import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
 import 'core/settings/settings_repository.dart';
@@ -10,10 +12,11 @@ import 'features/home/domain/use_cases/get_home_section_use_case.dart';
 import 'presentation/main_shell.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const _SettingsLoader());
 }
 
-/// Загружает настройки локально, затем строит приложение. Позже источник можно заменить на сервер.
+/// Загружает настройки и инициализирует AudioService, затем строит приложение.
 class _SettingsLoader extends StatefulWidget {
   const _SettingsLoader();
 
@@ -21,14 +24,42 @@ class _SettingsLoader extends StatefulWidget {
   State<_SettingsLoader> createState() => _SettingsLoaderState();
 }
 
+class _InitResult {
+  const _InitResult(this.settings, this.repository, this.audioHandler);
+
+  final AppSettings settings;
+  final SettingsRepository repository;
+  final AudioHandler audioHandler;
+}
+
 class _SettingsLoaderState extends State<_SettingsLoader> {
-  late final Future<AppSettings> _settingsFuture =
-      LocalSettingsRepository().getSettings();
+  late final Future<_InitResult> _initFuture = _init();
+
+  Future<_InitResult> _init() async {
+    try {
+      final repository = LocalSettingsRepository();
+      setMiMusicHandlerSettingsRepository(repository);
+      final settings = await repository.getSettings();
+      final handler = await AudioService.init(
+        builder: () => MiMusicAudioHandler(),
+      config: AudioServiceConfig(
+        androidNotificationChannelId: 'com.example.mimusic.audio',
+        androidNotificationChannelName: 'Воспроизведение',
+        androidStopForegroundOnPause: false,
+      ),
+      );
+      return _InitResult(settings, repository, handler);
+    } catch (e, st) {
+      debugPrint('Init error: $e');
+      debugPrint('Stack trace: $st');
+      rethrow;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<AppSettings>(
-      future: _settingsFuture,
+    return FutureBuilder<_InitResult>(
+      future: _initFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return MaterialApp(
@@ -41,11 +72,46 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
             ),
           );
         }
-        final settings = snapshot.data ?? const AppSettings();
-        final repository = LocalSettingsRepository();
+        final result = snapshot.data;
+        final error = snapshot.error;
+        if (result == null) {
+          return MaterialApp(
+            theme: AppTheme.light,
+            darkTheme: AppTheme.dark,
+            home: Scaffold(
+              body: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Ошибка инициализации',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          '$error',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
         return MiMusicApp(
-          initialSettings: settings,
-          settingsRepository: repository,
+          initialSettings: result.settings,
+          settingsRepository: result.repository,
+          audioHandler: result.audioHandler,
         );
       },
     );
@@ -57,10 +123,12 @@ class MiMusicApp extends StatefulWidget {
     super.key,
     required this.initialSettings,
     required this.settingsRepository,
+    required this.audioHandler,
   });
 
   final AppSettings initialSettings;
   final SettingsRepository settingsRepository;
+  final AudioHandler audioHandler;
 
   @override
   State<MiMusicApp> createState() => _MiMusicAppState();
@@ -76,6 +144,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
     super.initState();
     _themeMode = widget.initialSettings.themeMode;
     _audioPlayerService = AudioPlayerService(
+      audioHandler: widget.audioHandler,
       settingsRepository: widget.settingsRepository,
     );
     _getHomeSectionUseCase = GetHomeSectionUseCase(HomeRepositoryImpl());

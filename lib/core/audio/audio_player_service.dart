@@ -1,161 +1,152 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../settings/settings_repository.dart';
+import 'mimusic_audio_handler.dart';
 import 'track.dart';
 
-/// Сервис воспроизведения аудио с поддержкой эквалайзера (Android).
-/// На других платформах эквалайзер не применяется.
+/// Фасад над [AudioHandler]: воспроизведение через audio_service (уведомление
+/// в шторке Android и Control Center iOS) с сохранением API для UI и эквалайзера.
 class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
+    required AudioHandler audioHandler,
     required SettingsRepository settingsRepository,
-  }) : _settingsRepository = settingsRepository {
-    _initPlayer();
-    _listenToPlayer();
+  })  : _handler = audioHandler as MiMusicAudioHandler,
+        _settingsRepository = settingsRepository {
+    _listenToHandler();
   }
 
+  final MiMusicAudioHandler _handler;
   final SettingsRepository _settingsRepository;
 
-  late final AudioPlayer _player;
-  AndroidEqualizer? _androidEqualizer;
+  StreamSubscription<PlaybackState>? _playbackStateSub;
+  StreamSubscription<MediaItem?>? _mediaItemSub;
 
   Track? _currentTrack;
-  bool _isInitialized = false;
+  Duration _position = Duration.zero;
+  Duration? _duration;
+  bool _isPlaying = false;
 
   Track? get currentTrack => _currentTrack;
-  AudioPlayer get player => _player;
-  bool get isPlaying => _player.playing;
-  Duration get position => _player.position;
-  Duration? get duration => _player.duration;
-  Stream<Duration> get positionStream => _player.positionStream;
-  Stream<PlayerState> get playerStateStream => _player.playerStateStream;
+  bool get isPlaying => _isPlaying;
+  Duration get position => _position;
+  Duration? get duration => _duration;
 
-  void _initPlayer() {
-    if (kIsWeb || !Platform.isAndroid) {
-      _player = AudioPlayer();
-    } else {
-      final eq = AndroidEqualizer();
-      _player = AudioPlayer(
-        audioPipeline: AudioPipeline(androidAudioEffects: [eq]),
-      );
-      _androidEqualizer = eq;
-      eq.setEnabled(true);
-    }
-    _isInitialized = true;
-    notifyListeners();
-  }
-
-  void _listenToPlayer() {
-    _player.playerStateStream.listen((_) => notifyListeners());
-    _player.positionStream.listen((_) => notifyListeners());
-  }
-
-  /// Загружает и воспроизводит трек.
-  Future<void> playTrack(Track track) async {
-    if (!_isInitialized) return;
-    _currentTrack = track;
-    try {
-      await _player.setAudioSource(AudioSource.asset(track.assetPath));
-      await _applyEqualizerFromSettings();
-      await _player.play();
-    } catch (e) {
-      _currentTrack = null;
-      rethrow;
-    }
-    notifyListeners();
-  }
-
-  /// Продолжает воспроизведение или ставит на паузу.
-  Future<void> togglePlayPause() async {
-    if (!_isInitialized) return;
-    if (_player.playing) {
-      await _player.pause();
-    } else {
-      if (_currentTrack != null) {
-        await _player.play();
+  void _listenToHandler() {
+    _playbackStateSub = _handler.playbackState.listen((state) {
+      _position = state.updatePosition;
+      _isPlaying = state.playing;
+      notifyListeners();
+    });
+    _mediaItemSub = _handler.mediaItem.listen((item) {
+      if (item != null && _currentTrack == null) {
+        _currentTrack = _mediaItemToTrack(item);
       }
+      _duration = item?.duration ?? _duration;
+      notifyListeners();
+    });
+  }
+
+  Track _mediaItemToTrack(MediaItem item) {
+    return Track(
+      assetPath: item.id,
+      title: item.title,
+      artist: item.artist,
+    );
+  }
+
+  /// Загружает и воспроизводит трек. Показывает медиа-уведомление на Android/iOS.
+  /// [queue] — очередь для кнопок предыдущий/следующий в уведомлении.
+  Future<void> playTrack(Track track, {List<Track>? queue}) async {
+    _currentTrack = track;
+    notifyListeners();
+    String? artUri;
+    if (track.coverBytes != null && track.coverBytes!.isNotEmpty) {
+      artUri = await _coverBytesToFileUri(track.coverBytes!);
+    }
+    final queueMaps = queue?.map((t) => {
+      'path': t.assetPath,
+      'title': t.title,
+      'artist': t.artist,
+      'artPath': t.coverFallbackPath,
+    }).toList();
+    await _handler.customAction('playAsset', {
+      'path': track.assetPath,
+      'title': track.title,
+      'artist': track.artist,
+      'artPath': track.coverFallbackPath,
+      if (artUri != null) 'artUri': artUri,
+      if (queueMaps != null && queueMaps.isNotEmpty) 'queue': queueMaps,
+    });
+  }
+
+  static Future<String?> _coverBytesToFileUri(List<int> bytes) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/mimusic_cover.jpg');
+      await file.writeAsBytes(bytes);
+      return Uri.file(file.path).toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> togglePlayPause() async {
+    if (_handler.playbackState.value.playing) {
+      await _handler.pause();
+    } else {
+      await _handler.play();
     }
     notifyListeners();
   }
 
-  /// Продолжает воспроизведение или запускает текущий трек.
   Future<void> play() async {
-    if (!_isInitialized) return;
-    if (_currentTrack != null) {
-      await _player.play();
-    }
+    await _handler.play();
     notifyListeners();
   }
 
   Future<void> pause() async {
-    if (!_isInitialized) return;
-    await _player.pause();
+    await _handler.pause();
     notifyListeners();
   }
 
   Future<void> seek(Duration position) async {
-    if (!_isInitialized) return;
-    await _player.seek(position);
+    await _handler.seek(position);
     notifyListeners();
   }
 
   Future<void> stop() async {
-    if (!_isInitialized) return;
-    await _player.stop();
+    await _handler.stop();
     _currentTrack = null;
+    _position = Duration.zero;
+    _duration = null;
+    _isPlaying = false;
     notifyListeners();
   }
 
   /// Применяет настройки эквалайзера из настроек приложения.
-  /// Вызывать при изменении эквалайзера в настройках.
-  Future<void> applyEqualizerFromSettings() => _applyEqualizerFromSettings();
-
-  Future<void> _applyEqualizerFromSettings() async {
-    if (_androidEqualizer == null) return;
-    try {
-      await _androidEqualizer!.setEnabled(true);
-      final settings = await _settingsRepository.getSettings();
-      final params = await _androidEqualizer!.parameters;
-      final bands = params.bands;
-      final gains = settings.equalizerGains;
-      final preamp = settings.equalizerPreamp;
-
-      for (var i = 0; i < bands.length; i++) {
-        var gain = i < gains.length ? gains[i] : 0.0;
-        if (i == 0) gain += preamp;
-        await bands[i].setGain(gain.clamp(params.minDecibels, params.maxDecibels));
-      }
-    } catch (_) {
-      // Игнорируем ошибки эквалайзера
-    }
+  Future<void> applyEqualizerFromSettings() async {
+    final settings = await _settingsRepository.getSettings();
+    await _handler.customAction('applyEqualizer', {
+      'gains': settings.equalizerGains,
+    });
+    notifyListeners();
   }
 
-  /// Применяет настройки эквалайзера из переданных gains (для live-обновления в экрана эквалайзера).
-  /// Басс-буст (preamp) берётся из настроек и добавляется к первой полосе.
+  /// Применяет переданные gains эквалайзера (для экрана эквалайзера).
   Future<void> applyEqualizerGains(List<double> gains) async {
-    if (_androidEqualizer == null) return;
-    try {
-      await _androidEqualizer!.setEnabled(true);
-      final settings = await _settingsRepository.getSettings();
-      final params = await _androidEqualizer!.parameters;
-      final bands = params.bands;
-      final preamp = settings.equalizerPreamp;
-
-      for (var i = 0; i < bands.length; i++) {
-        var gain = i < gains.length ? gains[i] : 0.0;
-        if (i == 0) gain += preamp;
-        await bands[i].setGain(gain.clamp(params.minDecibels, params.maxDecibels));
-      }
-    } catch (_) {
-      // Игнорируем ошибки эквалайзера
-    }
+    await _handler.customAction('applyEqualizer', {'gains': gains});
+    notifyListeners();
   }
 
   @override
   void dispose() {
-    _player.dispose();
+    _playbackStateSub?.cancel();
+    _mediaItemSub?.cancel();
     super.dispose();
   }
 }

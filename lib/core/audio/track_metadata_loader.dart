@@ -25,7 +25,7 @@ class TrackMetadataLoader {
       assetPath: assetPath,
       title: title,
       artist: artist,
-      coverAssetPath: null,
+      coverAssetPath: 'assets/images/geoxor.png',
     );
   }
 }
