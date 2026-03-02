@@ -9,6 +9,7 @@ import '../core/theme/app_theme.dart';
 import '../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/home/presentation/widgets/floating_mini_player.dart';
+import '../features/player/presentation/pages/full_player_page.dart';
 import 'pages/profile_page.dart';
 
 /// Главный shell приложения: одна активность — много фрагментов.
@@ -37,6 +38,33 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
+
+  void _openFullPlayer(BuildContext context) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => FullPlayerPage(
+          audioPlayerService: widget.audioPlayerService,
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.1),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 380),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -96,7 +124,8 @@ class _MainShellState extends State<MainShell> {
                       track: track,
                       trackProgress: progress,
                       isPlaying: widget.audioPlayerService.isPlaying,
-                      onTap: () => widget.audioPlayerService.togglePlayPause(),
+                      onTap: () => _openFullPlayer(context),
+                      onPlayPause: widget.audioPlayerService.togglePlayPause,
                     ),
                   );
                 },

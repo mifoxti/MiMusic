@@ -43,7 +43,7 @@ class AudioPlayerService extends ChangeNotifier {
       notifyListeners();
     });
     _mediaItemSub = _handler.mediaItem.listen((item) {
-      if (item != null && _currentTrack == null) {
+      if (item != null) {
         _currentTrack = _mediaItemToTrack(item);
       }
       _duration = item?.duration ?? _duration;
@@ -126,6 +126,14 @@ class AudioPlayerService extends ChangeNotifier {
     _duration = null;
     _isPlaying = false;
     notifyListeners();
+  }
+
+  Future<void> skipToNext() async {
+    await _handler.skipToNext();
+  }
+
+  Future<void> skipToPrevious() async {
+    await _handler.skipToPrevious();
   }
 
   /// Применяет настройки эквалайзера из настроек приложения.

@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  audio_service_win
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

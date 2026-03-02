@@ -13,6 +13,7 @@ class FloatingMiniPlayer extends StatelessWidget {
     this.trackProgress = 0.5,
     this.isPlaying = true,
     this.onTap,
+    this.onPlayPause,
   });
 
   final Track track;
@@ -20,6 +21,7 @@ class FloatingMiniPlayer extends StatelessWidget {
   final double trackProgress;
   final bool isPlaying;
   final VoidCallback? onTap;
+  final VoidCallback? onPlayPause;
 
   @override
   Widget build(BuildContext context) {
@@ -116,10 +118,15 @@ class FloatingMiniPlayer extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          Icon(
-                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                            size: 28,
-                            color: palette.textPrimary,
+                          InkResponse(
+                            onTap: onPlayPause ?? onTap,
+                            customBorder: const CircleBorder(),
+                            radius: 24,
+                            child: Icon(
+                              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                              size: 28,
+                              color: palette.textPrimary,
+                            ),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -135,18 +142,21 @@ class FloatingMiniPlayer extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 14),
-                          buildTrackCover(
-                            coverSource: track.coverBytes ?? track.coverFallbackPath,
-                            width: coverSize,
-                            height: coverSize,
-                            borderRadius: BorderRadius.circular(coverRadius),
-                            placeholder: Container(
-                              color: palette.accent.withValues(alpha: 0.8),
-                              alignment: Alignment.center,
-                              child: Icon(
-                                Icons.music_note_rounded,
-                                color: Colors.white.withValues(alpha: 0.95),
-                                size: 26,
+                          Hero(
+                            tag: 'mimusic_player_cover',
+                            child: buildTrackCover(
+                              coverSource: track.coverBytes ?? track.coverFallbackPath,
+                              width: coverSize,
+                              height: coverSize,
+                              borderRadius: BorderRadius.circular(coverRadius),
+                              placeholder: Container(
+                                color: palette.accent.withValues(alpha: 0.8),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  Icons.music_note_rounded,
+                                  color: Colors.white.withValues(alpha: 0.95),
+                                  size: 26,
+                                ),
                               ),
                             ),
                           ),
