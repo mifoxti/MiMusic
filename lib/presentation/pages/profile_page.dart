@@ -8,7 +8,9 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import 'favorites_page.dart';
 import 'settings_page.dart';
+import 'studio_page.dart';
 
 /// Страница профиля: коллапсирующий header с обложкой и аватаром + "поднимающийся" bottom-sheet.
 class ProfilePage extends StatelessWidget {
@@ -256,6 +258,20 @@ class ProfilePage extends StatelessWidget {
                     icon: Icons.library_music_rounded,
                     onTap: () {},
                   ),
+                  const SizedBox(height: 12),
+                  _buildSectionCard(
+                    palette,
+                    title: 'Студия',
+                    subtitle: 'Создание и редактирование альбомов и треков',
+                    icon: Icons.album_rounded,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (context) => StudioPage(currentUserNickname: initialSettings.nickname),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -310,7 +326,15 @@ class ProfilePage extends StatelessWidget {
           child: _ActionCard(
             icon: Icons.favorite_rounded,
             label: 'Избранное',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => FavoritesPage(
+                    audioPlayerService: audioPlayerService,
+                  ),
+                ),
+              );
+            },
             palette: palette,
           ),
         ),

@@ -83,11 +83,12 @@ class _HomePageState extends State<HomePage> {
 
     final featuredTrack = _localTracks.isNotEmpty ? _localTracks.first : null;
 
+    final topPadding = MediaQuery.paddingOf(context).top;
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            padding: EdgeInsets.fromLTRB(24, 16 + topPadding, 24, 0),
             child: Column(
               children: [
                 Text(

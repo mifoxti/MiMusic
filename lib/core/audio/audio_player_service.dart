@@ -36,7 +36,11 @@ class AudioPlayerService extends ChangeNotifier {
   Duration get position => _position;
   Duration? get duration => _duration;
 
+  /// Пути (assetPath) треков, отмеченных как избранные.
+  Set<String> get likedPaths => Set.from(_handler.likedPathsNotifier.value);
+
   void _listenToHandler() {
+    _handler.likedPathsNotifier.addListener(_onLikedPathsChanged);
     _playbackStateSub = _handler.playbackState.listen((state) {
       _position = state.updatePosition;
       _isPlaying = state.playing;
@@ -51,6 +55,10 @@ class AudioPlayerService extends ChangeNotifier {
     });
   }
 
+  void _onLikedPathsChanged() {
+    notifyListeners();
+  }
+
   Track _mediaItemToTrack(MediaItem item) {
     return Track(
       assetPath: item.id,
@@ -58,6 +66,9 @@ class AudioPlayerService extends ChangeNotifier {
       artist: item.artist,
     );
   }
+
+  /// Путь для воспроизведения: файл (если загружен в студии) или asset.
+  static String _playablePath(Track t) => t.audioFilePath ?? t.assetPath;
 
   /// Загружает и воспроизводит трек. Показывает медиа-уведомление на Android/iOS.
   /// [queue] — очередь для кнопок предыдущий/следующий в уведомлении.
@@ -68,14 +79,15 @@ class AudioPlayerService extends ChangeNotifier {
     if (track.coverBytes != null && track.coverBytes!.isNotEmpty) {
       artUri = await _coverBytesToFileUri(track.coverBytes!);
     }
+    final path = _playablePath(track);
     final queueMaps = queue?.map((t) => {
-      'path': t.assetPath,
+      'path': _playablePath(t),
       'title': t.title,
       'artist': t.artist,
       'artPath': t.coverFallbackPath,
     }).toList();
     await _handler.customAction('playAsset', {
-      'path': track.assetPath,
+      'path': path,
       'title': track.title,
       'artist': track.artist,
       'artPath': track.coverFallbackPath,
@@ -136,6 +148,11 @@ class AudioPlayerService extends ChangeNotifier {
     await _handler.skipToPrevious();
   }
 
+  /// Удаляет трек из избранного по assetPath (для страницы «Любимые»).
+  Future<void> removeFromFavorites(String assetPath) async {
+    await _handler.customAction('dislike', {'path': assetPath});
+  }
+
   /// Применяет настройки эквалайзера из настроек приложения.
   Future<void> applyEqualizerFromSettings() async {
     final settings = await _settingsRepository.getSettings();
@@ -153,6 +170,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _handler.likedPathsNotifier.removeListener(_onLikedPathsChanged);
     _playbackStateSub?.cancel();
     _mediaItemSub?.cancel();
     super.dispose();

@@ -6,6 +6,8 @@ import 'package:just_audio/just_audio.dart';
 
 import '../settings/settings_repository.dart';
 import 'asset_to_uri.dart';
+import 'audio_source_from_path.dart';
+import 'local_tracks.dart';
 import 'platform_utils.dart';
 
 /// Конфигурация для [MiMusicAudioHandler]. Задаётся до [AudioService.init].
@@ -21,6 +23,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   MiMusicAudioHandler() {
     _initPlayer();
     _listenToPlayer();
+    _likedPaths.addAll(localTrackAssets);
+    likedPathsNotifier.value = Set.from(_likedPaths);
   }
 
   late final AudioPlayer _player;
@@ -34,6 +38,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   int _queueIndex = 0;
   bool _concatenatingSourceUsed = false;
   final Set<String> _likedPaths = {};
+  /// Уведомляет UI об изменении списка избранных (path).
+  final ValueNotifier<Set<String>> likedPathsNotifier = ValueNotifier<Set<String>>({});
 
   void _initPlayer() {
     if (kIsWeb || !isAndroid) {
@@ -283,6 +289,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     } else {
       _likedPaths.add(path);
     }
+    likedPathsNotifier.value = Set.from(_likedPaths);
     playbackState.add(playbackState.value.copyWith(
       controls: _currentControls(),
       systemActions: _systemActions,
@@ -290,10 +297,14 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     ));
   }
 
-  void _removeLike() {
-    if (_queue.isEmpty || _queueIndex >= _queue.length) return;
-    final path = _queue[_queueIndex]['path'] as String? ?? '';
-    _likedPaths.remove(path);
+  void _removeLike([String? path]) {
+    final p = path ?? (_queue.isNotEmpty && _queueIndex < _queue.length
+        ? _queue[_queueIndex]['path'] as String? ?? ''
+        : null);
+    if (p != null && p.isNotEmpty) {
+      _likedPaths.remove(p);
+      likedPathsNotifier.value = Set.from(_likedPaths);
+    }
     playbackState.add(playbackState.value.copyWith(
       controls: _currentControls(),
       systemActions: _systemActions,
@@ -349,7 +360,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     try {
       if (queue != null && queue.length > 1) {
         final sources = queue
-            .map((t) => AudioSource.asset(t['path'] as String? ?? ''))
+            .map((t) => createAudioSource(t['path'] as String? ?? ''))
             .toList();
         await _player.setAudioSource(
           ConcatenatingAudioSource(children: sources),
@@ -358,7 +369,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         );
         _concatenatingSourceUsed = true;
       } else {
-        await _player.setAudioSource(AudioSource.asset(path));
+        await _player.setAudioSource(createAudioSource(path));
         _concatenatingSourceUsed = false;
       }
       await _applyEqualizerFromSettings();
@@ -454,7 +465,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         _toggleLike();
         break;
       case 'dislike':
-        _removeLike();
+        _removeLike(extras?['path'] as String?);
         break;
       case 'applyEqualizer':
         final gainsList = extras?['gains'];

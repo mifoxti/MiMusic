@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-/// Модель трека для воспроизведения. Поддерживает asset-путь и метаданные.
+/// Модель трека для воспроизведения. Поддерживает asset-путь, файл и метаданные.
 class Track {
   const Track({
     required this.assetPath,
@@ -8,10 +8,14 @@ class Track {
     this.artist,
     this.coverBytes,
     this.coverAssetPath,
+    this.audioFilePath,
   });
 
-  /// Путь к аудио в assets (например assets/music/track.mp3).
+  /// Идентификатор / путь к аудио в assets (например assets/music/track.mp3).
   final String assetPath;
+
+  /// Путь к аудиофайлу на диске (если трек загружен из студии). При воспроизведении приоритет над [assetPath].
+  final String? audioFilePath;
 
   /// Название трека.
   final String title;

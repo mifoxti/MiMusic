@@ -10,6 +10,7 @@ import '../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/home/presentation/widgets/floating_mini_player.dart';
 import '../features/player/presentation/pages/full_player_page.dart';
+import 'pages/favorites_page.dart';
 import 'pages/profile_page.dart';
 
 /// Главный shell приложения: одна активность — много фрагментов.
@@ -69,42 +70,52 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              palette.gradientStart,
-              palette.gradientMiddle,
-              palette.gradientEnd,
-            ],
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            palette.gradientStart,
+            palette.gradientMiddle,
+            palette.gradientEnd,
+          ],
         ),
-        child: SafeArea(
-          child: Stack(
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          top: false,
+          child: Column(
             children: [
-              IndexedStack(
-                index: _selectedIndex,
-                children: [
-                  HomePage(
-                    getHomeSectionUseCase: widget.getHomeSectionUseCase,
-                    audioPlayerService: widget.audioPlayerService,
-                  ),
-                  _PlaceholderFragment(
-                    icon: Icons.search_rounded,
-                    label: 'Search',
-                  ),
-                  ProfilePage(
-                    themeMode: widget.themeMode,
-                    onThemeChanged: widget.onThemeChanged,
-                    settingsRepository: widget.settingsRepository,
-                    initialSettings: widget.initialSettings,
-                    audioPlayerService: widget.audioPlayerService,
-                  ),
-                ],
+              Expanded(
+                child: Navigator(
+                  initialRoute: _ShellRoutes.tabs,
+                  onGenerateRoute: (settings) {
+                    if (settings.name == _ShellRoutes.tabs) {
+                      return MaterialPageRoute<void>(
+                        builder: (_) => _TabsView(
+                          selectedIndex: _selectedIndex,
+                          onTabTap: (i) => setState(() => _selectedIndex = i),
+                          getHomeSectionUseCase: widget.getHomeSectionUseCase,
+                          audioPlayerService: widget.audioPlayerService,
+                          themeMode: widget.themeMode,
+                          onThemeChanged: widget.onThemeChanged,
+                          settingsRepository: widget.settingsRepository,
+                          initialSettings: widget.initialSettings,
+                        ),
+                      );
+                    }
+                    if (settings.name == _ShellRoutes.favorites) {
+                      return MaterialPageRoute<void>(
+                        builder: (_) => FavoritesPage(
+                          audioPlayerService: widget.audioPlayerService,
+                        ),
+                      );
+                    }
+                    return null;
+                  },
+                ),
               ),
               ListenableBuilder(
                 listenable: widget.audioPlayerService,
@@ -116,10 +127,8 @@ class _MainShellState extends State<MainShell> {
                   final progress = dur != null && dur.inMilliseconds > 0
                       ? pos.inMilliseconds / dur.inMilliseconds
                       : 0.0;
-                  return Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: 12,
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                     child: FloatingMiniPlayer(
                       track: track,
                       trackProgress: progress,
@@ -133,11 +142,62 @@ class _MainShellState extends State<MainShell> {
             ],
           ),
         ),
+        bottomNavigationBar: _BottomNavBar(
+          selectedIndex: _selectedIndex,
+          onTap: (index) => setState(() => _selectedIndex = index),
+        ),
       ),
-      bottomNavigationBar: _BottomNavBar(
-        selectedIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-      ),
+    );
+  }
+}
+
+abstract final class _ShellRoutes {
+  static const String tabs = 'tabs';
+  static const String favorites = 'favorites';
+}
+
+class _TabsView extends StatelessWidget {
+  const _TabsView({
+    required this.selectedIndex,
+    required this.onTabTap,
+    required this.getHomeSectionUseCase,
+    required this.audioPlayerService,
+    required this.themeMode,
+    required this.onThemeChanged,
+    required this.settingsRepository,
+    required this.initialSettings,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onTabTap;
+  final GetHomeSectionUseCase getHomeSectionUseCase;
+  final AudioPlayerService audioPlayerService;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeChanged;
+  final SettingsRepository settingsRepository;
+  final AppSettings initialSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return IndexedStack(
+      index: selectedIndex,
+      children: [
+        HomePage(
+          getHomeSectionUseCase: getHomeSectionUseCase,
+          audioPlayerService: audioPlayerService,
+        ),
+        _PlaceholderFragment(
+          icon: Icons.search_rounded,
+          label: 'Search',
+        ),
+        ProfilePage(
+          themeMode: themeMode,
+          onThemeChanged: onThemeChanged,
+          settingsRepository: settingsRepository,
+          initialSettings: initialSettings,
+          audioPlayerService: audioPlayerService,
+        ),
+      ],
     );
   }
 }
@@ -154,20 +214,24 @@ class _PlaceholderFragment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 64, color: palette.textMuted),
-          const SizedBox(height: 16),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 18,
-              color: palette.textSecondary,
+    final topPadding = MediaQuery.paddingOf(context).top;
+    return Padding(
+      padding: EdgeInsets.only(top: topPadding),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 64, color: palette.textMuted),
+            const SizedBox(height: 16),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 18,
+                color: palette.textSecondary,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -186,51 +250,55 @@ class _BottomNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     const barRadius = 36.0;
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(barRadius)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-          decoration: BoxDecoration(
-            color: palette.navBarBackground.withValues(alpha: 0.65),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(barRadius)),
-            border: Border(
-              top: BorderSide(
-                color: Colors.white.withValues(alpha: 0.15),
-                width: 1,
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(barRadius),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+              decoration: BoxDecoration(
+                color: palette.navBarBackground.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(barRadius),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _NavItem(
+                    icon: Icons.music_note_rounded,
+                    label: 'Music',
+                    isSelected: selectedIndex == 0,
+                    onTap: () => onTap(0),
+                  ),
+                  _NavItem(
+                    icon: Icons.search_rounded,
+                    label: 'Search',
+                    isSelected: selectedIndex == 1,
+                    onTap: () => onTap(1),
+                  ),
+                  _NavItem(
+                    icon: Icons.person_rounded,
+                    label: 'Profile',
+                    isSelected: selectedIndex == 2,
+                    onTap: () => onTap(2),
+                  ),
+                ],
               ),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 16,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _NavItem(
-                icon: Icons.music_note_rounded,
-                label: 'Music',
-                isSelected: selectedIndex == 0,
-                onTap: () => onTap(0),
-              ),
-              _NavItem(
-                icon: Icons.search_rounded,
-                label: 'Search',
-                isSelected: selectedIndex == 1,
-                onTap: () => onTap(1),
-              ),
-              _NavItem(
-                icon: Icons.person_rounded,
-                label: 'Profile',
-                isSelected: selectedIndex == 2,
-                onTap: () => onTap(2),
-              ),
-            ],
           ),
         ),
       ),
