@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'cover_image_file.dart';
+import '../platform/platform.dart' show buildCoverImageFromFile;
 
 /// Путь к файлу на диске (не asset и не URL).
 bool _isFilePath(String path) {

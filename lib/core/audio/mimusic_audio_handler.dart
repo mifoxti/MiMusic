@@ -4,11 +4,9 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../platform/platform.dart';
 import '../settings/settings_repository.dart';
-import 'asset_to_uri.dart';
-import 'audio_source_from_path.dart';
 import 'local_tracks.dart';
-import 'platform_utils.dart';
 
 /// Конфигурация для [MiMusicAudioHandler]. Задаётся до [AudioService.init].
 SettingsRepository? _handlerSettingsRepository;

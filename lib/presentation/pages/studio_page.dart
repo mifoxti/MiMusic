@@ -2,8 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/track.dart';
-import '../../core/studio/copy_audio_to_app.dart';
-import '../../core/studio/copy_cover_to_app.dart';
+import '../../core/platform/platform.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/studio/album.dart';
 import '../../core/studio/local_studio_repository.dart';
@@ -12,7 +11,6 @@ import '../../core/studio/studio_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
-import 'studio_cover_image.dart';
 
 /// Страница «Студия»: создание, редактирование и удаление альбомов и треков.
 class StudioPage extends StatefulWidget {
