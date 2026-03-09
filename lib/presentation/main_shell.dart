@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -39,6 +40,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   void _openFullPlayer(BuildContext context) {
     Navigator.of(context).push(
@@ -67,6 +69,28 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
+  Future<bool> _onWillPop() async {
+    final nav = _navigatorKey.currentState;
+    if (nav != null && nav.canPop()) {
+      nav.pop();
+      return false;
+    }
+    return true;
+  }
+
+  void _onBottomNavTap(int index) {
+    final nav = _navigatorKey.currentState;
+    if (nav != null) {
+      nav.popUntil(
+        (route) =>
+            route.settings.name == _ShellRoutes.tabs || route.isFirst,
+      );
+    }
+    if (index != _selectedIndex) {
+      setState(() => _selectedIndex = index);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
@@ -84,67 +108,77 @@ class _MainShellState extends State<MainShell> {
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              Expanded(
-                child: Navigator(
-                  initialRoute: _ShellRoutes.tabs,
-                  onGenerateRoute: (settings) {
-                    if (settings.name == _ShellRoutes.tabs) {
-                      return MaterialPageRoute<void>(
-                        builder: (_) => _TabsView(
-                          selectedIndex: _selectedIndex,
-                          onTabTap: (i) => setState(() => _selectedIndex = i),
-                          getHomeSectionUseCase: widget.getHomeSectionUseCase,
-                          audioPlayerService: widget.audioPlayerService,
-                          themeMode: widget.themeMode,
-                          onThemeChanged: widget.onThemeChanged,
-                          settingsRepository: widget.settingsRepository,
-                          initialSettings: widget.initialSettings,
-                        ),
-                      );
-                    }
-                    if (settings.name == _ShellRoutes.favorites) {
-                      return MaterialPageRoute<void>(
-                        builder: (_) => FavoritesPage(
-                          audioPlayerService: widget.audioPlayerService,
-                        ),
-                      );
-                    }
-                    return null;
+        body: WillPopScope(
+          onWillPop: _onWillPop,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                Expanded(
+                  child: Navigator(
+                    key: _navigatorKey,
+                    initialRoute: _ShellRoutes.tabs,
+                    onGenerateRoute: (settings) {
+                      if (settings.name == _ShellRoutes.tabs) {
+                        return MaterialPageRoute<void>(
+                          builder: (_) => _TabsView(
+                            selectedIndex: _selectedIndex,
+                            onTabTap: (i) => setState(() => _selectedIndex = i),
+                            getHomeSectionUseCase:
+                                widget.getHomeSectionUseCase,
+                            audioPlayerService: widget.audioPlayerService,
+                            themeMode: widget.themeMode,
+                            onThemeChanged: widget.onThemeChanged,
+                            settingsRepository: widget.settingsRepository,
+                            initialSettings: widget.initialSettings,
+                          ),
+                          settings:
+                              const RouteSettings(name: _ShellRoutes.tabs),
+                        );
+                      }
+                      if (settings.name == _ShellRoutes.favorites) {
+                        return MaterialPageRoute<void>(
+                          builder: (_) => FavoritesPage(
+                            audioPlayerService: widget.audioPlayerService,
+                          ),
+                          settings: const RouteSettings(
+                            name: _ShellRoutes.favorites,
+                          ),
+                        );
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                ListenableBuilder(
+                  listenable: widget.audioPlayerService,
+                  builder: (context, _) {
+                    final track = widget.audioPlayerService.currentTrack;
+                    if (track == null) return const SizedBox.shrink();
+                    final dur = widget.audioPlayerService.duration;
+                    final pos = widget.audioPlayerService.position;
+                    final progress = dur != null && dur.inMilliseconds > 0
+                        ? pos.inMilliseconds / dur.inMilliseconds
+                        : 0.0;
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: FloatingMiniPlayer(
+                        track: track,
+                        trackProgress: progress,
+                        isPlaying: widget.audioPlayerService.isPlaying,
+                        onTap: () => _openFullPlayer(context),
+                        onPlayPause: widget.audioPlayerService.togglePlayPause,
+                      ),
+                    );
                   },
                 ),
-              ),
-              ListenableBuilder(
-                listenable: widget.audioPlayerService,
-                builder: (context, _) {
-                  final track = widget.audioPlayerService.currentTrack;
-                  if (track == null) return const SizedBox.shrink();
-                  final dur = widget.audioPlayerService.duration;
-                  final pos = widget.audioPlayerService.position;
-                  final progress = dur != null && dur.inMilliseconds > 0
-                      ? pos.inMilliseconds / dur.inMilliseconds
-                      : 0.0;
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    child: FloatingMiniPlayer(
-                      track: track,
-                      trackProgress: progress,
-                      isPlaying: widget.audioPlayerService.isPlaying,
-                      onTap: () => _openFullPlayer(context),
-                      onPlayPause: widget.audioPlayerService.togglePlayPause,
-                    ),
-                  );
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         bottomNavigationBar: _BottomNavBar(
           selectedIndex: _selectedIndex,
-          onTap: (index) => setState(() => _selectedIndex = index),
+          onTap: _onBottomNavTap,
         ),
       ),
     );
@@ -186,7 +220,7 @@ class _TabsView extends StatelessWidget {
           getHomeSectionUseCase: getHomeSectionUseCase,
           audioPlayerService: audioPlayerService,
         ),
-        _PlaceholderFragment(
+        const _PlaceholderFragment(
           icon: Icons.search_rounded,
           label: 'Search',
         ),

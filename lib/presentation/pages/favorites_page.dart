@@ -25,6 +25,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   List<Track> _favoriteTracks = [];
   bool _isLoading = true;
   int? _lastLikedCount;
+  bool _isFullPlayerOpen = false;
 
   @override
   void initState() {
@@ -61,7 +62,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   void _openFullPlayer() {
-    Navigator.of(context).push(
+    if (_isFullPlayerOpen) return;
+    _isFullPlayerOpen = true;
+    Navigator.of(context)
+        .push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => FullPlayerPage(
           audioPlayerService: widget.audioPlayerService,
@@ -84,7 +88,16 @@ class _FavoritesPageState extends State<FavoritesPage> {
         },
         transitionDuration: const Duration(milliseconds: 380),
       ),
-    );
+    )
+        .whenComplete(() {
+      if (!mounted) {
+        _isFullPlayerOpen = false;
+        return;
+      }
+      setState(() {
+        _isFullPlayerOpen = false;
+      });
+    });
   }
 
   Future<void> _playAll() async {
@@ -93,7 +106,16 @@ class _FavoritesPageState extends State<FavoritesPage> {
       _favoriteTracks.first,
       queue: _favoriteTracks,
     );
-    if (mounted) _openFullPlayer();
+  }
+
+  Future<void> _onPlayAllPressed() async {
+    if (_favoriteTracks.isEmpty) return;
+    final service = widget.audioPlayerService;
+    if (service.currentTrack != null) {
+      await service.togglePlayPause();
+    } else {
+      await _playAll();
+    }
   }
 
   Future<void> _onTrackTap(Track track) async {
@@ -216,7 +238,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: _favoriteTracks.isEmpty ? null : _playAll,
+              onTap: _favoriteTracks.isEmpty ? null : _onPlayAllPressed,
               borderRadius: BorderRadius.circular(32),
               child: Container(
                 width: 64,
@@ -237,7 +259,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
                   ],
                 ),
                 child: Icon(
-                  Icons.play_arrow_rounded,
+                  widget.audioPlayerService.isPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
                   size: 36,
                   color: Colors.white,
                 ),

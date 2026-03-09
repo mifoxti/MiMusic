@@ -9,6 +9,7 @@ import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import 'favorites_page.dart';
+import 'playlists_page.dart';
 import 'settings_page.dart';
 import 'studio_page.dart';
 
@@ -308,7 +309,13 @@ class ProfilePage extends StatelessWidget {
           child: _ActionCard(
             icon: Icons.playlist_play_rounded,
             label: 'Плейлисты',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => const PlaylistsPage(),
+                ),
+              );
+            },
             palette: palette,
           ),
         ),
