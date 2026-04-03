@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/audio/track.dart';
@@ -6,6 +8,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/track_cover.dart';
 
 /// «Летающий» мини-плеер над боттом-баром: подложка с прогрессом, название трека, обложка справа.
+/// Кнопка play/pause изолирована от области открытия полного плеера (без вложенного InkWell на всю карточку).
 class FloatingMiniPlayer extends StatelessWidget {
   const FloatingMiniPlayer({
     super.key,
@@ -31,72 +34,82 @@ class FloatingMiniPlayer extends StatelessWidget {
     const coverRadius = AppConstants.radiusMedium;
     const height = 64.0;
     const coverSize = 48.0;
-    // Фон плеера и прогрессия: в светлой теме — светлые пастельные розовые без серого
-    final progressColor = isDark
-        ? palette.accent.withValues(alpha: 0.65)
-        : palette.accent;
-    final progressRemainColor = isDark
-        ? const Color(0xFF5C3A48)
-        : const Color(0xFFE8D4DE); // светлый пастельно-розовый (светлая тема, без серого)
-    final cardColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.white.withValues(alpha: 0.82); // светлее, без серого оттенка
+    // Как у боттом-бара: размытие + лёгкий тинт и обводка.
+    final glassTint = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.34);
+    final borderGlass = Colors.white.withValues(alpha: isDark ? 0.22 : 0.45);
+    // Шкала прогресса — тот же «стеклянный» язык: тинт + разделитель; проиграно — акцент поверх тинта.
+    final progressRemainGlass = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.white.withValues(alpha: 0.2);
+    final progressPlayedGlass = Color.alphaBlend(
+      palette.accent.withValues(alpha: isDark ? 0.38 : 0.3),
+      glassTint,
+    );
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(radius),
-            border: Border.all(
-              color: isDark
-                  ? palette.textMuted.withValues(alpha: 0.45)
-                  : palette.primaryDark.withValues(alpha: 0.7),
-              width: 1.5,
+        clipBehavior: Clip.antiAlias,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: borderGlass, width: 1),
+              color: glassTint,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            clipBehavior: Clip.antiAlias,
             child: SizedBox(
               height: height,
               child: Stack(
-                clipBehavior: Clip.antiAlias,
+                clipBehavior: Clip.hardEdge,
                 children: [
-                  // Подложка: сначала фон целиком, поверх — проигранная часть со скруглением справа (без стыка двух клипов)
                   Positioned.fill(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final progress = trackProgress.clamp(0.0, 1.0);
-                        final progressWidth = constraints.maxWidth * progress;
+                        final maxW = constraints.maxWidth;
+                        final progressWidth = (maxW * progress).clamp(0.0, maxW);
+                        final roundedLeft = Radius.circular(radius);
+                        final notAtEnd = progressWidth < maxW - 0.5;
                         return Stack(
                           alignment: Alignment.centerLeft,
+                          clipBehavior: Clip.hardEdge,
                           children: [
-                            Container(color: progressRemainColor),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: progressRemainGlass,
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
                             if (progressWidth > 0)
                               Container(
                                 width: progressWidth,
                                 height: double.infinity,
                                 decoration: BoxDecoration(
-                                  color: progressColor,
+                                  color: progressPlayedGlass,
                                   borderRadius: BorderRadius.horizontal(
-                                    left: const Radius.circular(radius),
-                                    right: const Radius.circular(radius),
+                                    left: roundedLeft,
+                                    right: notAtEnd
+                                        ? Radius.zero
+                                        : roundedLeft,
                                   ),
-                                  border: Border.all(
-                                    color: isDark
-                                        ? palette.textMuted.withValues(alpha: 0.5)
-                                        : palette.primaryDark.withValues(alpha: 0.85),
-                                    width: 1.5,
-                                  ),
+                                  border: notAtEnd
+                                      ? Border(
+                                          right: BorderSide(
+                                            color: borderGlass,
+                                            width: 1,
+                                          ),
+                                        )
+                                      : null,
                                 ),
                               ),
                           ],
@@ -104,48 +117,67 @@ class FloatingMiniPlayer extends StatelessWidget {
                       },
                     ),
                   ),
-                  // Контент: play, название, квадратная обложка справа
                   Positioned(
-                    left: -2,
+                    left: 0,
                     right: 0,
                     top: 0,
                     bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(radius),
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        left: 8,
+                        right: 16,
+                        top: 10,
+                        bottom: 10,
                       ),
                       child: Row(
                         children: [
-                          InkResponse(
-                            onTap: onPlayPause ?? onTap,
-                            customBorder: const CircleBorder(),
-                            radius: 24,
-                            child: Icon(
-                              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                              size: 28,
-                              color: palette.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Text(
-                              track.title,
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                                color: palette.textPrimary,
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: onPlayPause,
+                              customBorder: const CircleBorder(),
+                              child: SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: Icon(
+                                  isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  size: 28,
+                                  color: palette.textPrimary,
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 14),
-                          Hero(
-                            tag: 'mimusic_player_cover',
+                          Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: onTap,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 6),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    track.title,
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w600,
+                                      color: palette.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: onTap,
                             child: buildTrackCover(
-                              coverSource: track.coverBytes ?? track.coverFallbackPath,
+                              coverSource:
+                                  track.coverBytes ?? track.coverFallbackPath,
                               width: coverSize,
                               height: coverSize,
                               borderRadius: BorderRadius.circular(coverRadius),

@@ -4,8 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../core/audio/audio_player_service.dart';
+import '../core/player/full_player_visibility.dart';
 import '../core/settings/app_settings.dart';
 import '../core/settings/settings_repository.dart';
+import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../features/home/presentation/pages/home_page.dart';
@@ -41,10 +43,12 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final _fullPlayerRouteObserver = _FullPlayerRouteObserver();
 
   void _openFullPlayer(BuildContext context) {
     Navigator.of(context).push(
       PageRouteBuilder(
+        settings: const RouteSettings(name: FullPlayerPage.routeName),
         pageBuilder: (context, animation, secondaryAnimation) => FullPlayerPage(
           audioPlayerService: widget.audioPlayerService,
         ),
@@ -112,73 +116,123 @@ class _MainShellState extends State<MainShell> {
           onWillPop: _onWillPop,
           child: SafeArea(
             top: false,
-            child: Column(
+            child: Stack(
+              clipBehavior: Clip.hardEdge,
               children: [
-                Expanded(
-                  child: Navigator(
-                    key: _navigatorKey,
-                    initialRoute: _ShellRoutes.tabs,
-                    onGenerateRoute: (settings) {
-                      if (settings.name == _ShellRoutes.tabs) {
-                        return MaterialPageRoute<void>(
-                          builder: (_) => _TabsView(
-                            selectedIndex: _selectedIndex,
-                            onTabTap: (i) => setState(() => _selectedIndex = i),
-                            getHomeSectionUseCase:
-                                widget.getHomeSectionUseCase,
-                            audioPlayerService: widget.audioPlayerService,
-                            themeMode: widget.themeMode,
-                            onThemeChanged: widget.onThemeChanged,
-                            settingsRepository: widget.settingsRepository,
-                            initialSettings: widget.initialSettings,
-                          ),
-                          settings:
-                              const RouteSettings(name: _ShellRoutes.tabs),
-                        );
-                      }
-                      if (settings.name == _ShellRoutes.favorites) {
-                        return MaterialPageRoute<void>(
-                          builder: (_) => FavoritesPage(
-                            audioPlayerService: widget.audioPlayerService,
-                          ),
-                          settings: const RouteSettings(
-                            name: _ShellRoutes.favorites,
-                          ),
-                        );
-                      }
-                      return null;
-                    },
+                Positioned.fill(
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Navigator(
+                          key: _navigatorKey,
+                          observers: [_fullPlayerRouteObserver],
+                          initialRoute: _ShellRoutes.tabs,
+                          onGenerateRoute: (settings) {
+                            if (settings.name == _ShellRoutes.tabs) {
+                              return MaterialPageRoute<void>(
+                                builder: (_) => _TabsView(
+                                  selectedIndex: _selectedIndex,
+                                  onTabTap: (i) =>
+                                      setState(() => _selectedIndex = i),
+                                  getHomeSectionUseCase:
+                                      widget.getHomeSectionUseCase,
+                                  audioPlayerService: widget.audioPlayerService,
+                                  themeMode: widget.themeMode,
+                                  onThemeChanged: widget.onThemeChanged,
+                                  settingsRepository: widget.settingsRepository,
+                                  initialSettings: widget.initialSettings,
+                                ),
+                                settings: const RouteSettings(
+                                  name: _ShellRoutes.tabs,
+                                ),
+                              );
+                            }
+                            if (settings.name == _ShellRoutes.favorites) {
+                              return MaterialPageRoute<void>(
+                                builder: (_) => FavoritesPage(
+                                  audioPlayerService: widget.audioPlayerService,
+                                ),
+                                settings: const RouteSettings(
+                                  name: _ShellRoutes.favorites,
+                                ),
+                              );
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                ListenableBuilder(
-                  listenable: widget.audioPlayerService,
-                  builder: (context, _) {
-                    final track = widget.audioPlayerService.currentTrack;
-                    if (track == null) return const SizedBox.shrink();
-                    final dur = widget.audioPlayerService.duration;
-                    final pos = widget.audioPlayerService.position;
-                    final progress = dur != null && dur.inMilliseconds > 0
-                        ? pos.inMilliseconds / dur.inMilliseconds
-                        : 0.0;
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      child: FloatingMiniPlayer(
-                        track: track,
-                        trackProgress: progress,
-                        isPlaying: widget.audioPlayerService.isPlaying,
-                        onTap: () => _openFullPlayer(context),
-                        onPlayPause: widget.audioPlayerService.togglePlayPause,
-                      ),
-                    );
-                  },
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: ClipRect(
+                    clipBehavior: Clip.hardEdge,
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: FullPlayerVisibility.open,
+                      builder: (context, fullPlayerOpen, _) {
+                        return AnimatedSlide(
+                          duration: _kFullPlayerChromeDuration,
+                          curve: Curves.easeOutCubic,
+                          offset: fullPlayerOpen
+                              ? const Offset(0, 1)
+                              : Offset.zero,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ListenableBuilder(
+                                listenable: widget.audioPlayerService,
+                                builder: (context, _) {
+                                  final track =
+                                      widget.audioPlayerService.currentTrack;
+                                  if (track == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final dur = widget.audioPlayerService.duration;
+                                  final pos = widget.audioPlayerService.position;
+                                  final progress =
+                                      dur != null && dur.inMilliseconds > 0
+                                          ? pos.inMilliseconds /
+                                              dur.inMilliseconds
+                                          : 0.0;
+                                  return Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      0,
+                                      12,
+                                      12,
+                                    ),
+                                    child: FloatingMiniPlayer(
+                                      track: track,
+                                      trackProgress: progress,
+                                      isPlaying:
+                                          widget.audioPlayerService.isPlaying,
+                                      onTap: () => _openFullPlayer(context),
+                                      onPlayPause: () {
+                                        widget.audioPlayerService
+                                            .togglePlayPause();
+                                      },
+                                    ),
+                                  );
+                                },
+                              ),
+                              _BottomNavBar(
+                                selectedIndex: _selectedIndex,
+                                onTap: _onBottomNavTap,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-        bottomNavigationBar: _BottomNavBar(
-          selectedIndex: _selectedIndex,
-          onTap: _onBottomNavTap,
         ),
       ),
     );
@@ -188,6 +242,46 @@ class _MainShellState extends State<MainShell> {
 abstract final class _ShellRoutes {
   static const String tabs = 'tabs';
   static const String favorites = 'favorites';
+}
+
+/// Как у [PageRouteBuilder] для [FullPlayerPage] — сдвиг chrome ([AnimatedSlide]) без сжатия детей и без overflow.
+const Duration _kFullPlayerChromeDuration = Duration(milliseconds: 380);
+
+/// Синхронизирует [FullPlayerVisibility] с маршрутом полного плеера (после push/pop, не во время build).
+class _FullPlayerRouteObserver extends NavigatorObserver {
+  bool _isFullPlayer(Route<dynamic>? route) {
+    return route?.settings.name == FullPlayerPage.routeName;
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (_isFullPlayer(route)) {
+      FullPlayerVisibility.open.value = true;
+    }
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (_isFullPlayer(route)) {
+      FullPlayerVisibility.open.value = false;
+    }
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (_isFullPlayer(route)) {
+      FullPlayerVisibility.open.value = false;
+    }
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    final wasFull = _isFullPlayer(oldRoute);
+    final isFull = _isFullPlayer(newRoute);
+    if (wasFull || isFull) {
+      FullPlayerVisibility.open.value = isFull;
+    }
+  }
 }
 
 class _TabsView extends StatelessWidget {
@@ -283,54 +377,65 @@ class _BottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     const barRadius = 36.0;
+    // Полупрозрачное «стекло»: размытие + лёгкий тинт (как на референсе, без плотной подложки).
+    final glassTint = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.34);
+    final borderGlass = Colors.white.withValues(alpha: isDark ? 0.22 : 0.45);
+
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(barRadius),
+          clipBehavior: Clip.antiAlias,
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: DecoratedBox(
               decoration: BoxDecoration(
-                color: palette.navBarBackground.withValues(alpha: 0.72),
                 borderRadius: BorderRadius.circular(barRadius),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  width: 1,
-                ),
+                border: Border.all(color: borderGlass, width: 1),
+                color: glassTint,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
-                    blurRadius: 22,
-                    offset: const Offset(0, 10),
+                    color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.08),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _NavItem(
-                    icon: Icons.music_note_rounded,
-                    label: 'Music',
-                    isSelected: selectedIndex == 0,
-                    onTap: () => onTap(0),
-                  ),
-                  _NavItem(
-                    icon: Icons.search_rounded,
-                    label: 'Search',
-                    isSelected: selectedIndex == 1,
-                    onTap: () => onTap(1),
-                  ),
-                  _NavItem(
-                    icon: Icons.person_rounded,
-                    label: 'Profile',
-                    isSelected: selectedIndex == 2,
-                    onTap: () => onTap(2),
-                  ),
-                ],
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _NavItem(
+                      icon: Icons.music_note_rounded,
+                      label: 'Music',
+                      isSelected: selectedIndex == 0,
+                      palette: palette,
+                      onTap: () => onTap(0),
+                    ),
+                    _NavItem(
+                      icon: Icons.search_rounded,
+                      label: 'Search',
+                      isSelected: selectedIndex == 1,
+                      palette: palette,
+                      onTap: () => onTap(1),
+                    ),
+                    _NavItem(
+                      icon: Icons.person_rounded,
+                      label: 'Profile',
+                      isSelected: selectedIndex == 2,
+                      palette: palette,
+                      onTap: () => onTap(2),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -345,27 +450,23 @@ class _NavItem extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.isSelected,
+    required this.palette,
     required this.onTap,
   });
 
   final IconData icon;
   final String label;
   final bool isSelected;
+  final AppColorPalette palette;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final palette = AppPaletteExtension.of(context).palette;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? palette.navActiveBackground : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -379,7 +480,7 @@ class _NavItem extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 color: isSelected ? palette.textPrimary : palette.textMuted,
               ),
             ),

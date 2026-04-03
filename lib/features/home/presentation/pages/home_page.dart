@@ -5,6 +5,7 @@ import '../../../../core/audio/local_tracks.dart';
 import '../../../../core/audio/track.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../presentation/pages/charts_page.dart';
 import '../../domain/entities/home_section.dart';
 import '../../domain/use_cases/get_home_section_use_case.dart';
 import '../widgets/featured_track_card.dart';
@@ -67,6 +68,16 @@ class _HomePageState extends State<HomePage> {
     } else {
       await widget.audioPlayerService.playTrack(track, queue: _localTracks);
     }
+  }
+
+  void _openCharts(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChartsPage(
+          audioPlayerService: widget.audioPlayerService,
+        ),
+      ),
+    );
   }
 
   @override
@@ -136,7 +147,7 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(width: 12),
                     NavCardButton(
                       title: 'Чарты',
-                      onTap: () {},
+                      onTap: () => _openCharts(context),
                       avatarColors: const [
                         Color(0xFFC45C3E),
                         Color(0xFF8B3A2E),

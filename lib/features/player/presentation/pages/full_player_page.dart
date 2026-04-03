@@ -10,6 +10,9 @@ class FullPlayerPage extends StatelessWidget {
     required this.audioPlayerService,
   });
 
+  /// Имя маршрута для [NavigatorObserver] — скрытие мини-плеера без уведомлений во время build.
+  static const String routeName = 'mimusic_full_player';
+
   final AudioPlayerService audioPlayerService;
 
   @override

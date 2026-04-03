@@ -66,7 +66,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
     _isFullPlayerOpen = true;
     Navigator.of(context)
         .push(
-      PageRouteBuilder(
+      PageRouteBuilder<void>(
+        settings: const RouteSettings(name: FullPlayerPage.routeName),
         pageBuilder: (context, animation, secondaryAnimation) => FullPlayerPage(
           audioPlayerService: widget.audioPlayerService,
         ),
