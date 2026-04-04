@@ -6,6 +6,7 @@ import '../../../../core/audio/track.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../presentation/pages/charts_page.dart';
+import '../../../../presentation/pages/for_you_page.dart';
 import '../../domain/entities/home_section.dart';
 import '../../domain/use_cases/get_home_section_use_case.dart';
 import '../widgets/featured_track_card.dart';
@@ -80,6 +81,17 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _openForYou(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ForYouPage(
+          audioPlayerService: widget.audioPlayerService,
+          getHomeSectionUseCase: widget.getHomeSectionUseCase,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
@@ -138,7 +150,7 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     NavCardButton(
                       title: 'Для вас',
-                      onTap: () {},
+                      onTap: () => _openForYou(context),
                       avatarColors: const [
                         Color(0xFF5C4A50),
                         Color(0xFF4A3D42),

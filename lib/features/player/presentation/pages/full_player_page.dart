@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/audio/audio_player_service.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/track_cover.dart';
 
@@ -136,59 +137,13 @@ class FullPlayerPage extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 28),
-                              Column(
-                                children: [
-                                  SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      trackHeight: 3,
-                                      thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 7,
-                                      ),
-                                      overlayShape: const RoundSliderOverlayShape(
-                                        overlayRadius: 16,
-                                      ),
-                                      thumbColor: palette.accent,
-                                      activeTrackColor: palette.accent,
-                                      inactiveTrackColor:
-                                          palette.cardBackground.withValues(alpha: 0.7),
-                                    ),
-                                    child: Slider(
-                                      min: 0,
-                                      max: sliderMax,
-                                      value: sliderValue.clamp(0.0, sliderMax),
-                                      onChanged: (value) {
-                                        final newPosition = Duration(
-                                          milliseconds: value.toInt(),
-                                        );
-                                        audioPlayerService.seek(newPosition);
-                                      },
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          _formatDuration(
-                                            Duration(milliseconds: clampedPosition),
-                                          ),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: palette.textSecondary,
-                                          ),
-                                        ),
-                                        Text(
-                                          _formatDuration(duration),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: palette.textSecondary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+                              _PlayerSeekBar(
+                                audioPlayerService: audioPlayerService,
+                                palette: palette,
+                                clampedPositionMs: clampedPosition,
+                                duration: duration,
+                                sliderMax: sliderMax,
+                                sliderValueFromService: sliderValue.clamp(0.0, sliderMax),
                               ),
                               const SizedBox(height: 32),
                               Row(
@@ -236,8 +191,113 @@ class FullPlayerPage extends StatelessWidget {
       ),
     );
   }
+}
 
-  String _formatDuration(Duration duration) {
+/// Слайдер прогресса: при перетаскивании локальное значение (важно для web и плавного scrub).
+class _PlayerSeekBar extends StatefulWidget {
+  const _PlayerSeekBar({
+    required this.audioPlayerService,
+    required this.palette,
+    required this.clampedPositionMs,
+    required this.duration,
+    required this.sliderMax,
+    required this.sliderValueFromService,
+  });
+
+  final AudioPlayerService audioPlayerService;
+  final AppColorPalette palette;
+  final int clampedPositionMs;
+  final Duration duration;
+  final double sliderMax;
+  final double sliderValueFromService;
+
+  @override
+  State<_PlayerSeekBar> createState() => _PlayerSeekBarState();
+}
+
+class _PlayerSeekBarState extends State<_PlayerSeekBar> {
+  bool _dragging = false;
+  double _dragValue = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    final maxV = widget.sliderMax <= 0 ? 1.0 : widget.sliderMax;
+    final fromService = widget.sliderValueFromService.clamp(0.0, maxV);
+    final thumb = _dragging ? _dragValue.clamp(0.0, maxV) : fromService;
+
+    return Column(
+      children: [
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 3,
+            thumbShape: const RoundSliderThumbShape(
+              enabledThumbRadius: 7,
+            ),
+            overlayShape: const RoundSliderOverlayShape(
+              overlayRadius: 16,
+            ),
+            thumbColor: palette.accent,
+            activeTrackColor: palette.accent,
+            inactiveTrackColor:
+                palette.cardBackground.withValues(alpha: 0.7),
+          ),
+          child: Slider(
+            min: 0,
+            max: maxV,
+            value: thumb,
+            onChangeStart: (_) {
+              setState(() {
+                _dragging = true;
+                _dragValue = fromService;
+              });
+            },
+            onChanged: maxV <= 1 && widget.duration.inMilliseconds == 0
+                ? null
+                : (value) {
+                    setState(() => _dragValue = value);
+                  },
+            onChangeEnd: (value) {
+              widget.audioPlayerService.seek(
+                Duration(milliseconds: value.toInt()),
+              );
+              setState(() => _dragging = false);
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _formatDurationLabel(
+                  Duration(
+                    milliseconds: _dragging
+                        ? _dragValue.toInt().clamp(0, 1 << 30)
+                        : widget.clampedPositionMs,
+                  ),
+                ),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: palette.textSecondary,
+                ),
+              ),
+              Text(
+                _formatDurationLabel(widget.duration),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: palette.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDurationLabel(Duration duration) {
     final totalSeconds = duration.inSeconds;
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;

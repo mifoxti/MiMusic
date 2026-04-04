@@ -30,6 +30,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   StreamSubscription<PlayerState>? _playerStateSub;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<SequenceState?>? _sequenceStateSub;
+  StreamSubscription<Duration?>? _durationSub;
+  /// На web [positionStream] часто почти не эмитит во время воспроизведения — UI не получает прогресс.
+  Timer? _webPositionPoll;
 
   /// Очередь треков для skip next/previous. Каждый элемент: {path, title, artist?, artPath?}.
   List<Map<String, dynamic>> _queue = [];
@@ -56,6 +59,15 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _playerStateSub = _player.playerStateStream.listen(_onPlayerStateChanged);
     _positionSub = _player.positionStream.listen(_onPositionChanged);
     _sequenceStateSub = _player.sequenceStateStream.listen(_onSequenceStateChanged);
+    _durationSub = _player.durationStream.listen(_onDurationResolved);
+  }
+
+  void _onDurationResolved(Duration? d) {
+    if (d == null) return;
+    final item = mediaItem.value;
+    if (item == null) return;
+    if (item.duration == d) return;
+    mediaItem.add(item.copyWith(duration: d));
   }
 
   void _onPlayerStateChanged(PlayerState state) {
@@ -69,7 +81,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
     ));
+    _syncWebPositionPoll();
     if (state.processingState == ProcessingState.completed) {
+      _stopWebPositionPoll();
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.completed,
         playing: false,
@@ -134,10 +148,36 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void _onPositionChanged(Duration position) {
     if (!_player.playing) return;
+    if (kIsWeb) return;
     playbackState.add(playbackState.value.copyWith(
       updatePosition: position,
       systemActions: _systemActions,
     ));
+  }
+
+  void _syncWebPositionPoll() {
+    if (!kIsWeb) return;
+    if (_player.playing) {
+      _webPositionPoll ??= Timer.periodic(const Duration(milliseconds: 200), (_) {
+        if (!_player.playing) {
+          _stopWebPositionPoll();
+          return;
+        }
+        final v = playbackState.value;
+        playbackState.add(v.copyWith(
+          updatePosition: _player.position,
+          bufferedPosition: _player.bufferedPosition,
+          systemActions: _systemActions,
+        ));
+      });
+    } else {
+      _stopWebPositionPoll();
+    }
+  }
+
+  void _stopWebPositionPoll() {
+    _webPositionPoll?.cancel();
+    _webPositionPoll = null;
   }
 
   @override
@@ -166,6 +206,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    _stopWebPositionPoll();
     await _player.stop();
     _concatenatingSourceUsed = false;
     mediaItem.add(null);
@@ -484,9 +525,11 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> disposeHandler() async {
+    _stopWebPositionPoll();
     await _playerStateSub?.cancel();
     await _positionSub?.cancel();
     await _sequenceStateSub?.cancel();
+    await _durationSub?.cancel();
     await _player.dispose();
   }
 }
