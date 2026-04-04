@@ -15,6 +15,7 @@ import '../features/home/presentation/widgets/floating_mini_player.dart';
 import '../features/player/presentation/pages/full_player_page.dart';
 import 'pages/favorites_page.dart';
 import 'pages/profile_page.dart';
+import 'pages/search_page.dart';
 
 /// Главный shell приложения: одна активность — много фрагментов.
 /// Мини-плеер и боттом-бар остаются на месте при переключении вкладок.
@@ -314,9 +315,9 @@ class _TabsView extends StatelessWidget {
           getHomeSectionUseCase: getHomeSectionUseCase,
           audioPlayerService: audioPlayerService,
         ),
-        const _PlaceholderFragment(
-          icon: Icons.search_rounded,
-          label: 'Search',
+        SearchPage(
+          audioPlayerService: audioPlayerService,
+          getHomeSectionUseCase: getHomeSectionUseCase,
         ),
         ProfilePage(
           themeMode: themeMode,
@@ -326,41 +327,6 @@ class _TabsView extends StatelessWidget {
           audioPlayerService: audioPlayerService,
         ),
       ],
-    );
-  }
-}
-
-class _PlaceholderFragment extends StatelessWidget {
-  const _PlaceholderFragment({
-    required this.icon,
-    required this.label,
-  });
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = AppPaletteExtension.of(context).palette;
-    final topPadding = MediaQuery.paddingOf(context).top;
-    return Padding(
-      padding: EdgeInsets.only(top: topPadding),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 64, color: palette.textMuted),
-            const SizedBox(height: 16),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 18,
-                color: palette.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
