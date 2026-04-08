@@ -39,6 +39,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<SequenceState?>? _sequenceStateSub;
   StreamSubscription<Duration?>? _durationSub;
+  StreamSubscription<bool>? _shuffleModeSub;
+  StreamSubscription<LoopMode>? _loopModeSub;
   /// На web [positionStream] часто почти не эмитит во время воспроизведения — UI не получает прогресс.
   Timer? _webPositionPoll;
 
@@ -47,8 +49,15 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   int _queueIndex = 0;
   bool _concatenatingSourceUsed = false;
   final Set<String> _likedPaths = {};
+  final Set<String> _dislikedPaths = {};
   /// Уведомляет UI об изменении списка избранных (path).
   final ValueNotifier<Set<String>> likedPathsNotifier = ValueNotifier<Set<String>>({});
+  /// Пути с дизлайком (не показывать в реках / скрыть из избранного).
+  final ValueNotifier<Set<String>> dislikedPathsNotifier =
+      ValueNotifier<Set<String>>({});
+  final ValueNotifier<bool> shuffleModeNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<LoopMode> loopModeNotifier =
+      ValueNotifier<LoopMode>(LoopMode.off);
 
   void _initPlayer() {
     if (kIsWeb || !isAndroid) {
@@ -68,6 +77,12 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _positionSub = _player.positionStream.listen(_onPositionChanged);
     _sequenceStateSub = _player.sequenceStateStream.listen(_onSequenceStateChanged);
     _durationSub = _player.durationStream.listen(_onDurationResolved);
+    _shuffleModeSub = _player.shuffleModeEnabledStream.listen((enabled) {
+      shuffleModeNotifier.value = enabled;
+    });
+    _loopModeSub = _player.loopModeStream.listen((mode) {
+      loopModeNotifier.value = mode;
+    });
   }
 
   void _onDurationResolved(Duration? d) {
@@ -346,15 +361,46 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
+  String? get currentPlayablePath {
+    if (_queue.isEmpty || _queueIndex < 0 || _queueIndex >= _queue.length) {
+      return null;
+    }
+    final p = _queue[_queueIndex]['path'] as String?;
+    if (p == null || p.isEmpty) return null;
+    return p;
+  }
+
+  bool get hasMultiTrackQueue => _queue.length > 1;
+
   void _toggleLike() {
-    if (_queue.isEmpty || _queueIndex >= _queue.length) return;
-    final path = _queue[_queueIndex]['path'] as String? ?? '';
+    final path = currentPlayablePath;
+    if (path == null) return;
     if (_likedPaths.contains(path)) {
       _likedPaths.remove(path);
     } else {
       _likedPaths.add(path);
+      _dislikedPaths.remove(path);
     }
     likedPathsNotifier.value = Set.from(_likedPaths);
+    dislikedPathsNotifier.value = Set.from(_dislikedPaths);
+    playbackState.add(playbackState.value.copyWith(
+      controls: _currentControls(),
+      systemActions: _systemActions,
+      androidCompactActionIndices: _compactIndices,
+    ));
+  }
+
+  void _toggleDislikeCurrent() {
+    final path = currentPlayablePath;
+    if (path == null) return;
+    if (_dislikedPaths.contains(path)) {
+      _dislikedPaths.remove(path);
+    } else {
+      _dislikedPaths.add(path);
+      _likedPaths.remove(path);
+    }
+    likedPathsNotifier.value = Set.from(_likedPaths);
+    dislikedPathsNotifier.value = Set.from(_dislikedPaths);
     playbackState.add(playbackState.value.copyWith(
       controls: _currentControls(),
       systemActions: _systemActions,
@@ -363,9 +409,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void _removeLike([String? path]) {
-    final p = path ?? (_queue.isNotEmpty && _queueIndex < _queue.length
-        ? _queue[_queueIndex]['path'] as String? ?? ''
-        : null);
+    final p = path ?? currentPlayablePath;
     if (p != null && p.isNotEmpty) {
       _likedPaths.remove(p);
       likedPathsNotifier.value = Set.from(_likedPaths);
@@ -375,6 +419,26 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       systemActions: _systemActions,
       androidCompactActionIndices: _compactIndices,
     ));
+  }
+
+  /// Перемешивание очереди (только при очереди из нескольких треков).
+  Future<void> setShuffleEnabled(bool enabled) async {
+    if (_queue.length < 2) return;
+    try {
+      await _player.setShuffleModeEnabled(enabled);
+    } catch (_) {}
+  }
+
+  /// Цикл: без повтора → весь плейлист → один трек → выкл.
+  Future<void> cycleLoopMode() async {
+    try {
+      final next = switch (_player.loopMode) {
+        LoopMode.off => LoopMode.all,
+        LoopMode.all => LoopMode.one,
+        LoopMode.one => LoopMode.off,
+      };
+      await _player.setLoopMode(next);
+    } catch (_) {}
   }
 
   static Future<Uri?> _assetToFileUri(String assetPath) =>
@@ -436,6 +500,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       } else {
         await _player.setAudioSource(createAudioSource(path));
         _concatenatingSourceUsed = false;
+        try {
+          await _player.setShuffleModeEnabled(false);
+        } catch (_) {}
       }
       await _applyEqualizerFromSettings();
       final duration = _player.duration ?? Duration.zero;
@@ -530,6 +597,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       case 'like':
         _toggleLike();
         break;
+      case 'toggleDislikeCurrent':
+        _toggleDislikeCurrent();
+        break;
       case 'dislike':
         _removeLike(extras?['path'] as String?);
         break;
@@ -557,6 +627,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     await _positionSub?.cancel();
     await _sequenceStateSub?.cancel();
     await _durationSub?.cancel();
+    await _shuffleModeSub?.cancel();
+    await _loopModeSub?.cancel();
     await _player.dispose();
   }
 }

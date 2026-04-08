@@ -10,7 +10,7 @@ import '../../core/widgets/track_cover.dart';
 import '../../features/home/domain/entities/friend_playback.dart';
 import '../../features/home/domain/entities/home_section.dart';
 import '../../features/home/domain/use_cases/get_home_section_use_case.dart';
-import '../../features/player/presentation/pages/full_player_page.dart';
+import '../../core/player/player_dock_host.dart';
 
 /// Экран «Для вас»: персональные подборки на основе главной секции и локальных треков.
 class ForYouPage extends StatefulWidget {
@@ -32,7 +32,6 @@ class _ForYouPageState extends State<ForYouPage> {
   List<Track> _tracks = [];
   List<Track> _recommendedOrder = [];
   bool _loading = true;
-  bool _isFullPlayerOpen = false;
 
   @override
   void initState() {
@@ -78,41 +77,7 @@ class _ForYouPageState extends State<ForYouPage> {
   }
 
   void _openFullPlayer() {
-    if (_isFullPlayerOpen) return;
-    _isFullPlayerOpen = true;
-    Navigator.of(context)
-        .push(
-      PageRouteBuilder<void>(
-        settings: const RouteSettings(name: FullPlayerPage.routeName),
-        pageBuilder: (context, animation, secondaryAnimation) => FullPlayerPage(
-          audioPlayerService: widget.audioPlayerService,
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.1),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 380),
-      ),
-    )
-        .whenComplete(() {
-      if (!mounted) {
-        _isFullPlayerOpen = false;
-        return;
-      }
-      setState(() => _isFullPlayerOpen = false);
-    });
+    PlayerDockHost.expand();
   }
 
   Future<void> _onTrackTap(Track track) async {

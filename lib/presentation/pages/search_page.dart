@@ -10,7 +10,7 @@ import '../../core/widgets/track_cover.dart';
 import '../../features/home/domain/entities/listening_friend.dart';
 import '../../features/home/domain/entities/release_item.dart';
 import '../../features/home/domain/use_cases/get_home_section_use_case.dart';
-import '../../features/player/presentation/pages/full_player_page.dart';
+import '../../core/player/player_dock_host.dart';
 
 /// Режим поиска: музыка (треки + релизы как альбомы) или пользователи.
 enum _SearchMode { music, people }
@@ -39,8 +39,6 @@ class _SearchPageState extends State<SearchPage> {
   List<ListeningFriend> _friends = [];
   List<String> _suggestionArtists = [];
   bool _loading = true;
-
-  bool _isFullPlayerOpen = false;
 
   @override
   void initState() {
@@ -114,41 +112,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _openFullPlayer() {
-    if (_isFullPlayerOpen) return;
-    _isFullPlayerOpen = true;
-    Navigator.of(context)
-        .push(
-      PageRouteBuilder<void>(
-        settings: const RouteSettings(name: FullPlayerPage.routeName),
-        pageBuilder: (context, animation, secondaryAnimation) => FullPlayerPage(
-          audioPlayerService: widget.audioPlayerService,
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.1),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 380),
-      ),
-    )
-        .whenComplete(() {
-      if (!mounted) {
-        _isFullPlayerOpen = false;
-        return;
-      }
-      setState(() => _isFullPlayerOpen = false);
-    });
+    PlayerDockHost.expand();
   }
 
   Future<void> _onTrackTap(Track track, List<Track> queue) async {

@@ -8,7 +8,7 @@ import '../../core/history/listening_history_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
-import '../../features/player/presentation/pages/full_player_page.dart';
+import '../../core/player/player_dock_host.dart';
 
 /// Экран истории прослушивания (сейчас данные из [ListeningHistoryRepository] в памяти).
 class ListeningHistoryPage extends StatefulWidget {
@@ -26,44 +26,8 @@ class ListeningHistoryPage extends StatefulWidget {
 }
 
 class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
-  bool _isFullPlayerOpen = false;
-
   void _openFullPlayer() {
-    if (_isFullPlayerOpen) return;
-    _isFullPlayerOpen = true;
-    Navigator.of(context)
-        .push(
-      PageRouteBuilder<void>(
-        settings: const RouteSettings(name: FullPlayerPage.routeName),
-        pageBuilder: (context, animation, secondaryAnimation) => FullPlayerPage(
-          audioPlayerService: widget.audioPlayerService,
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.1),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 380),
-      ),
-    )
-        .whenComplete(() {
-      if (!mounted) {
-        _isFullPlayerOpen = false;
-        return;
-      }
-      setState(() => _isFullPlayerOpen = false);
-    });
+    PlayerDockHost.expand();
   }
 
   bool _isSameTrack(Track? current, Track t) {

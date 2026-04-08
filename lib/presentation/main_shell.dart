@@ -1,19 +1,21 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/audio/audio_player_service.dart';
 import '../core/history/listening_history_repository.dart';
 import '../core/player/full_player_visibility.dart';
+import '../core/player/player_dock_host.dart';
 import '../core/settings/app_settings.dart';
 import '../core/settings/settings_repository.dart';
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_glass.dart';
 import '../core/theme/app_theme.dart';
 import '../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/home/presentation/widgets/floating_mini_player.dart';
-import '../features/player/presentation/pages/full_player_page.dart';
+import '../features/player/presentation/widgets/expandable_player_dock.dart';
 import 'pages/favorites_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/search_page.dart';
@@ -44,54 +46,134 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   int _selectedIndex = 0;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-  final _fullPlayerRouteObserver = _FullPlayerRouteObserver();
 
-  void _openFullPlayer(BuildContext context) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        settings: const RouteSettings(name: FullPlayerPage.routeName),
-        pageBuilder: (context, animation, secondaryAnimation) => FullPlayerPage(
-          audioPlayerService: widget.audioPlayerService,
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.1),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 380),
-      ),
-    );
+  late final AnimationController _playerDockController;
+
+  /// Для setState только при смене трека / наличия трека (не при каждом тике позиции).
+  bool _lastHadTrack = false;
+  String _lastTrackId = '';
+
+  /// Насколько уезжает вниз блок мини + нижняя навигация при развороте плеера.
+  static const double _bottomChromeSlideDistance = 188;
+
+  void _syncFullPlayerVisibility() {
+    FullPlayerVisibility.open.value = !_playerDockController.isDismissed;
+    // Вложенный Navigator без второго маршрута шлёт canHandlePop: false; тогда Android
+    // может не передать назад во Flutter (predictive back / OnBackInvokedDispatcher).
+    // Пока открыт полный плеер, явно просим доставлять событие в фреймворк.
+    if (!_playerDockController.isDismissed) {
+      SystemNavigator.setFrameworkHandlesBack(true);
+    }
   }
 
-  Future<bool> _onWillPop() async {
+  void _expandPlayerDock() {
+    if (widget.audioPlayerService.currentTrack == null) return;
+    if (_playerDockController.isCompleted) return;
+    if (_playerDockController.isAnimating) return;
+    _playerDockController.forward();
+  }
+
+  void _collapsePlayerDock() {
+    _playerDockController.reverse();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final initial = widget.audioPlayerService.currentTrack;
+    _lastHadTrack = initial != null;
+    _lastTrackId = initial?.assetPath ?? '';
+    widget.audioPlayerService.addListener(_onAudioServiceChanged);
+    _playerDockController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 560),
+    );
+    _playerDockController.addListener(_syncFullPlayerVisibility);
+    PlayerDockHost.register(
+      expand: _expandPlayerDock,
+      collapse: _collapsePlayerDock,
+    );
+    _syncFullPlayerVisibility();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.audioPlayerService.removeListener(_onAudioServiceChanged);
+    _playerDockController.removeListener(_syncFullPlayerVisibility);
+    _playerDockController.dispose();
+    PlayerDockHost.unregister();
+    super.dispose();
+  }
+
+  /// [BackButtonListener] нельзя: нужен предок [Router] ([MaterialApp.router] и т.п.).
+  /// С [MaterialApp(home:)] используем [PopScope] + [SystemNavigator.pop] при выходе.
+  /// Сначала сворачивание полного плеера (оверлей поверх вложенных маршрутов), затем стек
+  /// [Navigator], затем выход из приложения.
+  Future<void> _handleBackSequence() async {
+    if (!_playerDockController.isDismissed) {
+      await _playerDockController.reverse();
+      return;
+    }
     final nav = _navigatorKey.currentState;
     if (nav != null && nav.canPop()) {
       nav.pop();
-      return false;
+      return;
     }
+    SystemNavigator.pop();
+  }
+
+  void _onAudioServiceChanged() {
+    final track = widget.audioPlayerService.currentTrack;
+    final hasTrack = track != null;
+    final id = track?.assetPath ?? '';
+
+    if (hasTrack != _lastHadTrack) {
+      _lastHadTrack = hasTrack;
+      _lastTrackId = id;
+      if (!hasTrack && !_playerDockController.isDismissed) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _playerDockController.reset();
+          _syncFullPlayerVisibility();
+        });
+      }
+      setState(() {});
+      return;
+    }
+    if (hasTrack && id != _lastTrackId) {
+      _lastTrackId = id;
+      setState(() {});
+    }
+  }
+
+  /// Если [WidgetsApp.didPopRoute] не обработал жест (редкий случай), дублируем логику здесь.
+  @override
+  Future<bool> didPopRoute() async {
+    await _handleBackSequence();
     return true;
+  }
+
+  void _onPopInvokedWithResult(bool didPop, Object? result) {
+    if (didPop) return;
+    unawaited(_handleBackSequence());
+  }
+
+  double _dockProgressCurved() {
+    final v = _playerDockController.value.clamp(0.0, 1.0);
+    return Curves.easeInOutCubic.transform(v);
   }
 
   void _onBottomNavTap(int index) {
     final nav = _navigatorKey.currentState;
     if (nav != null) {
       nav.popUntil(
-        (route) =>
-            route.settings.name == _ShellRoutes.tabs || route.isFirst,
+        (route) => route.settings.name == _ShellRoutes.tabs || route.isFirst,
       );
     }
     if (index != _selectedIndex) {
@@ -116,8 +198,9 @@ class _MainShellState extends State<MainShell> {
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: WillPopScope(
-          onWillPop: _onWillPop,
+        body: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: _onPopInvokedWithResult,
           child: SafeArea(
             top: false,
             child: Stack(
@@ -127,11 +210,14 @@ class _MainShellState extends State<MainShell> {
                   child: Column(
                     children: [
                       Expanded(
-                        child: Navigator(
-                          key: _navigatorKey,
-                          observers: [_fullPlayerRouteObserver],
-                          initialRoute: _ShellRoutes.tabs,
-                          onGenerateRoute: (settings) {
+                        child: NavigatorPopHandler(
+                          onPopWithResult: (_) {
+                            _navigatorKey.currentState?.maybePop();
+                          },
+                          child: Navigator(
+                            key: _navigatorKey,
+                            initialRoute: _ShellRoutes.tabs,
+                            onGenerateRoute: (settings) {
                             if (settings.name == _ShellRoutes.tabs) {
                               return MaterialPageRoute<void>(
                                 builder: (_) => _TabsView(
@@ -165,75 +251,124 @@ class _MainShellState extends State<MainShell> {
                             }
                             return null;
                           },
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: ClipRect(
-                    clipBehavior: Clip.hardEdge,
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: FullPlayerVisibility.open,
-                      builder: (context, fullPlayerOpen, _) {
-                        return AnimatedSlide(
-                          duration: _kFullPlayerChromeDuration,
-                          curve: Curves.easeOutCubic,
-                          offset: fullPlayerOpen
-                              ? const Offset(0, 1)
-                              : Offset.zero,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              ListenableBuilder(
-                                listenable: widget.audioPlayerService,
-                                builder: (context, _) {
-                                  final track =
-                                      widget.audioPlayerService.currentTrack;
-                                  if (track == null) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  final dur = widget.audioPlayerService.duration;
-                                  final pos = widget.audioPlayerService.position;
-                                  final progress =
-                                      dur != null && dur.inMilliseconds > 0
-                                          ? pos.inMilliseconds /
-                                              dur.inMilliseconds
-                                          : 0.0;
-                                  return Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      12,
-                                      0,
-                                      12,
-                                      12,
-                                    ),
-                                    child: FloatingMiniPlayer(
-                                      track: track,
-                                      trackProgress: progress,
-                                      isPlaying:
-                                          widget.audioPlayerService.isPlaying,
-                                      onTap: () => _openFullPlayer(context),
-                                      onPlayPause: () {
-                                        widget.audioPlayerService
-                                            .togglePlayPause();
-                                      },
-                                    ),
-                                  );
-                                },
-                              ),
-                              _BottomNavBar(
+                Positioned.fill(
+                  child: ListenableBuilder(
+                    listenable: _playerDockController,
+                    builder: (context, _) {
+                      final track = widget.audioPlayerService.currentTrack;
+                      if (track == null) {
+                        if (!_playerDockController.isDismissed) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            _playerDockController.reset();
+                            _syncFullPlayerVisibility();
+                          });
+                        }
+                        return Stack(
+                          fit: StackFit.expand,
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: _BottomNavBar(
                                 selectedIndex: _selectedIndex,
                                 onTap: _onBottomNavTap,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         );
-                      },
-                    ),
+                      }
+
+                      final dockShown = !_playerDockController.isDismissed;
+                      final slide =
+                          _dockProgressCurved() * _bottomChromeSlideDistance;
+                      return Stack(
+                        fit: StackFit.expand,
+                        clipBehavior: Clip.none,
+                        children: [
+                          if (dockShown)
+                            Positioned.fill(
+                              child: ExpandablePlayerDock(
+                                expandController: _playerDockController,
+                                audioPlayerService: widget.audioPlayerService,
+                                onCollapse: _collapsePlayerDock,
+                              ),
+                            ),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: ClipRect(
+                              clipBehavior: Clip.hardEdge,
+                              child: Transform.translate(
+                                offset: Offset(0, slide),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (_playerDockController.isDismissed)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          12,
+                                          0,
+                                          12,
+                                          12,
+                                        ),
+                                        child: ListenableBuilder(
+                                          listenable: widget.audioPlayerService,
+                                          builder: (context, _) {
+                                            final t = widget
+                                                .audioPlayerService
+                                                .currentTrack;
+                                            if (t == null) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final dur = widget
+                                                .audioPlayerService.duration;
+                                            final pos = widget
+                                                .audioPlayerService.position;
+                                            final progress =
+                                                dur != null &&
+                                                    dur.inMilliseconds > 0
+                                                ? pos.inMilliseconds /
+                                                      dur.inMilliseconds
+                                                : 0.0;
+                                            return FloatingMiniPlayer(
+                                              track: t,
+                                              trackProgress: progress,
+                                              isPlaying: widget
+                                                  .audioPlayerService
+                                                  .isPlaying,
+                                              onTap: _expandPlayerDock,
+                                              onPlayPause: () {
+                                                widget.audioPlayerService
+                                                    .togglePlayPause();
+                                              },
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    _BottomNavBar(
+                                      selectedIndex: _selectedIndex,
+                                      onTap: _onBottomNavTap,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ],
@@ -248,46 +383,6 @@ class _MainShellState extends State<MainShell> {
 abstract final class _ShellRoutes {
   static const String tabs = 'tabs';
   static const String favorites = 'favorites';
-}
-
-/// Как у [PageRouteBuilder] для [FullPlayerPage] — сдвиг chrome ([AnimatedSlide]) без сжатия детей и без overflow.
-const Duration _kFullPlayerChromeDuration = Duration(milliseconds: 380);
-
-/// Синхронизирует [FullPlayerVisibility] с маршрутом полного плеера (после push/pop, не во время build).
-class _FullPlayerRouteObserver extends NavigatorObserver {
-  bool _isFullPlayer(Route<dynamic>? route) {
-    return route?.settings.name == FullPlayerPage.routeName;
-  }
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (_isFullPlayer(route)) {
-      FullPlayerVisibility.open.value = true;
-    }
-  }
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (_isFullPlayer(route)) {
-      FullPlayerVisibility.open.value = false;
-    }
-  }
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (_isFullPlayer(route)) {
-      FullPlayerVisibility.open.value = false;
-    }
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    final wasFull = _isFullPlayer(oldRoute);
-    final isFull = _isFullPlayer(newRoute);
-    if (wasFull || isFull) {
-      FullPlayerVisibility.open.value = isFull;
-    }
-  }
 }
 
 class _TabsView extends StatelessWidget {
@@ -340,10 +435,7 @@ class _TabsView extends StatelessWidget {
 }
 
 class _BottomNavBar extends StatelessWidget {
-  const _BottomNavBar({
-    required this.selectedIndex,
-    required this.onTap,
-  });
+  const _BottomNavBar({required this.selectedIndex, required this.onTap});
 
   final int selectedIndex;
   final ValueChanged<int> onTap;
@@ -353,40 +445,33 @@ class _BottomNavBar extends StatelessWidget {
     final palette = AppPaletteExtension.of(context).palette;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const barRadius = 36.0;
-    // Полупрозрачное «стекло»: размытие + лёгкий тинт (как на референсе, без плотной подложки).
-    final glassTint = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.white.withValues(alpha: 0.34);
-    final borderGlass = Colors.white.withValues(alpha: isDark ? 0.22 : 0.45);
+    final glassTint = AppGlass.tint(isDark);
+    final borderGlass = AppGlass.border(isDark);
 
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(barRadius),
-          clipBehavior: Clip.antiAlias,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(barRadius),
-                border: Border.all(color: borderGlass, width: 1),
-                color: glassTint,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.08),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+    // Нижний inset уже даёт внешний SafeArea у [MainShell]; второй SafeArea
+    // удваивал отступ и ломал совпадение с [collapsedMiniRectInOverlay] в доке.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(barRadius),
+        clipBehavior: Clip.antiAlias,
+        child: AppGlass.blurredTintLayer(
+          isDark: isDark,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(barRadius),
+              border: Border.all(color: borderGlass, width: 1),
+              color: glassTint,
+              boxShadow: AppGlass.cardShadows(isDark),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: 12,
+                horizontal: 20,
               ),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
                     _NavItem(
                       icon: Icons.music_note_rounded,
                       label: 'Music',
@@ -414,7 +499,6 @@ class _BottomNavBar extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }
