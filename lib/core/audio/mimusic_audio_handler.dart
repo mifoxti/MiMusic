@@ -4,6 +4,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../history/listening_history_repository.dart';
 import '../platform/platform.dart';
 import '../settings/settings_repository.dart';
 import 'local_tracks.dart';
@@ -13,6 +14,13 @@ SettingsRepository? _handlerSettingsRepository;
 
 void setMiMusicHandlerSettingsRepository(SettingsRepository? repo) {
   _handlerSettingsRepository = repo;
+}
+
+ListeningHistoryRepository? _listeningHistoryRepository;
+
+/// Задаётся после [AudioService.init]; запись истории при старте трека.
+void setListeningHistoryRepository(ListeningHistoryRepository? repo) {
+  _listeningHistoryRepository = repo;
 }
 
 /// Обработчик аудио для audio_service: воспроизведение через just_audio,
@@ -283,6 +291,23 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   bool get _useConcatenatingSource =>
       _queue.length > 1 && _concatenatingSourceUsed;
 
+  void _recordListeningHistoryFromQueue() {
+    final repo = _listeningHistoryRepository;
+    if (repo == null) return;
+    if (_queue.isEmpty || _queueIndex < 0 || _queueIndex >= _queue.length) {
+      return;
+    }
+    final t = _queue[_queueIndex];
+    final path = t['path'] as String? ?? '';
+    if (path.isEmpty) return;
+    repo.recordPlayback(
+      playablePath: path,
+      title: t['title'] as String? ?? '',
+      artist: t['artist'] as String?,
+      coverAssetPath: t['artPath'] as String?,
+    );
+  }
+
   Future<void> _updateMediaItemFromQueue() async {
     if (_queueIndex < 0 || _queueIndex >= _queue.length) return;
     final t = _queue[_queueIndex];
@@ -306,6 +331,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
     ));
+    _recordListeningHistoryFromQueue();
   }
 
   Future<void> _playFromQueue() async {
@@ -430,6 +456,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         updatePosition: _player.position,
         bufferedPosition: _player.bufferedPosition,
       ));
+      _recordListeningHistoryFromQueue();
     } catch (e) {
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.error,

@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 
 import 'core/audio/audio_player_service.dart';
 import 'core/audio/mimusic_audio_handler.dart';
+import 'core/history/in_memory_listening_history_repository.dart';
+import 'core/history/listening_history_repository.dart';
 import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
 import 'core/settings/settings_repository.dart';
@@ -35,11 +37,17 @@ class _SettingsLoader extends StatefulWidget {
 }
 
 class _InitResult {
-  const _InitResult(this.settings, this.repository, this.audioHandler);
+  const _InitResult(
+    this.settings,
+    this.repository,
+    this.audioHandler,
+    this.listeningHistoryRepository,
+  );
 
   final AppSettings settings;
   final SettingsRepository repository;
   final AudioHandler audioHandler;
+  final ListeningHistoryRepository listeningHistoryRepository;
 }
 
 class _SettingsLoaderState extends State<_SettingsLoader> {
@@ -50,6 +58,7 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
       final repository = LocalSettingsRepository();
       setMiMusicHandlerSettingsRepository(repository);
       final settings = await repository.getSettings();
+      final listeningHistoryRepository = InMemoryListeningHistoryRepository();
       final handler = await AudioService.init(
         builder: () => MiMusicAudioHandler(),
       config: AudioServiceConfig(
@@ -58,7 +67,8 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
         androidStopForegroundOnPause: false,
       ),
       );
-      return _InitResult(settings, repository, handler);
+      setListeningHistoryRepository(listeningHistoryRepository);
+      return _InitResult(settings, repository, handler, listeningHistoryRepository);
     } catch (e, st) {
       debugPrint('Init error: $e');
       debugPrint('Stack trace: $st');
@@ -122,6 +132,7 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
           initialSettings: result.settings,
           settingsRepository: result.repository,
           audioHandler: result.audioHandler,
+          listeningHistoryRepository: result.listeningHistoryRepository,
         );
       },
     );
@@ -134,11 +145,13 @@ class MiMusicApp extends StatefulWidget {
     required this.initialSettings,
     required this.settingsRepository,
     required this.audioHandler,
+    required this.listeningHistoryRepository,
   });
 
   final AppSettings initialSettings;
   final SettingsRepository settingsRepository;
   final AudioHandler audioHandler;
+  final ListeningHistoryRepository listeningHistoryRepository;
 
   @override
   State<MiMusicApp> createState() => _MiMusicAppState();
@@ -187,6 +200,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
         onThemeChanged: _onThemeChanged,
         settingsRepository: widget.settingsRepository,
         initialSettings: widget.initialSettings,
+        listeningHistoryRepository: widget.listeningHistoryRepository,
       ),
     );
   }

@@ -7,6 +7,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:mimusic/core/audio/mimusic_audio_handler.dart';
+import 'package:mimusic/core/history/in_memory_listening_history_repository.dart';
 import 'package:mimusic/core/settings/app_settings.dart';
 import 'package:mimusic/core/settings/settings_repository.dart';
 import 'package:mimusic/main.dart';
@@ -25,6 +27,9 @@ void main() {
       MiMusicApp(
         initialSettings: const AppSettings(),
         settingsRepository: _FakeSettingsRepository(),
+        audioHandler: MiMusicAudioHandler(),
+        listeningHistoryRepository:
+            InMemoryListeningHistoryRepository(seedWithLocalAssetDemo: false),
       ),
     );
     await tester.pump();

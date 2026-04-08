@@ -1,31 +1,24 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../../../../core/constants/app_constants.dart';
-import '../../domain/entities/home_section.dart';
+import '../../../../core/theme/app_theme.dart';
 
-/// Блок «История» с артистами.
+/// Карточка «История»: подпись и переход на экран истории.
 class HistorySection extends StatelessWidget {
   const HistorySection({
     super.key,
-    required this.artistNames,
+    required this.subtitle,
     this.onTap,
+    this.title = 'История',
   });
 
-  final List<String> artistNames;
+  final String title;
+  final String subtitle;
   final VoidCallback? onTap;
-
-  factory HistorySection.fromSection(HomeSection section, {VoidCallback? onTap}) {
-    return HistorySection(
-      artistNames: section.historyArtists,
-      onTap: onTap,
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    final text = artistNames.join(', ');
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -47,7 +40,7 @@ class HistorySection extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  Icons.replay_rounded,
+                  Icons.history_rounded,
                   color: palette.textSecondary,
                   size: 22,
                 ),
@@ -59,27 +52,31 @@ class HistorySection extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'История',
+                      title,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: palette.textPrimary,
                       ),
                     ),
-                    if (text.isNotEmpty) ...[
+                    if (subtitle.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        text,
+                        subtitle,
                         style: TextStyle(
                           fontSize: 13,
                           color: palette.textSecondary,
                         ),
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],
                 ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: palette.textMuted,
               ),
             ],
           ),

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/audio/local_tracks.dart';
 import '../../../../core/audio/track.dart';
+import '../../../../core/history/listening_history_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../presentation/pages/listening_history_page.dart';
 import '../../../../presentation/pages/charts_page.dart';
 import '../../../../presentation/pages/for_you_page.dart';
 import '../../domain/entities/home_section.dart';
@@ -22,10 +24,12 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.getHomeSectionUseCase,
     required this.audioPlayerService,
+    required this.listeningHistoryRepository,
   });
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
+  final ListeningHistoryRepository listeningHistoryRepository;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -90,6 +94,28 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+  }
+
+  void _openListeningHistory(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ListeningHistoryPage(
+          audioPlayerService: widget.audioPlayerService,
+          listeningHistoryRepository: widget.listeningHistoryRepository,
+        ),
+      ),
+    );
+  }
+
+  String _historySubtitle(HomeSection section) {
+    final h = widget.listeningHistoryRepository.entries;
+    if (h.isEmpty) {
+      final mock = section.historyArtists.join(', ');
+      return mock.isEmpty
+          ? 'Слушайте музыку — записи появятся здесь'
+          : mock;
+    }
+    return h.take(3).map((e) => e.title).join(' · ');
   }
 
   @override
@@ -168,7 +194,15 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
                 const SizedBox(height: 20),
-                HistorySection.fromSection(_section!),
+                ListenableBuilder(
+                  listenable: widget.listeningHistoryRepository,
+                  builder: (context, _) {
+                    return HistorySection(
+                      subtitle: _historySubtitle(_section!),
+                      onTap: () => _openListeningHistory(context),
+                    );
+                  },
+                ),
                 const SizedBox(height: 20),
                 FriendsSection(
                   friendPlayback: _section!.friendPlayback,

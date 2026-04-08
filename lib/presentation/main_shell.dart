@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../core/audio/audio_player_service.dart';
+import '../core/history/listening_history_repository.dart';
 import '../core/player/full_player_visibility.dart';
 import '../core/settings/app_settings.dart';
 import '../core/settings/settings_repository.dart';
@@ -28,10 +29,12 @@ class MainShell extends StatefulWidget {
     required this.onThemeChanged,
     required this.settingsRepository,
     required this.initialSettings,
+    required this.listeningHistoryRepository,
   });
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
+  final ListeningHistoryRepository listeningHistoryRepository;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final SettingsRepository settingsRepository;
@@ -138,6 +141,8 @@ class _MainShellState extends State<MainShell> {
                                   getHomeSectionUseCase:
                                       widget.getHomeSectionUseCase,
                                   audioPlayerService: widget.audioPlayerService,
+                                  listeningHistoryRepository:
+                                      widget.listeningHistoryRepository,
                                   themeMode: widget.themeMode,
                                   onThemeChanged: widget.onThemeChanged,
                                   settingsRepository: widget.settingsRepository,
@@ -291,6 +296,7 @@ class _TabsView extends StatelessWidget {
     required this.onTabTap,
     required this.getHomeSectionUseCase,
     required this.audioPlayerService,
+    required this.listeningHistoryRepository,
     required this.themeMode,
     required this.onThemeChanged,
     required this.settingsRepository,
@@ -301,6 +307,7 @@ class _TabsView extends StatelessWidget {
   final ValueChanged<int> onTabTap;
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
+  final ListeningHistoryRepository listeningHistoryRepository;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final SettingsRepository settingsRepository;
@@ -314,6 +321,7 @@ class _TabsView extends StatelessWidget {
         HomePage(
           getHomeSectionUseCase: getHomeSectionUseCase,
           audioPlayerService: audioPlayerService,
+          listeningHistoryRepository: listeningHistoryRepository,
         ),
         SearchPage(
           audioPlayerService: audioPlayerService,
