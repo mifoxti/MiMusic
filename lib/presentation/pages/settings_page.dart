@@ -6,6 +6,7 @@ import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import 'about_page.dart';
+import 'cache_page.dart';
 import 'equalizer_page.dart';
 import 'personal_settings_page.dart';
 
@@ -270,7 +271,24 @@ class _SettingsPageState extends State<SettingsPage> {
         _rowDivider(palette),
         _row(palette, Icons.language_rounded, 'Язык', subtitle: 'Русский', onTap: () {}),
         _rowDivider(palette),
-        _row(palette, Icons.folder_outlined, 'Кэш', subtitle: 'Очистить', onTap: () {}),
+        _row(
+          palette,
+          Icons.folder_outlined,
+          'Кэш',
+          subtitle: 'Размер и очистка',
+          onTap: () async {
+            final fresh = await widget.settingsRepository.getSettings();
+            if (!mounted) return;
+            await Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (context) => CachePage(
+                  settingsRepository: widget.settingsRepository,
+                  initialSettings: fresh,
+                ),
+              ),
+            );
+          },
+        ),
         _rowDivider(palette),
         _row(
           palette,

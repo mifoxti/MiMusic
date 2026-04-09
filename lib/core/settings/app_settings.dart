@@ -11,7 +11,14 @@ class AppSettings {
     this.equalizerGains = const [0.0, 0.0, 0.0, 0.0, 0.0],
     this.equalizerPreamp = 0.0,
     this.notificationsEnabled = true,
+    this.cacheLimitBytes = defaultCacheLimitBytes,
   });
+
+  /// Лимит кэша по умолчанию: 1 ГБ (сохраняется в локальных настройках).
+  static const int defaultCacheLimitBytes = 1024 * 1024 * 1024;
+
+  /// Нет лимита (∞). Раньше для этого же смысла в JSON могло быть `0` — см. [fromJson].
+  static const int cacheLimitUnlimited = -1;
 
   final ThemeMode themeMode;
   final String email;
@@ -22,6 +29,9 @@ class AppSettings {
   final double equalizerPreamp;
   final bool notificationsEnabled;
 
+  /// Максимальный допустимый объём кэша (для отображения и будущего контроля).
+  final int cacheLimitBytes;
+
   AppSettings copyWith({
     ThemeMode? themeMode,
     String? email,
@@ -31,6 +41,7 @@ class AppSettings {
     List<double>? equalizerGains,
     double? equalizerPreamp,
     bool? notificationsEnabled,
+    int? cacheLimitBytes,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -41,6 +52,7 @@ class AppSettings {
       equalizerGains: equalizerGains ?? List.from(this.equalizerGains),
       equalizerPreamp: equalizerPreamp ?? this.equalizerPreamp,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      cacheLimitBytes: cacheLimitBytes ?? this.cacheLimitBytes,
     );
   }
 
@@ -55,6 +67,7 @@ class AppSettings {
       'equalizerGains': equalizerGains,
       'equalizerPreamp': equalizerPreamp,
       'notificationsEnabled': notificationsEnabled,
+      'cacheLimitBytes': cacheLimitBytes,
     };
   }
 
@@ -69,6 +82,12 @@ class AppSettings {
       equalizerGains: gains is List ? List<double>.from(gains.map((e) => (e as num).toDouble())) : const [0.0, 0.0, 0.0, 0.0, 0.0],
       equalizerPreamp: (json['equalizerPreamp'] as num?)?.toDouble() ?? 0.0,
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
+      cacheLimitBytes: _cacheLimitFromJson(json['cacheLimitBytes']),
     );
+  }
+
+  static int _cacheLimitFromJson(Object? v) {
+    if (v == null) return defaultCacheLimitBytes;
+    return (v as num).toInt();
   }
 }
