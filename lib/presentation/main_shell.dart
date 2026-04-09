@@ -7,6 +7,7 @@ import '../core/audio/audio_player_service.dart';
 import '../core/history/listening_history_repository.dart';
 import '../core/player/full_player_visibility.dart';
 import '../core/player/player_dock_host.dart';
+import '../core/player/shell_navigator_host.dart';
 import '../core/settings/app_settings.dart';
 import '../core/settings/settings_repository.dart';
 import '../core/theme/app_colors.dart';
@@ -98,6 +99,7 @@ class _MainShellState extends State<MainShell>
       expand: _expandPlayerDock,
       collapse: _collapsePlayerDock,
     );
+    ShellNavigatorHost.register(_navigatorKey);
     _syncFullPlayerVisibility();
   }
 
@@ -108,6 +110,7 @@ class _MainShellState extends State<MainShell>
     _playerDockController.removeListener(_syncFullPlayerVisibility);
     _playerDockController.dispose();
     PlayerDockHost.unregister();
+    ShellNavigatorHost.unregister();
     super.dispose();
   }
 

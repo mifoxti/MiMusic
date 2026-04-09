@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
@@ -60,6 +62,20 @@ class _EqualizerPageState extends State<EqualizerPage> {
     final g = widget.initialSettings.equalizerGains;
     _gains = List.generate(_bands, (i) => i < g.length ? g[i] : 0.0);
     _preamp = widget.initialSettings.equalizerPreamp;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_reloadEqualizerFromStorage());
+    });
+  }
+
+  /// Актуальные значения с диска (после перезапуска и при повторном входе на экран).
+  Future<void> _reloadEqualizerFromStorage() async {
+    final s = await widget.settingsRepository.getSettings();
+    if (!mounted) return;
+    setState(() {
+      final g = s.equalizerGains;
+      _gains = List.generate(_bands, (i) => i < g.length ? g[i] : 0.0);
+      _preamp = s.equalizerPreamp;
+    });
   }
 
   Future<void> _saveEqualizer() async {
@@ -72,16 +88,17 @@ class _EqualizerPageState extends State<EqualizerPage> {
 
   @override
   void dispose() {
-    _saveEqualizer();
+    unawaited(_saveEqualizer());
     super.dispose();
   }
 
-  void _applyPreset(int index) async {
+  Future<void> _applyPreset(int index) async {
     setState(() {
       _selectedPresetIndex = index;
       _gains = List<double>.from(_presets[index].gains);
     });
     await widget.audioPlayerService.applyEqualizerGains(_gains);
+    await _saveEqualizer();
   }
 
   Future<void> _reset() async {
@@ -394,6 +411,9 @@ class _EqualizerPageState extends State<EqualizerPage> {
                                           _selectedPresetIndex = null;
                                         });
                                         await widget.audioPlayerService.applyEqualizerGains(_gains);
+                                      },
+                                      onChangeEnd: (_) {
+                                        unawaited(_saveEqualizer());
                                       },
                                     ),
                                   ),

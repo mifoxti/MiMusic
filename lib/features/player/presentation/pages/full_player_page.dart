@@ -4,6 +4,8 @@ import 'package:just_audio/just_audio.dart';
 import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/player/player_dock_host.dart';
+import '../../../../core/player/shell_navigator_host.dart';
 import '../../../../core/widgets/track_cover.dart';
 import '../../../../presentation/pages/artist_page.dart';
 import '../../../../presentation/pages/listening_room_page.dart';
@@ -151,18 +153,28 @@ class FullPlayerDockPanel extends StatelessWidget {
                                             track.artistDisplay.trim().isEmpty
                                             ? null
                                             : () {
-                                                Navigator.of(context).push(
-                                                  MaterialPageRoute<void>(
-                                                    builder: (_) => ArtistPage(
-                                                      artistName:
-                                                          track.artistDisplay,
-                                                      coverAssetPath: track
-                                                          .coverFallbackPath,
-                                                      audioPlayerService:
-                                                          audioPlayerService,
-                                                    ),
+                                                final route =
+                                                    MaterialPageRoute<void>(
+                                                  builder: (_) => ArtistPage(
+                                                    artistName:
+                                                        track.artistDisplay,
+                                                    coverAssetPath: track
+                                                        .coverFallbackPath,
+                                                    audioPlayerService:
+                                                        audioPlayerService,
                                                   ),
                                                 );
+                                                final pushed =
+                                                    ShellNavigatorHost.push(
+                                                  route,
+                                                );
+                                                if (pushed) {
+                                                  PlayerDockHost.collapse();
+                                                } else {
+                                                  Navigator.of(context).push(
+                                                    route,
+                                                  );
+                                                }
                                               },
                                         borderRadius: BorderRadius.circular(8),
                                         child: Padding(

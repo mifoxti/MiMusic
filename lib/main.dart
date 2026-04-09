@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -171,6 +173,9 @@ class _MiMusicAppState extends State<MiMusicApp> {
       settingsRepository: widget.settingsRepository,
     );
     _getHomeSectionUseCase = GetHomeSectionUseCase(HomeRepositoryImpl());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_audioPlayerService.applyEqualizerFromSettings());
+    });
   }
 
   @override
