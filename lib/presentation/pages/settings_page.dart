@@ -5,6 +5,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import 'about_page.dart';
 import 'equalizer_page.dart';
 import 'personal_settings_page.dart';
 
@@ -271,7 +272,19 @@ class _SettingsPageState extends State<SettingsPage> {
         _rowDivider(palette),
         _row(palette, Icons.folder_outlined, 'Кэш', subtitle: 'Очистить', onTap: () {}),
         _rowDivider(palette),
-        _row(palette, Icons.info_outline_rounded, 'О приложении', subtitle: 'MiMusic 1.0.0', onTap: () {}),
+        _row(
+          palette,
+          Icons.info_outline_rounded,
+          'О приложении',
+          subtitle: 'Версия и ссылки',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (context) => const AboutPage(),
+              ),
+            );
+          },
+        ),
       ],
     );
   }
