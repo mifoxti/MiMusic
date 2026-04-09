@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/player/player_dock_host.dart';
@@ -135,6 +136,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 child: CircularProgressIndicator(color: palette.accent),
               );
             }
+            final hasMiniPlayer = widget.audioPlayerService.currentTrack != null;
+            final bottomContentInset = hasMiniPlayer
+                ? AppConstants.shellBottomInsetWithMiniPlayer
+                : AppConstants.shellBottomInset;
             return CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(
@@ -158,7 +163,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                   )
                 else
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                    padding: EdgeInsets.fromLTRB(20, 8, 20, bottomContentInset),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {

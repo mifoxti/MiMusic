@@ -165,6 +165,10 @@ class _ChartsPageState extends State<ChartsPage> {
                 child: CircularProgressIndicator(color: palette.accent),
               );
             }
+            final hasMiniPlayer = widget.audioPlayerService.currentTrack != null;
+            final bottomContentInset = hasMiniPlayer
+                ? AppConstants.shellBottomInsetWithMiniPlayer
+                : AppConstants.shellBottomInset;
             return CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(
@@ -188,7 +192,7 @@ class _ChartsPageState extends State<ChartsPage> {
                   )
                 else
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                    padding: EdgeInsets.fromLTRB(20, 8, 20, bottomContentInset),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {

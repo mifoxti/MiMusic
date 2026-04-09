@@ -134,7 +134,12 @@ class _EqualizerPageState extends State<EqualizerPage> {
               _buildAppBar(palette),
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.fromLTRB(
+                    20,
+                    0,
+                    20,
+                    AppConstants.shellBottomInsetWithMiniPlayer,
+                  ),
                   child: Column(
                     children: [
                       const SizedBox(height: 8),
@@ -162,7 +167,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                       _buildPreamp(palette),
                       const SizedBox(height: 24),
                       _buildResetButton(palette),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 8),
                     ],
                   ),
                 ),

@@ -149,6 +149,10 @@ class _ForYouPageState extends State<ForYouPage> {
             }
             final section = _section!;
             final queue = _recommendedOrder.isNotEmpty ? _recommendedOrder : _tracks;
+            final hasMiniPlayer = widget.audioPlayerService.currentTrack != null;
+            final bottomContentInset = hasMiniPlayer
+                ? AppConstants.shellBottomInsetWithMiniPlayer
+                : AppConstants.shellBottomInset;
 
             return CustomScrollView(
               slivers: [
@@ -269,7 +273,7 @@ class _ForYouPageState extends State<ForYouPage> {
                   ),
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 120),
+                    padding: EdgeInsets.fromLTRB(20, 28, 20, bottomContentInset),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [

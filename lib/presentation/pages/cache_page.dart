@@ -332,7 +332,12 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                   physics: const BouncingScrollPhysics(
                     parent: AlwaysScrollableScrollPhysics(),
                   ),
-                  padding: EdgeInsets.fromLTRB(20, 8, 20, 160 + bottomSafe),
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    8,
+                    20,
+                    AppConstants.shellBottomInsetWithMiniPlayer + bottomSafe,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

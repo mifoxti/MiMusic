@@ -47,6 +47,10 @@ class ProfilePage extends StatelessWidget {
     final coverHeight = (size.width * _coverAspectRatio).clamp(260.0, size.height * 0.58);
     final expandedHeight = coverHeight + 96;
     final collapsedHeight = kToolbarHeight + topPadding + 12;
+    final hasMiniPlayer = audioPlayerService.currentTrack != null;
+    final bottomContentInset = hasMiniPlayer
+        ? AppConstants.shellBottomInsetWithMiniPlayer
+        : AppConstants.shellBottomInset;
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
@@ -236,7 +240,7 @@ class ProfilePage extends StatelessWidget {
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
+              padding: EdgeInsets.fromLTRB(24, 20, 24, bottomContentInset),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

@@ -217,7 +217,12 @@ class _AboutPageState extends State<AboutPage> {
               ),
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                  padding: const EdgeInsets.fromLTRB(
+                    20,
+                    8,
+                    20,
+                    AppConstants.shellBottomInsetWithMiniPlayer,
+                  ),
                   child: Column(
                     children: [
                       const SizedBox(height: 8),

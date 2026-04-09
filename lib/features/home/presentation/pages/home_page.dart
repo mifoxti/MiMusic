@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/audio/local_tracks.dart';
 import '../../../../core/audio/track.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/history/listening_history_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -133,6 +134,10 @@ class _HomePageState extends State<HomePage> {
     final featuredTrack = _localTracks.isNotEmpty ? _localTracks.first : null;
 
     final topPadding = MediaQuery.paddingOf(context).top;
+    final hasMiniPlayer = widget.audioPlayerService.currentTrack != null;
+    final bottomContentInset = hasMiniPlayer
+        ? AppConstants.shellBottomInsetWithMiniPlayer
+        : AppConstants.shellBottomInset;
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
@@ -210,7 +215,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 20),
                 ReleasesSection(releases: _section!.latestReleases),
-                const SizedBox(height: 88),
+                SizedBox(height: bottomContentInset),
               ],
             ),
           ),

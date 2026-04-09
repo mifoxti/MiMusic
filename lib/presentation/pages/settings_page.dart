@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
@@ -63,28 +64,37 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             _buildAppBar(palette),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildContentCard(
-                      palette,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _sectionLabel(palette, 'Тема'),
-                          const SizedBox(height: 10),
-                          _buildThemeChips(palette),
-                          const SizedBox(height: 24),
-                          _sectionLabel(palette, 'Прочее'),
-                          const SizedBox(height: 8),
-                          _buildOtherRows(palette),
-                        ],
-                      ),
+              child: ListenableBuilder(
+                listenable: widget.audioPlayerService,
+                builder: (context, _) {
+                  final hasMiniPlayer = widget.audioPlayerService.currentTrack != null;
+                  final bottomContentInset = hasMiniPlayer
+                      ? AppConstants.shellBottomInsetWithMiniPlayer
+                      : AppConstants.shellBottomInset;
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(20, 8, 20, bottomContentInset),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildContentCard(
+                          palette,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _sectionLabel(palette, 'Тема'),
+                              const SizedBox(height: 10),
+                              _buildThemeChips(palette),
+                              const SizedBox(height: 24),
+                              _sectionLabel(palette, 'Прочее'),
+                              const SizedBox(height: 8),
+                              _buildOtherRows(palette),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ],
