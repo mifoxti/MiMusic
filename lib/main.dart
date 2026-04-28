@@ -8,6 +8,7 @@ import 'core/audio/audio_player_service.dart';
 import 'core/audio/mimusic_audio_handler.dart';
 import 'core/history/in_memory_listening_history_repository.dart';
 import 'core/history/listening_history_repository.dart';
+import 'core/notifications/local_notifications_service.dart';
 import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
 import 'core/settings/settings_repository.dart';
@@ -57,6 +58,7 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
 
   Future<_InitResult> _init() async {
     try {
+      await LocalNotificationsService.instance.initialize();
       final repository = LocalSettingsRepository();
       setMiMusicHandlerSettingsRepository(repository);
       final settings = await repository.getSettings();

@@ -8,7 +8,9 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/social/friend_request_notifications.dart';
 import 'favorites_page.dart';
+import 'notifications_page.dart';
 import 'playlists_page.dart';
 import 'settings_page.dart';
 import 'studio_page.dart';
@@ -40,6 +42,7 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    FriendRequestNotifications.instance.seedDemoIfNeeded(initialSettings.nickname);
     final palette = AppPaletteExtension.of(context).palette;
     final size = MediaQuery.sizeOf(context);
     final topPadding = MediaQuery.paddingOf(context).top;
@@ -108,24 +111,100 @@ class ProfilePage extends StatelessWidget {
                   Positioned(
                     top: topPadding + 8,
                     right: 8,
-                    child: IconButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (context) => SettingsPage(
-                              themeMode: themeMode,
-                              onThemeChanged: onThemeChanged,
-                              settingsRepository: settingsRepository,
-                              initialSettings: initialSettings,
-                              audioPlayerService: audioPlayerService,
-                            ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListenableBuilder(
+                          listenable: FriendRequestNotifications.instance,
+                          builder: (context, _) {
+                            final notifications =
+                                FriendRequestNotifications.instance.allFor(
+                              initialSettings.nickname,
+                            );
+                            final pending = notifications
+                                .where(
+                                  (n) =>
+                                      n.status == FriendRequestStatus.pending,
+                                )
+                                .length;
+                            return IconButton(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (context) => NotificationsPage(
+                                      currentUsername: initialSettings.nickname,
+                                      audioPlayerService: audioPlayerService,
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  const Icon(
+                                    Icons.notifications_rounded,
+                                    color: Colors.white,
+                                  ),
+                                  if (pending > 0)
+                                    Positioned(
+                                      right: -6,
+                                      top: -6,
+                                      child: Container(
+                                        constraints: const BoxConstraints(
+                                          minWidth: 16,
+                                          minHeight: 16,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.redAccent,
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          '$pending',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              style: IconButton.styleFrom(
+                                backgroundColor:
+                                    Colors.black.withValues(alpha: 0.25),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (context) => SettingsPage(
+                                  themeMode: themeMode,
+                                  onThemeChanged: onThemeChanged,
+                                  settingsRepository: settingsRepository,
+                                  initialSettings: initialSettings,
+                                  audioPlayerService: audioPlayerService,
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.settings_rounded,
+                            color: Colors.white,
                           ),
-                        );
-                      },
-                      icon: const Icon(Icons.settings_rounded, color: Colors.white),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.black.withValues(alpha: 0.25),
-                      ),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.black.withValues(alpha: 0.25),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   // Аватар + ник + кнопка "Мысли" — плавно переходят из центра вниз в левый верхний угол.

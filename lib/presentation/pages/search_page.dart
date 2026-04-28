@@ -11,6 +11,7 @@ import '../../features/home/domain/entities/listening_friend.dart';
 import '../../features/home/domain/entities/release_item.dart';
 import '../../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../../core/player/player_dock_host.dart';
+import 'artist_page.dart';
 
 /// Режим поиска: музыка (треки + релизы как альбомы) или пользователи.
 enum _SearchMode { music, people }
@@ -31,6 +32,11 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
+  static const List<ListeningFriend> _fallbackFriends = [
+    ListeningFriend(username: 'alexwave'),
+    ListeningFriend(username: 'lofi_nora'),
+  ];
+
   final TextEditingController _queryController = TextEditingController();
   _SearchMode _mode = _SearchMode.music;
 
@@ -67,7 +73,9 @@ class _SearchPageState extends State<SearchPage> {
       setState(() {
         _allTracks = tracks;
         _releases = section.latestReleases;
-        _friends = section.listeningFriends;
+        _friends = section.listeningFriends.isEmpty
+            ? _fallbackFriends
+            : section.listeningFriends;
         _suggestionArtists = section.historyArtists;
         _loading = false;
       });
@@ -536,12 +544,13 @@ class _SearchPageState extends State<SearchPage> {
                   friend: friend,
                   palette: palette,
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Профиль ${friend.username} — скоро',
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ArtistPage(
+                          artistName: friend.username,
+                          coverImageUrl: friend.avatarUrl,
+                          audioPlayerService: widget.audioPlayerService,
                         ),
-                        behavior: SnackBarBehavior.floating,
                       ),
                     );
                   },

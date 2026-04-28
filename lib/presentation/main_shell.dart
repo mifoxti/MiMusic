@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../core/audio/audio_player_service.dart';
 import '../core/history/listening_history_repository.dart';
+import '../core/notifications/local_notifications_service.dart';
+import '../core/notifications/notification_intent.dart';
 import '../core/player/full_player_visibility.dart';
 import '../core/player/player_dock_host.dart';
 import '../core/player/shell_navigator_host.dart';
@@ -18,7 +20,9 @@ import '../features/home/presentation/pages/home_page.dart';
 import '../features/home/presentation/widgets/floating_mini_player.dart';
 import '../features/player/presentation/widgets/expandable_player_dock.dart';
 import 'pages/favorites_page.dart';
+import 'pages/artist_page.dart';
 import 'pages/profile_page.dart';
+import 'pages/release_page.dart';
 import 'pages/search_page.dart';
 
 /// Главный shell приложения: одна активность — много фрагментов.
@@ -53,6 +57,7 @@ class _MainShellState extends State<MainShell>
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   late final AnimationController _playerDockController;
+  StreamSubscription<NotificationIntent>? _notificationIntentSub;
 
   /// Для setState только при смене трека / наличия трека (не при каждом тике позиции).
   bool _lastHadTrack = false;
@@ -100,6 +105,16 @@ class _MainShellState extends State<MainShell>
       collapse: _collapsePlayerDock,
     );
     ShellNavigatorHost.register(_navigatorKey);
+    _notificationIntentSub = LocalNotificationsService.instance.intents.listen(
+      _openNotificationIntent,
+    );
+    final pending = LocalNotificationsService.instance.takePendingIntent();
+    if (pending != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _openNotificationIntent(pending);
+      });
+    }
     _syncFullPlayerVisibility();
   }
 
@@ -109,9 +124,35 @@ class _MainShellState extends State<MainShell>
     widget.audioPlayerService.removeListener(_onAudioServiceChanged);
     _playerDockController.removeListener(_syncFullPlayerVisibility);
     _playerDockController.dispose();
+    _notificationIntentSub?.cancel();
     PlayerDockHost.unregister();
     ShellNavigatorHost.unregister();
     super.dispose();
+  }
+
+  void _openNotificationIntent(NotificationIntent intent) {
+    if (!_playerDockController.isDismissed) {
+      _playerDockController.reverse();
+    }
+    final route = switch (intent.target) {
+      NotificationTarget.friendProfile => MaterialPageRoute<void>(
+          builder: (_) => ArtistPage(
+            artistName: intent.username ?? 'Пользователь',
+            coverImageUrl: intent.avatarUrl,
+            audioPlayerService: widget.audioPlayerService,
+          ),
+        ),
+      NotificationTarget.release => MaterialPageRoute<void>(
+          builder: (_) => ReleasePage(
+            title: intent.releaseTitle ?? 'Новый релиз',
+            coverUrl: intent.releaseCoverUrl,
+          ),
+        ),
+    };
+    final pushed = ShellNavigatorHost.push(route);
+    if (!pushed) {
+      _navigatorKey.currentState?.push(route);
+    }
   }
 
   /// [BackButtonListener] нельзя: нужен предок [Router] ([MaterialApp.router] и т.п.).
@@ -215,7 +256,9 @@ class _MainShellState extends State<MainShell>
                       Expanded(
                         child: NavigatorPopHandler(
                           onPopWithResult: (_) {
-                            _navigatorKey.currentState?.maybePop();
+                            // Единая последовательность back:
+                            // 1) свернуть полный плеер, 2) pop вложенного Navigator, 3) выход.
+                            unawaited(_handleBackSequence());
                           },
                           child: Navigator(
                             key: _navigatorKey,

@@ -4,6 +4,10 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/notifications/local_notifications_service.dart';
+import '../../core/player/full_player_visibility.dart';
+import '../../core/player/player_dock_host.dart';
+import '../../core/social/friend_request_notifications.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
@@ -16,11 +20,13 @@ class ArtistPage extends StatefulWidget {
     super.key,
     required this.artistName,
     this.coverAssetPath = 'assets/images/geoxor.png',
+    this.coverImageUrl,
     this.audioPlayerService,
   });
 
   final String artistName;
   final String? coverAssetPath;
+  final String? coverImageUrl;
   final AudioPlayerService? audioPlayerService;
 
   @override
@@ -28,8 +34,10 @@ class ArtistPage extends StatefulWidget {
 }
 
 class _ArtistPageState extends State<ArtistPage> {
+  static const String _currentUser = 'mifoxti';
   List<Track> _tracks = [];
   bool _loading = true;
+  bool _friendRequestSent = false;
 
   @override
   void initState() {
@@ -76,10 +84,46 @@ class _ArtistPageState extends State<ArtistPage> {
     await s.playTrack(t, queue: _tracks.isNotEmpty ? _tracks : [t]);
   }
 
+  Future<void> _sendFriendRequest() async {
+    final center = FriendRequestNotifications.instance;
+    final existing = center.pendingBetween(
+      fromUsername: _currentUser,
+      toUsername: widget.artistName,
+    );
+    if (existing != null || _friendRequestSent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Запрос уже отправлен'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    center.sendRequest(
+      fromUsername: _currentUser,
+      fromAvatarUrl: widget.coverImageUrl,
+      toUsername: widget.artistName,
+    );
+    await LocalNotificationsService.instance.showFriendRequestNotification(
+      fromUsername: widget.artistName,
+      fromAvatarUrl: widget.coverImageUrl,
+      fromAvatarAssetPath: widget.coverAssetPath,
+    );
+    if (!mounted) return;
+    setState(() => _friendRequestSent = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Запрос в друзья отправлен пользователю @${widget.artistName}'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     final cover = widget.coverAssetPath ?? 'assets/images/geoxor.png';
+    final networkCover = widget.coverImageUrl;
 
     return Container(
       decoration: BoxDecoration(
@@ -95,27 +139,50 @@ class _ArtistPageState extends State<ArtistPage> {
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              expandedHeight: 280,
-              pinned: true,
-              backgroundColor: Colors.transparent,
-              leading: IconButton(
-                icon: Icon(Icons.arrow_back_rounded, color: palette.textPrimary),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              flexibleSpace: FlexibleSpaceBar(
-                background: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.asset(
-                      cover,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: palette.accent.withValues(alpha: 0.5),
+        body: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            if (FullPlayerVisibility.open.value) {
+              PlayerDockHost.collapse();
+              return;
+            }
+            Navigator.of(context).pop();
+          },
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 280,
+                pinned: true,
+                backgroundColor: Colors.transparent,
+                leading: IconButton(
+                  icon: Icon(Icons.arrow_back_rounded, color: palette.textPrimary),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                    if ((networkCover ?? '').isNotEmpty)
+                      Image.network(
+                        networkCover!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Image.asset(
+                          cover,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: palette.accent.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      )
+                    else
+                      Image.asset(
+                        cover,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: palette.accent.withValues(alpha: 0.5),
+                        ),
                       ),
-                    ),
                     Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -147,59 +214,91 @@ class _ArtistPageState extends State<ArtistPage> {
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              Material(
-                                color: Colors.white.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(24),
-                                child: InkWell(
-                                  onTap: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: const Text(
-                                          'Лента «Мысли» — скоро',
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Material(
+                                    color: Colors.white.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: InkWell(
+                                      onTap: () {
+                                        _sendFriendRequest();
+                                      },
+                                      borderRadius: BorderRadius.circular(24),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 8,
                                         ),
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
-                                    );
-                                  },
-                                  borderRadius: BorderRadius.circular(24),
-                                  child: const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                      vertical: 8,
-                                    ),
-                                    child: Text(
-                                      'Мысли',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                                        child: Text(
+                                          _friendRequestSent
+                                              ? 'Запрос отправлен'
+                                              : 'Добавить в друзья',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(width: 10),
+                                  Material(
+                                    color: Colors.white.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: InkWell(
+                                      onTap: () {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: const Text(
+                                              'Лента «Мысли» — скоро',
+                                            ),
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                      },
+                                      borderRadius: BorderRadius.circular(24),
+                                      child: const Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 8,
+                                        ),
+                                        child: Text(
+                                          'Мысли',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: palette.primaryLight.withValues(alpha: 0.92),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(24),
+                    ],
                   ),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+              ),
+              SliverToBoxAdapter(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: palette.primaryLight.withValues(alpha: 0.92),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                       Center(
                         child: Container(
                           width: 40,
@@ -258,12 +357,13 @@ class _ArtistPageState extends State<ArtistPage> {
                           );
                         },
                       ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
