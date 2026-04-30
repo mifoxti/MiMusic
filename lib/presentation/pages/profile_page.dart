@@ -11,6 +11,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/social/friend_request_notifications.dart';
 import 'favorites_page.dart';
+import 'friends_page.dart';
 import 'notifications_page.dart';
 import 'playlists_page.dart';
 import 'settings_page.dart';
@@ -427,7 +428,16 @@ class ProfilePage extends StatelessWidget {
           child: _ActionCard(
             icon: Icons.people_rounded,
             label: Localizations.localeOf(context).languageCode == 'en' ? 'Friends' : 'Друзья',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => FriendsPage(
+                    currentUsername: initialSettings.nickname,
+                    audioPlayerService: audioPlayerService,
+                  ),
+                ),
+              );
+            },
             palette: palette,
           ),
         ),
