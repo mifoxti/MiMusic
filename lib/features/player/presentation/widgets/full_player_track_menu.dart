@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/audio/track.dart';
+import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../features/playlists/data/repositories/local_playlists_repository.dart';
@@ -68,7 +69,7 @@ Future<void> showFullPlayerTrackMenu(
                   ListTile(
                     leading: Icon(Icons.playlist_add_rounded, color: palette.accent),
                     title: Text(
-                      'Добавить в плейлист',
+                      context.t('player.menu.addToPlaylist'),
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontWeight: FontWeight.w600,
@@ -87,7 +88,7 @@ Future<void> showFullPlayerTrackMenu(
                   ListTile(
                     leading: Icon(Icons.info_outline_rounded, color: palette.textSecondary),
                     title: Text(
-                      'О треке',
+                      context.t('player.menu.aboutTrack'),
                       style: TextStyle(color: palette.textPrimary),
                     ),
                     onTap: () {
@@ -98,16 +99,14 @@ Future<void> showFullPlayerTrackMenu(
                   ListTile(
                     leading: Icon(Icons.flag_outlined, color: palette.textSecondary),
                     title: Text(
-                      'Сообщить о проблеме',
+                      context.t('player.menu.reportProblem'),
                       style: TextStyle(color: palette.textPrimary),
                     ),
                     onTap: () {
                       Navigator.pop(ctx);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: const Text(
-                            'Спасибо. Мы получили обращение.',
-                          ),
+                          content: Text(context.t('player.menu.reportSent')),
                           behavior: SnackBarBehavior.floating,
                           backgroundColor: palette.cardBackground,
                         ),
@@ -181,7 +180,7 @@ Future<void> _showPlaylistPicker(
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                         child: Text(
-                          'Выберите плейлист',
+                          context.t('player.menu.selectPlaylist'),
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w700,
@@ -193,7 +192,7 @@ Future<void> _showPlaylistPicker(
                         child: playlists.isEmpty
                             ? Center(
                                 child: Text(
-                                  'Нет плейлистов. Создайте в разделе «Плейлисты».',
+                                  context.t('player.menu.noPlaylists'),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: palette.textSecondary),
                                 ),
@@ -228,7 +227,7 @@ Future<void> _showPlaylistPicker(
                                             .showSnackBar(
                                           SnackBar(
                                             content: Text(
-                                              'Добавлено в «${p.title}»',
+                                              context.tr('player.menu.addedToPlaylist', {'title': p.title}),
                                             ),
                                             behavior: SnackBarBehavior.floating,
                                           ),
@@ -270,7 +269,7 @@ void _showAboutTrack(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Исполнитель: ${track.artistDisplay.isEmpty ? '—' : track.artistDisplay}',
+              context.tr('player.menu.artist', {'artist': track.artistDisplay.isEmpty ? '—' : track.artistDisplay}),
               style: TextStyle(color: palette.textSecondary),
             ),
             const SizedBox(height: 8),
@@ -287,7 +286,7 @@ void _showAboutTrack(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Закрыть'),
+          child: Text(context.t('common.close')),
         ),
       ],
     ),

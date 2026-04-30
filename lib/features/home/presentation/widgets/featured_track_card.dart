@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/audio/track.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/track_cover.dart';
@@ -175,7 +176,7 @@ class _PlayPauseChip extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                isPlaying ? 'Пауза' : 'Слушать',
+                isPlaying ? context.t('home.featurePause') : context.t('home.featurePlay'),
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,

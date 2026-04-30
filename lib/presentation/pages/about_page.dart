@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_theme.dart';
@@ -153,7 +154,7 @@ class _AboutPageState extends State<AboutPage> {
     final palette = AppPaletteExtension.of(context).palette;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Ник Discord скопирован: mifoxti'),
+        content: Text(context.t('about.discordCopied')),
         behavior: SnackBarBehavior.floating,
         backgroundColor: palette.cardBackground,
       ),
@@ -203,7 +204,7 @@ class _AboutPageState extends State<AboutPage> {
                     ),
                     const Spacer(),
                     Text(
-                      'О приложении',
+                      context.t('about.title'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -271,7 +272,7 @@ class _AboutPageState extends State<AboutPage> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              'Версия $versionLabel',
+                              context.tr('about.version', {'version': versionLabel}),
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
@@ -300,7 +301,7 @@ class _AboutPageState extends State<AboutPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'СВЯЗЬ И ИСХОДНИКИ',
+                              context.t('about.links'),
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
@@ -331,7 +332,7 @@ class _AboutPageState extends State<AboutPage> {
                               palette: palette,
                               icon: Icons.chat_rounded,
                               title: 'Discord',
-                              subtitle: '@mifoxti · нажмите, чтобы скопировать ник',
+                              subtitle: context.t('about.discordHint'),
                               onTap: _copyDiscordHint,
                               opensExternally: false,
                             ),
@@ -340,8 +341,7 @@ class _AboutPageState extends State<AboutPage> {
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        'MiMusic — клиент для прослушивания музыки.\n'
-                        'Иконки и интерфейс могут меняться между версиями.',
+                        context.t('about.description'),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,

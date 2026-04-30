@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
@@ -22,6 +23,7 @@ class ProfilePage extends StatelessWidget {
     super.key,
     required this.themeMode,
     required this.onThemeChanged,
+    required this.onLanguageChanged,
     required this.settingsRepository,
     required this.initialSettings,
     required this.audioPlayerService,
@@ -29,6 +31,7 @@ class ProfilePage extends StatelessWidget {
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
+  final ValueChanged<String> onLanguageChanged;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
   final AudioPlayerService audioPlayerService;
@@ -190,6 +193,7 @@ class ProfilePage extends StatelessWidget {
                                 builder: (context) => SettingsPage(
                                   themeMode: themeMode,
                                   onThemeChanged: onThemeChanged,
+                                  onLanguageChanged: onLanguageChanged,
                                   settingsRepository: settingsRepository,
                                   initialSettings: initialSettings,
                                   audioPlayerService: audioPlayerService,
@@ -284,13 +288,13 @@ class ProfilePage extends StatelessWidget {
                                           );
                                         },
                                         borderRadius: BorderRadius.circular(24),
-                                        child: const Padding(
+                                        child: Padding(
                                           padding: EdgeInsets.symmetric(
                                             horizontal: 20,
                                             vertical: 8,
                                           ),
                                           child: Text(
-                                            'Мысли',
+                                            context.t('profile.thoughts'),
                                             style: TextStyle(
                                               fontSize: 15,
                                               fontWeight: FontWeight.w600,
@@ -337,19 +341,21 @@ class ProfilePage extends StatelessWidget {
                 children: [
                   _buildActionRow(context, palette),
                   const SizedBox(height: 24),
-                  _buildStatsSection(palette),
+                  _buildStatsSection(context, palette),
                   const SizedBox(height: 20),
                   _buildSectionCard(
                     palette,
-                    title: 'Популярные треки',
-                    subtitle: 'Треки, которые вы слушаете чаще всего',
+                    title: Localizations.localeOf(context).languageCode == 'en' ? 'Popular tracks' : 'Популярные треки',
+                    subtitle: Localizations.localeOf(context).languageCode == 'en'
+                        ? 'Tracks you listen to most often'
+                        : 'Треки, которые вы слушаете чаще всего',
                     icon: Icons.music_note_rounded,
                     onTap: () {},
                   ),
                   const SizedBox(height: 12),
                   _buildSectionCard(
                     palette,
-                    title: 'Любимые жанры',
+                    title: Localizations.localeOf(context).languageCode == 'en' ? 'Favorite genres' : 'Любимые жанры',
                     subtitle: 'Electronic, Ambient, Lo-Fi',
                     icon: Icons.library_music_rounded,
                     onTap: () {},
@@ -357,8 +363,10 @@ class ProfilePage extends StatelessWidget {
                   const SizedBox(height: 12),
                   _buildSectionCard(
                     palette,
-                    title: 'Студия',
-                    subtitle: 'Создание и редактирование альбомов и треков',
+                    title: Localizations.localeOf(context).languageCode == 'en' ? 'Studio' : 'Студия',
+                    subtitle: Localizations.localeOf(context).languageCode == 'en'
+                        ? 'Create and edit albums and tracks'
+                        : 'Создание и редактирование альбомов и треков',
                     icon: Icons.album_rounded,
                     onTap: () {
                       Navigator.of(context).push(
@@ -403,7 +411,7 @@ class ProfilePage extends StatelessWidget {
         Expanded(
           child: _ActionCard(
             icon: Icons.playlist_play_rounded,
-            label: 'Плейлисты',
+            label: Localizations.localeOf(context).languageCode == 'en' ? 'Playlists' : 'Плейлисты',
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -418,7 +426,7 @@ class ProfilePage extends StatelessWidget {
         Expanded(
           child: _ActionCard(
             icon: Icons.people_rounded,
-            label: 'Друзья',
+            label: Localizations.localeOf(context).languageCode == 'en' ? 'Friends' : 'Друзья',
             onTap: () {},
             palette: palette,
           ),
@@ -427,7 +435,7 @@ class ProfilePage extends StatelessWidget {
         Expanded(
           child: _ActionCard(
             icon: Icons.favorite_rounded,
-            label: 'Избранное',
+            label: Localizations.localeOf(context).languageCode == 'en' ? 'Favorites' : 'Избранное',
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -444,7 +452,7 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _buildStatsSection(AppColorPalette palette) {
+  Widget _buildStatsSection(BuildContext context, AppColorPalette palette) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
@@ -454,19 +462,19 @@ class ProfilePage extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _StatItem(value: '128', label: 'треков', palette: palette),
+          _StatItem(value: '128', label: Localizations.localeOf(context).languageCode == 'en' ? 'tracks' : 'треков', palette: palette),
           Container(
             width: 1,
             height: 32,
             color: palette.textMuted.withValues(alpha: 0.4),
           ),
-          _StatItem(value: '12', label: 'плейлистов', palette: palette),
+          _StatItem(value: '12', label: Localizations.localeOf(context).languageCode == 'en' ? 'playlists' : 'плейлистов', palette: palette),
           Container(
             width: 1,
             height: 32,
             color: palette.textMuted.withValues(alpha: 0.4),
           ),
-          _StatItem(value: '8', label: 'друзей', palette: palette),
+          _StatItem(value: '8', label: Localizations.localeOf(context).languageCode == 'en' ? 'friends' : 'друзей', palette: palette),
         ],
       ),
     );

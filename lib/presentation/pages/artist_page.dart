@@ -4,6 +4,7 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/notifications/local_notifications_service.dart';
 import '../../core/player/full_player_visibility.dart';
 import '../../core/player/player_dock_host.dart';
@@ -93,8 +94,8 @@ class _ArtistPageState extends State<ArtistPage> {
     );
     if (existing != null || _friendRequestSent) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Запрос уже отправлен'),
+        SnackBar(
+          content: Text(context.t('artist.requestSent')),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -114,7 +115,7 @@ class _ArtistPageState extends State<ArtistPage> {
     setState(() => _friendRequestSent = true);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Запрос в друзья отправлен пользователю @${widget.artistName}'),
+        content: Text('${context.t('artist.requestSent')} @${widget.artistName}'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -233,8 +234,8 @@ class _ArtistPageState extends State<ArtistPage> {
                                         ),
                                         child: Text(
                                           _friendRequestSent
-                                              ? 'Запрос отправлен'
-                                              : 'Добавить в друзья',
+                                              ? context.t('artist.requestSent')
+                                              : context.t('artist.addFriend'),
                                           style: const TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
@@ -261,13 +262,13 @@ class _ArtistPageState extends State<ArtistPage> {
                                         );
                                       },
                                       borderRadius: BorderRadius.circular(24),
-                                      child: const Padding(
+                                      child: Padding(
                                         padding: EdgeInsets.symmetric(
                                           horizontal: 20,
                                           vertical: 8,
                                         ),
                                         child: Text(
-                                          'Мысли',
+                                          context.t('profile.thoughts'),
                                           style: TextStyle(
                                             fontSize: 15,
                                             fontWeight: FontWeight.w600,

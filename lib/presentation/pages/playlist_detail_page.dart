@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/platform/platform.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -88,12 +89,12 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text('Добавить треки в плейлист'),
+              title: Text(context.t('playlists.addTracksDialog')),
               content: SizedBox(
                 width: double.maxFinite,
                 child: allTracks.isEmpty
-                    ? const Text(
-                        'Нет локальных треков. Сначала добавьте треки в приложение.',
+                    ? Text(
+                        context.t('playlists.noLocalTracks'),
                       )
                     : ListView.builder(
                         shrinkWrap: true,
@@ -128,14 +129,14 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Отмена'),
+                  child: Text(context.t('common.cancel')),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(
                     ctx,
                     localSelected.toList(growable: false),
                   ),
-                  child: const Text('Готово'),
+                  child: Text(Localizations.localeOf(context).languageCode == 'en' ? 'Done' : 'Готово'),
                 ),
               ],
             );
@@ -175,7 +176,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('Плейлист'),
+          title: Text(context.t('playlists.title')),
           titleTextStyle: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -191,9 +192,9 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                 icon: const Icon(Icons.more_vert_rounded),
                 onSelected: _onMenuSelected,
                 itemBuilder: (context) => [
-                  const PopupMenuItem<String>(
+                  PopupMenuItem<String>(
                     value: 'edit',
-                    child: Text('Изменить'),
+                    child: Text(context.t('studio.edit')),
                   ),
                 ],
               ),
@@ -206,7 +207,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
             : _playlist == null
                 ? Center(
                     child: Text(
-                      'Плейлист не найден',
+                      context.t('playlists.notFound'),
                       style: TextStyle(
                         fontSize: 16,
                         color: palette.textSecondary,
@@ -236,7 +237,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                                       _buildAddTracksButton(palette),
                                       const SizedBox(height: 12),
                                       Text(
-                                        'В плейлисте пока нет треков',
+                                        context.t('playlists.emptyInPlaylist'),
                                         style: TextStyle(
                                           fontSize: 15,
                                           color: palette.textSecondary,
@@ -275,7 +276,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         ),
       ),
       icon: const Icon(Icons.add_rounded, size: 20),
-      label: const Text('Добавить треки'),
+      label: Text(context.t('playlists.addTracks')),
     );
   }
 
@@ -350,7 +351,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Приватный',
+                            context.t('playlists.privateBadge'),
                             style: TextStyle(
                               fontSize: 11,
                               color: palette.textPrimary,
@@ -364,8 +365,10 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
               const SizedBox(height: 8),
               Text(
                 _tracks.isEmpty
-                    ? 'Нет треков'
-                    : '${_tracks.length} трек${_tracks.length == 1 ? '' : _tracks.length >= 2 && _tracks.length <= 4 ? 'а' : 'ов'}',
+                    ? context.t('playlists.noTracks')
+                    : Localizations.localeOf(context).languageCode == 'en'
+                        ? '${_tracks.length} tracks'
+                        : '${_tracks.length} трек${_tracks.length == 1 ? '' : _tracks.length >= 2 && _tracks.length <= 4 ? 'а' : 'ов'}',
                 style: TextStyle(
                   fontSize: 13,
                   color: palette.textSecondary,
@@ -391,14 +394,14 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Изменить плейлист'),
+              title: Text(context.t('playlists.edit')),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextField(
-                      decoration: const InputDecoration(labelText: 'Название'),
+                      decoration: InputDecoration(labelText: context.t('playlists.name')),
                       controller: TextEditingController(text: title)
                         ..selection = TextSelection.collapsed(
                           offset: title.length,
@@ -408,9 +411,9 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                     const SizedBox(height: 12),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Приватный плейлист'),
+                      title: Text(context.t('playlists.private')),
                       subtitle: Text(
-                        'Видно только вам',
+                        context.t('playlists.privateHint'),
                         style: TextStyle(color: palette.textSecondary, fontSize: 12),
                       ),
                       value: isPrivate,
@@ -418,7 +421,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Обложка',
+                      context.t('playlists.cover'),
                       style: TextStyle(
                         fontSize: 12,
                         color: palette.textSecondary,
@@ -455,8 +458,8 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                                 const Icon(Icons.image_rounded, size: 20),
                             label: Text(
                               coverPath.isEmpty
-                                  ? 'Выбрать файл'
-                                  : 'Заменить',
+                                  ? context.t('playlists.chooseFile')
+                                  : context.t('playlists.replace'),
                             ),
                           ),
                         ),
@@ -468,18 +471,18 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Отмена'),
+                  child: Text(context.t('common.cancel')),
                 ),
                 FilledButton(
                   onPressed: () {
                     final updated = existing.copyWith(
-                      title: title.isEmpty ? 'Без названия' : title,
+                      title: title.isEmpty ? context.t('playlists.untitled') : title,
                       isPrivate: isPrivate,
                       coverPath: coverPath.isEmpty ? null : coverPath,
                     );
                     Navigator.pop(ctx, updated);
                   },
-                  child: const Text('Сохранить'),
+                  child: Text(context.t('common.save')),
                 ),
               ],
             );

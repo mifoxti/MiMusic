@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/social/friend_request_notifications.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -41,7 +42,7 @@ class NotificationsPage extends StatelessWidget {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
-          title: const Text('Уведомления'),
+          title: Text(context.t('notifications.title')),
         ),
         body: AnimatedBuilder(
           animation: center,
@@ -50,7 +51,7 @@ class NotificationsPage extends StatelessWidget {
             if (items.isEmpty) {
               return Center(
                 child: Text(
-                  'Уведомлений пока нет',
+                  context.t('notifications.empty'),
                   style: TextStyle(color: palette.textSecondary, fontSize: 16),
                 ),
               );
@@ -193,7 +194,9 @@ class _NotificationCard extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      '@${item.fromUsername} отправил(а) вам заявку в друзья',
+                      Localizations.localeOf(context).languageCode == 'en'
+                          ? '@${item.fromUsername} sent you a friend request'
+                          : '@${item.fromUsername} отправил(а) вам заявку в друзья',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -208,7 +211,7 @@ class _NotificationCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                _statusLabel(item.status),
+                _statusLabel(context, item.status),
                 style: TextStyle(
                   fontSize: 13,
                   color: palette.textSecondary,
@@ -227,7 +230,7 @@ class _NotificationCard extends StatelessWidget {
                           decoration: TextDecoration.none,
                         ),
                       ),
-                      child: const Text('Профиль'),
+                      child: Text(context.t('notifications.openProfile')),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -275,14 +278,14 @@ class _NotificationCard extends StatelessWidget {
     );
   }
 
-  String _statusLabel(FriendRequestStatus status) {
+  String _statusLabel(BuildContext context, FriendRequestStatus status) {
     switch (status) {
       case FriendRequestStatus.pending:
-        return 'Ожидает вашего решения';
+        return context.t('notifications.pending');
       case FriendRequestStatus.accepted:
-        return 'Вы приняли заявку';
+        return context.t('notifications.accepted');
       case FriendRequestStatus.declined:
-        return 'Вы отклонили заявку';
+        return context.t('notifications.declined');
     }
   }
 }

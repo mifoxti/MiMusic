@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
@@ -83,7 +84,7 @@ class PersonalSettingsPage extends StatelessWidget {
           ),
           const Spacer(),
           Text(
-            'Персональные настройки',
+            context.t('settings.personal'),
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,

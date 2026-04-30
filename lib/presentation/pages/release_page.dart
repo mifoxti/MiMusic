@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -33,7 +34,7 @@ class ReleasePage extends StatelessWidget {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
-          title: const Text('Релиз'),
+          title: Text(context.t('release.title')),
         ),
         body: Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -64,7 +65,7 @@ class ReleasePage extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Экран открыт из уведомления',
+                context.t('release.fromNotification'),
                 style: TextStyle(color: palette.textSecondary),
               ),
             ],

@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/history/listening_history_entry.dart';
 import '../../core/history/listening_history_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
 import '../../core/player/player_dock_host.dart';
@@ -56,9 +58,9 @@ class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final d = DateTime(playedAt.year, playedAt.month, playedAt.day);
-    if (d == today) return 'Сегодня';
-    if (d == today.subtract(const Duration(days: 1))) return 'Вчера';
-    return 'Ранее';
+    if (d == today) return context.t('history.today');
+    if (d == today.subtract(const Duration(days: 1))) return context.t('history.yesterday');
+    return context.t('history.earlier');
   }
 
   List<({String label, List<ListeningHistoryEntry> items})> _grouped(
@@ -104,7 +106,7 @@ class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('История'),
+          title: Text(context.t('history.title')),
           titleTextStyle: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -123,34 +125,7 @@ class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
                 }
                 return IconButton(
                   onPressed: () {
-                    showModalBottomSheet<void>(
-                      context: context,
-                      backgroundColor: palette.cardBackground,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(20),
-                        ),
-                      ),
-                      builder: (ctx) => SafeArea(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ListTile(
-                              leading: Icon(Icons.delete_outline_rounded,
-                                  color: palette.accent),
-                              title: Text(
-                                'Очистить историю',
-                                style: TextStyle(color: palette.textPrimary),
-                              ),
-                              onTap: () {
-                                Navigator.pop(ctx);
-                                widget.listeningHistoryRepository.clear();
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
+                    _showHistoryActionsDialog();
                   },
                   icon: const Icon(Icons.more_horiz_rounded),
                 );
@@ -167,7 +142,7 @@ class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
                 child: Padding(
                   padding: const EdgeInsets.all(32),
                   child: Text(
-                    'Здесь появятся треки после воспроизведения',
+                    context.t('history.empty'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 16,
@@ -218,6 +193,49 @@ class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
           },
         ),
       ),
+    );
+  }
+
+  Future<void> _showHistoryActionsDialog() async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.38),
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        final p = AppPaletteExtension.of(ctx).palette;
+        final glassTint = AppGlass.tint(isDark);
+        final borderGlass = AppGlass.border(isDark);
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: AppGlass.blurredTintLayer(
+              isDark: isDark,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: borderGlass, width: 1),
+                  color: glassTint,
+                  boxShadow: AppGlass.cardShadows(isDark),
+                ),
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline_rounded, color: p.accent),
+                  title: Text(
+                    context.t('history.clear'),
+                    style: TextStyle(color: p.textPrimary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    widget.listeningHistoryRepository.clear();
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -301,7 +319,7 @@ class _HistoryTrackTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       entry.artistDisplay.isEmpty
-                          ? 'Исполнитель не указан'
+                          ? context.t('common.notSpecifiedArtist')
                           : entry.artistDisplay,
                       style: TextStyle(
                         fontSize: 13,

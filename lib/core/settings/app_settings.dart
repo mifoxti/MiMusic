@@ -11,6 +11,7 @@ class AppSettings {
     this.equalizerGains = const [0.0, 0.0, 0.0, 0.0, 0.0],
     this.equalizerPreamp = 0.0,
     this.notificationsEnabled = true,
+    this.languageCode = 'ru',
     this.cacheLimitBytes = defaultCacheLimitBytes,
   });
 
@@ -28,6 +29,7 @@ class AppSettings {
   final List<double> equalizerGains;
   final double equalizerPreamp;
   final bool notificationsEnabled;
+  final String languageCode;
 
   /// Максимальный допустимый объём кэша (для отображения и будущего контроля).
   final int cacheLimitBytes;
@@ -41,6 +43,7 @@ class AppSettings {
     List<double>? equalizerGains,
     double? equalizerPreamp,
     bool? notificationsEnabled,
+    String? languageCode,
     int? cacheLimitBytes,
   }) {
     return AppSettings(
@@ -52,6 +55,7 @@ class AppSettings {
       equalizerGains: equalizerGains ?? List.from(this.equalizerGains),
       equalizerPreamp: equalizerPreamp ?? this.equalizerPreamp,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      languageCode: languageCode ?? this.languageCode,
       cacheLimitBytes: cacheLimitBytes ?? this.cacheLimitBytes,
     );
   }
@@ -67,6 +71,7 @@ class AppSettings {
       'equalizerGains': equalizerGains,
       'equalizerPreamp': equalizerPreamp,
       'notificationsEnabled': notificationsEnabled,
+      'languageCode': languageCode,
       'cacheLimitBytes': cacheLimitBytes,
     };
   }
@@ -82,6 +87,7 @@ class AppSettings {
       equalizerGains: gains is List ? List<double>.from(gains.map((e) => (e as num).toDouble())) : const [0.0, 0.0, 0.0, 0.0, 0.0],
       equalizerPreamp: (json['equalizerPreamp'] as num?)?.toDouble() ?? 0.0,
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
+      languageCode: json['languageCode'] as String? ?? 'ru',
       cacheLimitBytes: _cacheLimitFromJson(json['cacheLimitBytes']),
     );
   }

@@ -4,6 +4,7 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
@@ -128,7 +129,7 @@ class _ForYouPageState extends State<ForYouPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('Для вас'),
+          title: Text(context.t('forYou.title')),
           titleTextStyle: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -165,7 +166,7 @@ class _ForYouPageState extends State<ForYouPage> {
                         _buildHeaderCluster(palette),
                         const SizedBox(height: 18),
                         Text(
-                          'Подборка по вашим интересам',
+                          context.t('forYou.subtitle'),
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 15,
@@ -212,8 +213,8 @@ class _ForYouPageState extends State<ForYouPage> {
                         const SizedBox(height: 8),
                         Text(
                           queue.isEmpty
-                              ? 'Добавьте треки в assets/music/'
-                              : 'Слушать персональный поток',
+                              ? context.t('home.addTracksHint')
+                              : context.t('forYou.playFlow'),
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 13,
@@ -223,7 +224,7 @@ class _ForYouPageState extends State<ForYouPage> {
                         ),
                         const SizedBox(height: 28),
                         Text(
-                          'Собрано для вас',
+                          context.t('forYou.curated'),
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w700,
@@ -233,7 +234,7 @@ class _ForYouPageState extends State<ForYouPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Из вашей библиотеки',
+                          context.t('forYou.library'),
                           style: TextStyle(
                             fontSize: 13,
                             color: palette.textSecondary,
@@ -279,7 +280,7 @@ class _ForYouPageState extends State<ForYouPage> {
                       children: [
                         if (section.friendPlayback != null) ...[
                           Text(
-                            'Сейчас у друзей',
+                            context.t('forYou.friendsNow'),
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
@@ -352,7 +353,7 @@ class _ForYouPageState extends State<ForYouPage> {
           const SizedBox(width: 14),
           Expanded(
             child: Text(
-              'Когда появятся файлы в assets/music/, здесь будет персональная лента.',
+              context.t('forYou.emptyHint'),
               style: TextStyle(fontSize: 14, color: palette.textSecondary),
             ),
           ),
@@ -428,7 +429,7 @@ class _ForYouTrackCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   track.artistDisplay.isEmpty
-                      ? 'Исполнитель'
+                      ? context.t('common.notSpecifiedArtist')
                       : track.artistDisplay,
                   style: TextStyle(
                     fontSize: 11,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
@@ -39,15 +40,15 @@ class _EqualizerPageState extends State<EqualizerPage> {
   static const int _bands = 5;
   static const List<String> _labels = ['60', '230', '910', '3.6k', '14k'];
 
-  static const List<_EqualizerPreset> _presets = [
-    _EqualizerPreset('Плоский', [0, 0, 0, 0, 0]),
-    _EqualizerPreset('Басы', [6, 4, 0, -2, -2]),
-    _EqualizerPreset('Трели', [-2, -1, 0, 2, 6]),
-    _EqualizerPreset('Вокал', [-1, 2, 4, 2, -1]),
-    _EqualizerPreset('Рок', [5, 3, 0, 2, 4]),
-    _EqualizerPreset('Джаз', [4, 2, -1, 1, 3]),
-    _EqualizerPreset('Поп', [2, 1, 0, -1, 2]),
-    _EqualizerPreset('Классика', [3, 1, 1, 2, 3]),
+  List<_EqualizerPreset> _presets(BuildContext context) => [
+    _EqualizerPreset(context.t('equalizer.preset.flat'), [0, 0, 0, 0, 0]),
+    _EqualizerPreset(context.t('equalizer.preset.bass'), [6, 4, 0, -2, -2]),
+    _EqualizerPreset(context.t('equalizer.preset.treble'), [-2, -1, 0, 2, 6]),
+    _EqualizerPreset(context.t('equalizer.preset.vocal'), [-1, 2, 4, 2, -1]),
+    _EqualizerPreset(context.t('equalizer.preset.rock'), [5, 3, 0, 2, 4]),
+    _EqualizerPreset(context.t('equalizer.preset.jazz'), [4, 2, -1, 1, 3]),
+    _EqualizerPreset(context.t('equalizer.preset.pop'), [2, 1, 0, -1, 2]),
+    _EqualizerPreset(context.t('equalizer.preset.classic'), [3, 1, 1, 2, 3]),
   ];
 
   static const List<double> _dbTicks = [-12, -6, 0, 6, 12];
@@ -95,7 +96,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
   Future<void> _applyPreset(int index) async {
     setState(() {
       _selectedPresetIndex = index;
-      _gains = List<double>.from(_presets[index].gains);
+      _gains = List<double>.from(_presets(context)[index].gains);
     });
     await widget.audioPlayerService.applyEqualizerGains(_gains);
     await _saveEqualizer();
@@ -144,7 +145,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                     children: [
                       const SizedBox(height: 8),
                       Text(
-                        'Эквалайзер',
+                        context.t('settings.equalizer'),
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w600,
@@ -153,7 +154,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Пресеты и полосы частот',
+                        context.t('settings.equalizerSub'),
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 13, color: palette.textSecondary),
                         maxLines: 1,
@@ -205,7 +206,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'ПРЕСЕТЫ',
+          Localizations.localeOf(context).languageCode == 'en' ? 'PRESETS' : 'ПРЕСЕТЫ',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
@@ -220,11 +221,11 @@ class _EqualizerPageState extends State<EqualizerPage> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.only(bottom: 4),
             child: Row(
-            children: List.generate(_presets.length, (i) {
-              final preset = _presets[i];
+            children: List.generate(_presets(context).length, (i) {
+              final preset = _presets(context)[i];
               final isSelected = _selectedPresetIndex == i;
               return Padding(
-                padding: EdgeInsets.only(right: i < _presets.length - 1 ? 10 : 0),
+                padding: EdgeInsets.only(right: i < _presets(context).length - 1 ? 10 : 0),
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -280,7 +281,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Басс-буст',
+                Localizations.localeOf(context).languageCode == 'en' ? 'Bass boost' : 'Басс-буст',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -288,7 +289,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                 ),
               ),
               Text(
-                '${_preamp.round()} дБ',
+                '${_preamp.round()} ${Localizations.localeOf(context).languageCode == 'en' ? 'dB' : 'дБ'}',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -466,7 +467,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
       onPressed: () async => _reset(),
       icon: Icon(Icons.refresh_rounded, size: 18, color: palette.textSecondary),
       label: Text(
-        'Сбросить',
+        Localizations.localeOf(context).languageCode == 'en' ? 'Reset' : 'Сбросить',
         style: TextStyle(fontSize: 14, color: palette.textSecondary, fontWeight: FontWeight.w500),
       ),
       style: TextButton.styleFrom(

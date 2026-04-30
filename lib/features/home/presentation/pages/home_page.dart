@@ -5,6 +5,7 @@ import '../../../../core/audio/local_tracks.dart';
 import '../../../../core/audio/track.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/history/listening_history_repository.dart';
+import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../presentation/pages/listening_history_page.dart';
@@ -113,7 +114,7 @@ class _HomePageState extends State<HomePage> {
     if (h.isEmpty) {
       final mock = section.historyArtists.join(', ');
       return mock.isEmpty
-          ? 'Слушайте музыку — записи появятся здесь'
+          ? context.t('home.listenPrompt')
           : mock;
     }
     return h.take(3).map((e) => e.title).join(' · ');
@@ -127,7 +128,7 @@ class _HomePageState extends State<HomePage> {
     }
     if (_section == null) {
       return Center(
-        child: Text('Ошибка загрузки', style: TextStyle(color: palette.textSecondary)),
+        child: Text(context.t('common.errorLoading'), style: TextStyle(color: palette.textSecondary)),
       );
     }
 
@@ -180,7 +181,7 @@ class _HomePageState extends State<HomePage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     NavCardButton(
-                      title: 'Для вас',
+                      title: context.t('home.forYou'),
                       onTap: () => _openForYou(context),
                       avatarColors: const [
                         Color(0xFF5C4A50),
@@ -189,7 +190,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(width: 12),
                     NavCardButton(
-                      title: 'Чарты',
+                      title: context.t('home.charts'),
                       onTap: () => _openCharts(context),
                       avatarColors: const [
                         Color(0xFFC45C3E),
@@ -237,7 +238,7 @@ class _HomePageState extends State<HomePage> {
           Icon(Icons.music_off_rounded, size: 32, color: palette.textMuted),
           const SizedBox(width: 12),
           Text(
-            'Добавьте треки в assets/music/',
+            context.t('home.addTracksHint'),
             style: TextStyle(fontSize: 14, color: palette.textSecondary),
           ),
         ],

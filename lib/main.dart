@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/audio/audio_player_service.dart';
 import 'core/audio/mimusic_audio_handler.dart';
 import 'core/history/in_memory_listening_history_repository.dart';
 import 'core/history/listening_history_repository.dart';
+import 'core/l10n/app_localization.dart';
 import 'core/notifications/local_notifications_service.dart';
 import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
@@ -67,7 +69,7 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
         builder: () => MiMusicAudioHandler(),
       config: AudioServiceConfig(
         androidNotificationChannelId: 'com.example.mimusic.audio',
-        androidNotificationChannelName: 'Воспроизведение',
+        androidNotificationChannelName: 'Playback',
         androidStopForegroundOnPause: false,
       ),
       );
@@ -110,8 +112,10 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        'Ошибка инициализации',
+                      Text(
+                        AppLocalization(
+                          WidgetsBinding.instance.platformDispatcher.locale,
+                        ).t('init.error'),
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -163,6 +167,7 @@ class MiMusicApp extends StatefulWidget {
 
 class _MiMusicAppState extends State<MiMusicApp> {
   late ThemeMode _themeMode;
+  late Locale _locale;
   late final AudioPlayerService _audioPlayerService;
   late final GetHomeSectionUseCase _getHomeSectionUseCase;
 
@@ -170,6 +175,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
   void initState() {
     super.initState();
     _themeMode = widget.initialSettings.themeMode;
+    _locale = Locale(widget.initialSettings.languageCode);
     _audioPlayerService = AudioPlayerService(
       audioHandler: widget.audioHandler,
       settingsRepository: widget.settingsRepository,
@@ -192,19 +198,35 @@ class _MiMusicAppState extends State<MiMusicApp> {
     await widget.settingsRepository.saveSettings(current.copyWith(themeMode: mode));
   }
 
+  Future<void> _onLanguageChanged(String languageCode) async {
+    setState(() => _locale = Locale(languageCode));
+    final current = await widget.settingsRepository.getSettings();
+    await widget.settingsRepository.saveSettings(
+      current.copyWith(languageCode: languageCode),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'MiMusic',
+      title: AppLocalization(_locale).t('app.title'),
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: _themeMode,
+      locale: _locale,
+      supportedLocales: AppLocalization.supportedLocales,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       debugShowCheckedModeBanner: false,
       home: MainShell(
         getHomeSectionUseCase: _getHomeSectionUseCase,
         audioPlayerService: _audioPlayerService,
         themeMode: _themeMode,
         onThemeChanged: _onThemeChanged,
+        onLanguageChanged: _onLanguageChanged,
         settingsRepository: widget.settingsRepository,
         initialSettings: widget.initialSettings,
         listeningHistoryRepository: widget.listeningHistoryRepository,

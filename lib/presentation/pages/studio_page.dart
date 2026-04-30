@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/audio/track.dart';
 import '../../core/platform/platform.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/studio/album.dart';
 import '../../core/studio/local_studio_repository.dart';
 import '../../core/studio/studio_constants.dart';
@@ -55,7 +56,7 @@ class _StudioPageState extends State<StudioPage> {
       final artistStr = (o != null && o.displayArtist.isNotEmpty) ? o.displayArtist : o?.artist;
       customTracks.add(Track(
         assetPath: id,
-        title: o?.title ?? 'Без названия',
+        title: o?.title ?? context.t('playlists.untitled'),
         artist: artistStr,
         coverAssetPath: o?.coverPath,
         audioFilePath: o?.audioFilePath,
@@ -94,7 +95,7 @@ class _StudioPageState extends State<StudioPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('Студия'),
+          title: Text(context.t('studio.title')),
           titleTextStyle: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -111,9 +112,9 @@ class _StudioPageState extends State<StudioPage> {
             labelColor: palette.accent,
             unselectedLabelColor: palette.textMuted,
             indicatorColor: palette.accent,
-            tabs: const [
-              Tab(text: 'Альбомы'),
-              Tab(text: 'Треки'),
+            tabs: [
+              Tab(text: context.t('studio.albums')),
+              Tab(text: context.t('studio.tracks')),
             ],
           ),
         ),
@@ -169,11 +170,11 @@ class _StudioPageState extends State<StudioPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Удалить альбом?'),
+        title: Text(context.t('studio.deleteAlbum')),
         content: Text('«${album.title}» будет удалён.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить', style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(context.t('common.cancel'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(context.t('studio.delete'), style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -198,25 +199,25 @@ class _StudioPageState extends State<StudioPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(album == null ? 'Новый альбом' : 'Редактировать альбом'),
+              title: Text(album == null ? context.t('studio.newAlbum') : context.t('studio.editAlbum')),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextField(
-                      decoration: const InputDecoration(labelText: 'Название'),
+                      decoration: InputDecoration(labelText: context.t('playlists.name')),
                       controller: TextEditingController(text: title)..selection = TextSelection.collapsed(offset: title.length),
                       onChanged: (v) => title = v,
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      decoration: const InputDecoration(labelText: 'Исполнитель'),
+                      decoration: InputDecoration(labelText: context.t('studio.artist')),
                       controller: TextEditingController(text: artist)..selection = TextSelection.collapsed(offset: artist.length),
                       onChanged: (v) => artist = v,
                     ),
                     const SizedBox(height: 12),
-                    Text('Обложка', style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
+                    Text(context.t('playlists.cover'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
                     const SizedBox(height: 6),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,13 +233,13 @@ class _StudioPageState extends State<StudioPage> {
                               if (copied != null && ctx.mounted) setDialogState(() => coverPath = copied);
                             },
                             icon: const Icon(Icons.image_rounded, size: 20),
-                            label: Text(coverPath.isEmpty ? 'Выбрать файл' : 'Заменить'),
+                            label: Text(coverPath.isEmpty ? context.t('playlists.chooseFile') : context.t('playlists.replace')),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Text('Жанры', style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
+                    Text(context.t('studio.genres'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
@@ -264,14 +265,14 @@ class _StudioPageState extends State<StudioPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Треки в альбоме', style: TextStyle(fontSize: 14, color: dialogPalette.textSecondary)),
+                        Text(context.t('studio.tracksInAlbum'), style: TextStyle(fontSize: 14, color: dialogPalette.textSecondary)),
                         TextButton.icon(
                           onPressed: _tracks.isEmpty ? null : () async {
                             final picked = await _showTrackPicker(ctx, _tracks, trackIds);
                             if (picked != null) setDialogState(() => trackIds = picked);
                           },
                           icon: const Icon(Icons.add_rounded, size: 18),
-                          label: const Text('Добавить'),
+                          label: Text(context.t('studio.add')),
                         ),
                       ],
                     ),
@@ -292,17 +293,17 @@ class _StudioPageState extends State<StudioPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+                TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.cancel'))),
                 FilledButton(
                   onPressed: () => Navigator.pop(ctx, Album(
                     id: albumId,
-                    title: title.isEmpty ? 'Без названия' : title,
+                    title: title.isEmpty ? context.t('playlists.untitled') : title,
                     artist: artist.isEmpty ? null : artist,
                     coverPath: coverPath.isEmpty ? null : coverPath,
                     trackAssetPaths: trackIds,
                     genres: genres,
                   )),
-                  child: const Text('Сохранить'),
+                  child: Text(context.t('common.save')),
                 ),
               ],
             );
@@ -351,11 +352,11 @@ class _StudioPageState extends State<StudioPage> {
         var selected = List<String>.from(currentIds);
         return StatefulBuilder(
           builder: (context, setPickerState) => AlertDialog(
-            title: const Text('Добавить треки'),
+            title: Text(context.t('playlists.addTracks')),
             content: SizedBox(
               width: double.maxFinite,
               child: allTracks.isEmpty
-                  ? const Text('Нет треков. Сначала добавьте треки во вкладке «Треки».')
+                  ? Text(context.t('studio.noTracksForAlbum'))
                   : ListView.builder(
                       shrinkWrap: true,
                       itemCount: allTracks.length,
@@ -379,8 +380,8 @@ class _StudioPageState extends State<StudioPage> {
                     ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-              FilledButton(onPressed: () => Navigator.pop(ctx, selected), child: const Text('Готово')),
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.cancel'))),
+              FilledButton(onPressed: () => Navigator.pop(ctx, selected), child: Text(Localizations.localeOf(context).languageCode == 'en' ? 'Done' : 'Готово')),
             ],
           ),
         );
@@ -409,11 +410,11 @@ class _StudioPageState extends State<StudioPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Удалить трек?'),
+        title: Text(context.t('studio.deleteTrack')),
         content: Text('«${track.title}» будет удалён из библиотеки.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить', style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(context.t('common.cancel'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(context.t('studio.delete'), style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -448,14 +449,14 @@ class _StudioPageState extends State<StudioPage> {
           return StatefulBuilder(
             builder: (context, setDialogState) {
               return AlertDialog(
-                title: Text(track == null ? 'Новый трек' : 'Редактировать трек'),
+                title: Text(track == null ? context.t('studio.newTrack') : context.t('studio.editTrack')),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextField(
-                      decoration: const InputDecoration(labelText: 'Название'),
+                      decoration: InputDecoration(labelText: context.t('playlists.name')),
                       controller: TextEditingController(text: title)..selection = TextSelection.collapsed(offset: title.length),
                       onChanged: (v) => title = v,
                     ),
@@ -467,18 +468,18 @@ class _StudioPageState extends State<StudioPage> {
                           authorIsMe = v ?? false;
                           artist = authorIsMe ? nickname : artist;
                         }),
-                        title: const Text('Я автор'),
+                        title: Text(context.t('studio.iAmAuthor')),
                         controlAffinity: ListTileControlAffinity.leading,
                         contentPadding: EdgeInsets.zero,
                       ),
                     TextField(
-                      decoration: const InputDecoration(labelText: 'Исполнитель'),
+                      decoration: InputDecoration(labelText: context.t('studio.artist')),
                       controller: TextEditingController(text: artist)..selection = TextSelection.collapsed(offset: artist.length),
                       onChanged: (v) => artist = v,
                       readOnly: authorIsMe,
                     ),
                     const SizedBox(height: 8),
-                    Text('Соавторы', style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
+                    Text(context.t('studio.coAuthors'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
                     const SizedBox(height: 4),
                     Wrap(
                       spacing: 6,
@@ -495,7 +496,7 @@ class _StudioPageState extends State<StudioPage> {
                         Expanded(
                           child: TextField(
                             controller: newCoAuthorController,
-                            decoration: const InputDecoration(hintText: 'Имя соавтора', isDense: true),
+                            decoration: InputDecoration(hintText: context.t('studio.coAuthorName'), isDense: true),
                             onSubmitted: (value) {
                               final name = value.trim();
                               if (name.isNotEmpty && !coAuthors.contains(name)) {
@@ -516,18 +517,18 @@ class _StudioPageState extends State<StudioPage> {
                               setDialogState(() {});
                             }
                           },
-                          child: const Text('Добавить'),
+                          child: Text(context.t('studio.add')),
                         ),
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Text('Аудиофайл', style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
+                    Text(context.t('studio.audioFile'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
                     const SizedBox(height: 6),
                     Row(
                       children: [
                         Expanded(
                           child: Text(
-                            audioFilePath.isEmpty ? 'Не выбран' : audioFilePath.split(RegExp(r'[/\\]')).last,
+                            audioFilePath.isEmpty ? context.t('studio.notSelected') : audioFilePath.split(RegExp(r'[/\\]')).last,
                             style: TextStyle(fontSize: 13, color: dialogPalette.textPrimary),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -542,12 +543,12 @@ class _StudioPageState extends State<StudioPage> {
                             if (copied != null && ctx.mounted) setDialogState(() => audioFilePath = copied);
                           },
                           icon: const Icon(Icons.upload_file_rounded, size: 20),
-                          label: const Text('Выбрать файл'),
+                          label: Text(context.t('playlists.chooseFile')),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Text('Обложка', style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
+                    Text(context.t('playlists.cover'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
                     const SizedBox(height: 6),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -562,12 +563,12 @@ class _StudioPageState extends State<StudioPage> {
                             if (copied != null && ctx.mounted) setDialogState(() => coverPath = copied);
                           },
                           icon: const Icon(Icons.image_rounded, size: 20),
-                          label: Text(coverPath.isEmpty ? 'Выбрать файл' : 'Заменить'),
+                          label: Text(coverPath.isEmpty ? context.t('playlists.chooseFile') : context.t('playlists.replace')),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Text('Жанры', style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
+                    Text(context.t('studio.genres'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
@@ -591,7 +592,7 @@ class _StudioPageState extends State<StudioPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+                TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.cancel'))),
                 FilledButton(
                   onPressed: () => Navigator.pop(ctx, (
                     assetPath: id,
@@ -604,7 +605,7 @@ class _StudioPageState extends State<StudioPage> {
                       coAuthors: coAuthors,
                     ),
                   )),
-                  child: const Text('Сохранить'),
+                  child: Text(context.t('common.save')),
                 ),
               ],
               );
@@ -647,12 +648,12 @@ class _AlbumsTab extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Text('Альбомы (${albums.length})', style: TextStyle(fontSize: 14, color: palette.textSecondary)),
+              Text('${context.t('studio.albums')} (${albums.length})', style: TextStyle(fontSize: 14, color: palette.textSecondary)),
               const Spacer(),
               FilledButton.icon(
                 onPressed: onAddAlbum,
                 icon: const Icon(Icons.add_rounded, size: 20),
-                label: const Text('Добавить альбом'),
+                label: Text(context.t('studio.addAlbum')),
                 style: FilledButton.styleFrom(backgroundColor: palette.accent),
               ),
             ],
@@ -660,7 +661,7 @@ class _AlbumsTab extends StatelessWidget {
         ),
         Expanded(
           child: albums.isEmpty
-              ? Center(child: Text('Нет альбомов. Нажмите «Добавить альбом».', style: TextStyle(color: palette.textMuted)))
+              ? Center(child: Text(context.t('studio.noAlbums'), style: TextStyle(color: palette.textMuted)))
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                   itemCount: albums.length,
@@ -715,8 +716,8 @@ class _AlbumsTab extends StatelessWidget {
                             }
                           },
                           itemBuilder: (_) => [
-                            const PopupMenuItem(value: 'edit', child: Text('Редактировать')),
-                            const PopupMenuItem(value: 'delete', child: Text('Удалить')),
+                            PopupMenuItem(value: 'edit', child: Text(context.t('studio.edit'))),
+                            PopupMenuItem(value: 'delete', child: Text(context.t('studio.delete'))),
                           ],
                         ),
                         onTap: () => onEditAlbum(album),
@@ -775,12 +776,12 @@ class _TracksTab extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Text('Треки (${tracks.length})', style: TextStyle(fontSize: 14, color: palette.textSecondary)),
+              Text('${context.t('studio.tracks')} (${tracks.length})', style: TextStyle(fontSize: 14, color: palette.textSecondary)),
               const Spacer(),
               FilledButton.icon(
                 onPressed: onAddTrack,
                 icon: const Icon(Icons.add_rounded, size: 20),
-                label: const Text('Добавить трек'),
+                label: Text(context.t('studio.addTrack')),
                 style: FilledButton.styleFrom(backgroundColor: palette.accent),
               ),
             ],
@@ -844,8 +845,8 @@ class _TracksTab extends StatelessWidget {
                       }
                     },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Редактировать')),
-                      const PopupMenuItem(value: 'delete', child: Text('Удалить')),
+                      PopupMenuItem(value: 'edit', child: Text(context.t('studio.edit'))),
+                      PopupMenuItem(value: 'delete', child: Text(context.t('studio.delete'))),
                     ],
                   ),
                   onTap: () => onEditTrack(track),

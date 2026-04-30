@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cover_image.dart';
@@ -31,7 +32,7 @@ class FriendsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Подключиться к друзьям',
+          context.t('home.connectFriends'),
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 color: palette.textPrimary,
                 fontWeight: FontWeight.w600,
@@ -104,7 +105,7 @@ class FriendsSection extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Слушают:',
+                                    context.t('home.listeningNow'),
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,

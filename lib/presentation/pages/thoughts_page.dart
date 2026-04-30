@@ -7,6 +7,7 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/playlists/data/repositories/local_playlists_repository.dart';
@@ -24,7 +25,7 @@ class ThoughtsPage extends StatefulWidget {
     this.audioPlayerService,
   });
 
-  final String currentUsername;
+  final String currentUsername; 
   final AudioPlayerService? audioPlayerService;
 
   @override
@@ -130,7 +131,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Новая мысль',
+                      context.t('thoughts.new'),
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 18,
@@ -142,8 +143,8 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                       controller: controller,
                       minLines: 3,
                       maxLines: 6,
-                      decoration: const InputDecoration(
-                        hintText: 'Что слушаете прямо сейчас?',
+                      decoration: InputDecoration(
+                        hintText: context.t('thoughts.placeholder'),
                         border: InputBorder.none,
                       ),
                     ),
@@ -176,7 +177,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                             }
                           },
                           icon: const Icon(Icons.attach_file_rounded),
-                          label: const Text('Вложение'),
+                          label: Text(context.t('thoughts.attach')),
                         ),
                         const Spacer(),
                         Row(
@@ -185,7 +186,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                             IconButton(
                               onPressed: () => Navigator.of(dialogContext).pop(),
                               icon: const Icon(Icons.close_rounded),
-                              tooltip: 'Отмена',
+                              tooltip: context.t('common.cancel'),
                             ),
                             const SizedBox(width: 4),
                             FilledButton(
@@ -285,19 +286,19 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.music_note_rounded),
-                  title: const Text('Прикрепить трек'),
+                  title: Text(context.t('thoughts.attachTrack')),
                   onTap: () =>
                       Navigator.of(sheetContext).pop(_ThoughtAttachmentType.track),
                 ),
                 ListTile(
                   leading: const Icon(Icons.playlist_play_rounded),
-                  title: const Text('Прикрепить плейлист'),
+                  title: Text(context.t('thoughts.attachPlaylist')),
                   onTap: () =>
                       Navigator.of(sheetContext).pop(_ThoughtAttachmentType.playlist),
                 ),
                 ListTile(
                   leading: const Icon(Icons.close_rounded),
-                  title: const Text('Без вложения'),
+                  title: Text(context.t('thoughts.withoutAttachment')),
                   onTap: () => Navigator.of(sheetContext).pop(null),
                 ),
               ],
@@ -376,13 +377,13 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                       child: Row(
                         children: [
                           ChoiceChip(
-                            label: const Text('Лайкнутые'),
+                            label: const Text('Liked'),
                             selected: showLiked,
                             onSelected: (_) => setSheetState(() => showLiked = true),
                           ),
                           const SizedBox(width: 8),
                           ChoiceChip(
-                            label: const Text('Все треки'),
+                            label: const Text('All'),
                             selected: !showLiked,
                             onSelected: (_) => setSheetState(() => showLiked = false),
                           ),
@@ -397,7 +398,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                         textInputAction: TextInputAction.search,
                         onChanged: (v) => setSheetState(() => query = v),
                         decoration: InputDecoration(
-                          hintText: 'Поиск трека',
+                          hintText: context.t('common.search'),
                           prefixIcon: const Icon(Icons.search_rounded),
                           filled: true,
                           fillColor: palette.cardBackground.withValues(alpha: 0.65),
@@ -407,9 +408,9 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                     const SizedBox(height: 6),
                     Flexible(
                       child: data.isEmpty
-                          ? const Padding(
-                              padding: EdgeInsets.all(24),
-                              child: Text('Ничего не найдено'),
+                          ? Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(context.t('search.notFound')),
                             )
                           : ListView.builder(
                               shrinkWrap: true,
@@ -420,7 +421,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                                   title: Text(t.title),
                                   subtitle: Text(
                                     t.artistDisplay.isEmpty
-                                        ? 'Неизвестный исполнитель'
+                                        ? 'Unknown artist'
                                         : t.artistDisplay,
                                   ),
                                   onTap: () => Navigator.of(sheetContext).pop(t),
@@ -445,7 +446,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
       type: _ThoughtAttachmentType.track,
       title: selected.title,
       subtitle:
-          selected.artistDisplay.isEmpty ? 'Неизвестный исполнитель' : selected.artistDisplay,
+          selected.artistDisplay.isEmpty ? 'Unknown artist' : selected.artistDisplay,
       trackAssetPath: selected.assetPath,
     );
   }
@@ -456,7 +457,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     if (!mounted || playlists.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Сначала создайте плейлист'),
+          content: Text('Create a playlist first'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -503,7 +504,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                     final p = playlists[index];
                     return ListTile(
                       title: Text(p.title),
-                      subtitle: Text('${p.trackAssetPaths.length} треков'),
+                      subtitle: Text('${p.trackAssetPaths.length} tracks'),
                       onTap: () => Navigator.of(sheetContext).pop(p),
                     );
                   },
@@ -518,7 +519,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     return _ThoughtAttachment(
       type: _ThoughtAttachmentType.playlist,
       title: selected.title,
-      subtitle: '${selected.trackAssetPaths.length} треков',
+      subtitle: '${selected.trackAssetPaths.length} tracks',
       playlistId: selected.id,
     );
   }
@@ -544,8 +545,8 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
         if (matched.isEmpty) return;
         id = matched.first.id;
       }
-      if (id == null || id.isEmpty) return;
-      final resolvedId = id!;
+      if (id.isEmpty) return;
+      final resolvedId = id;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => PlaylistDetailPage(
@@ -615,7 +616,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Комментарии',
+                        context.t('thoughts.comments'),
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontWeight: FontWeight.w700,
@@ -629,7 +630,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                             ? Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 child: Text(
-                                  'Комментариев пока нет',
+                                  context.t('thoughts.noComments'),
                                   style: TextStyle(color: palette.textSecondary),
                                 ),
                               )
@@ -650,8 +651,8 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                           Expanded(
                             child: TextField(
                               controller: controller,
-                              decoration: const InputDecoration(
-                                hintText: 'Добавить комментарий...',
+                              decoration: InputDecoration(
+                                hintText: context.t('thoughts.addComment'),
                                 border: OutlineInputBorder(),
                                 isDense: true,
                               ),
@@ -822,7 +823,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
       ),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: const Text('Мысли'),
+        title: Text(context.t('thoughts.title')),
       ),
       body: Column(
         children: [
@@ -878,7 +879,7 @@ class _FeedSwitch extends StatelessWidget {
           Expanded(
             child: _FeedChip(
               selected: feed == _ThoughtFeed.friends,
-              label: 'Друзья',
+              label: context.t('thoughts.friends'),
               onTap: () => onChanged(_ThoughtFeed.friends),
             ),
           ),
@@ -886,7 +887,7 @@ class _FeedSwitch extends StatelessWidget {
           Expanded(
             child: _FeedChip(
               selected: feed == _ThoughtFeed.popular,
-              label: 'Популярное',
+              label: context.t('thoughts.popular'),
               onTap: () => onChanged(_ThoughtFeed.popular),
             ),
           ),
@@ -992,7 +993,7 @@ class _ThoughtCard extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              _relative(item.createdAt),
+                              _relative(context, item.createdAt),
                               style: TextStyle(
                                 color: palette.textSecondary,
                                 fontSize: 12,
@@ -1061,12 +1062,17 @@ class _ThoughtCard extends StatelessWidget {
     );
   }
 
-  String _relative(DateTime dateTime) {
+  String _relative(BuildContext context, DateTime dateTime) {
     final diff = DateTime.now().difference(dateTime);
-    if (diff.inMinutes < 1) return 'только что';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} мин назад';
-    if (diff.inHours < 24) return '${diff.inHours} ч назад';
-    return '${diff.inDays} д назад';
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
+    if (diff.inMinutes < 1) return isEn ? 'just now' : 'только что';
+    if (diff.inMinutes < 60) {
+      return isEn ? '${diff.inMinutes} min ago' : '${diff.inMinutes} мин назад';
+    }
+    if (diff.inHours < 24) {
+      return isEn ? '${diff.inHours} h ago' : '${diff.inHours} ч назад';
+    }
+    return isEn ? '${diff.inDays} d ago' : '${diff.inDays} д назад';
   }
 }
 

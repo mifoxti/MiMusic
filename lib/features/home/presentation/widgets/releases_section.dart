@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cover_image.dart';
 import '../../domain/entities/release_item.dart';
@@ -28,7 +29,7 @@ class ReleasesSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Последние релизы',
+          context.t('home.latestReleases'),
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 color: palette.textPrimary,
                 fontWeight: FontWeight.w600,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
@@ -9,6 +10,7 @@ import '../../core/theme/app_theme.dart';
 import 'about_page.dart';
 import 'cache_page.dart';
 import 'equalizer_page.dart';
+import 'language_page.dart';
 import 'personal_settings_page.dart';
 
 /// Экран настроек: тема, персональные данные, эквалайзер, прочее. Читает/сохраняет через [SettingsRepository].
@@ -17,6 +19,7 @@ class SettingsPage extends StatefulWidget {
     super.key,
     required this.themeMode,
     required this.onThemeChanged,
+    required this.onLanguageChanged,
     required this.settingsRepository,
     required this.initialSettings,
     required this.audioPlayerService,
@@ -24,6 +27,7 @@ class SettingsPage extends StatefulWidget {
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
+  final ValueChanged<String> onLanguageChanged;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
   final AudioPlayerService audioPlayerService;
@@ -34,12 +38,14 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late ThemeMode _themeMode;
+  late String _languageCode;
   bool _notificationsEnabled = true;
 
   @override
   void initState() {
     super.initState();
     _themeMode = widget.themeMode;
+    _languageCode = widget.initialSettings.languageCode;
     _notificationsEnabled = widget.initialSettings.notificationsEnabled;
   }
 
@@ -81,11 +87,11 @@ class _SettingsPageState extends State<SettingsPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _sectionLabel(palette, 'Тема'),
+                              _sectionLabel(palette, context.t('settings.theme')),
                               const SizedBox(height: 10),
                               _buildThemeChips(palette),
                               const SizedBox(height: 24),
-                              _sectionLabel(palette, 'Прочее'),
+                              _sectionLabel(palette, context.t('settings.other')),
                               const SizedBox(height: 8),
                               _buildOtherRows(palette),
                             ],
@@ -117,7 +123,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const Spacer(),
           Text(
-            'Настройки',
+            context.t('settings.title'),
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -164,16 +170,21 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _buildThemeChips(AppColorPalette palette) {
     const options = [
-      (ThemeMode.light, 'Светлая', Icons.light_mode_rounded),
-      (ThemeMode.dark, 'Тёмная', Icons.dark_mode_rounded),
-      (ThemeMode.system, 'Система', Icons.brightness_auto_rounded),
+      (ThemeMode.light, 'settings.light', Icons.light_mode_rounded),
+      (ThemeMode.dark, 'settings.dark', Icons.dark_mode_rounded),
+      (ThemeMode.system, 'settings.system', Icons.brightness_auto_rounded),
     ];
     return Row(
       children: [
         for (var i = 0; i < options.length; i++) ...[
           if (i > 0) const SizedBox(width: 8),
           Expanded(
-            child: _buildThemeChip(palette, options[i].$1, options[i].$2, options[i].$3),
+            child: _buildThemeChip(
+              palette,
+              options[i].$1,
+              context.t(options[i].$2),
+              options[i].$3,
+            ),
           ),
         ],
       ],
@@ -232,8 +243,8 @@ class _SettingsPageState extends State<SettingsPage> {
         _row(
           palette,
           Icons.person_rounded,
-          'Персональные настройки',
-          subtitle: 'Профиль',
+          context.t('settings.personal'),
+          subtitle: context.t('settings.profile'),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -249,8 +260,8 @@ class _SettingsPageState extends State<SettingsPage> {
         _row(
           palette,
           Icons.graphic_eq_rounded,
-          'Эквалайзер',
-          subtitle: 'Настроить полосы частот',
+          context.t('settings.equalizer'),
+          subtitle: context.t('settings.equalizerSub'),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -267,7 +278,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _row(
           palette,
           Icons.notifications_outlined,
-          'Уведомления',
+          context.t('settings.notifications'),
           trailing: Switch(
             value: _notificationsEnabled,
             onChanged: (v) async {
@@ -279,13 +290,21 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         _rowDivider(palette),
-        _row(palette, Icons.language_rounded, 'Язык', subtitle: 'Русский', onTap: () {}),
+        _row(
+          palette,
+          Icons.language_rounded,
+          context.t('settings.language'),
+          subtitle: _languageCode == 'en'
+              ? context.t('language.english')
+              : context.t('language.russian'),
+          onTap: _openLanguagePage,
+        ),
         _rowDivider(palette),
         _row(
           palette,
           Icons.folder_outlined,
-          'Кэш',
-          subtitle: 'Размер и очистка',
+          context.t('settings.cache'),
+          subtitle: context.t('settings.cacheSub'),
           onTap: () async {
             final fresh = await widget.settingsRepository.getSettings();
             if (!mounted) return;
@@ -303,8 +322,8 @@ class _SettingsPageState extends State<SettingsPage> {
         _row(
           palette,
           Icons.info_outline_rounded,
-          'О приложении',
-          subtitle: 'Версия и ссылки',
+          context.t('settings.about'),
+          subtitle: context.t('settings.aboutSub'),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -352,5 +371,23 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _rowDivider(AppColorPalette palette) {
     return Divider(height: 1, indent: 40, endIndent: 8, color: palette.textMuted.withValues(alpha: 0.2));
+  }
+
+  Future<void> _openLanguagePage() async {
+    final selected = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => LanguagePage(
+          currentLanguageCode: _languageCode,
+          audioPlayerService: widget.audioPlayerService,
+        ),
+      ),
+    );
+    if (selected == null || selected == _languageCode) return;
+    setState(() => _languageCode = selected);
+    widget.onLanguageChanged(selected);
+    final current = await widget.settingsRepository.getSettings();
+    await widget.settingsRepository.saveSettings(
+      current.copyWith(languageCode: selected),
+    );
   }
 }

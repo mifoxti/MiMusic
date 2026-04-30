@@ -4,6 +4,7 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/player/player_dock_host.dart';
@@ -117,7 +118,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('Любимые'),
+          title: Text(context.t('favorites.title')),
           titleTextStyle: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -151,7 +152,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                       padding: const EdgeInsets.symmetric(vertical: 48),
                       child: Center(
                         child: Text(
-                          'Добавьте треки в избранное, нажимая ♥ в плеере',
+                          context.t('favorites.empty'),
                           style: TextStyle(
                             fontSize: 15,
                             color: palette.textSecondary,
@@ -195,7 +196,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           _buildHeartWithRings(palette),
           const SizedBox(height: 16),
           Text(
-            'Твои любимые',
+            context.t('favorites.header'),
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.bold,

@@ -4,6 +4,7 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
@@ -178,7 +179,7 @@ class _SearchPageState extends State<SearchPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Поиск',
+                          context.t('search.title'),
                           style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
@@ -189,8 +190,8 @@ class _SearchPageState extends State<SearchPage> {
                         const SizedBox(height: 6),
                         Text(
                           _mode == _SearchMode.music
-                              ? 'Треки, альбомы и исполнители'
-                              : 'Пользователи MiMusic',
+                              ? context.t('search.musicSub')
+                              : context.t('search.peopleSub'),
                           style: TextStyle(
                             fontSize: 14,
                             color: palette.textSecondary,
@@ -212,8 +213,8 @@ class _SearchPageState extends State<SearchPage> {
                             fillColor:
                                 palette.cardBackground.withValues(alpha: 0.92),
                             hintText: _mode == _SearchMode.music
-                                ? 'Название, автор, альбом…'
-                                : 'Никнейм…',
+                                ? context.t('search.musicHint')
+                                : context.t('search.peopleHint'),
                             hintStyle: TextStyle(
                               color: palette.textMuted,
                               fontSize: 15,
@@ -271,7 +272,7 @@ class _SearchPageState extends State<SearchPage> {
                             _suggestionArtists.isNotEmpty) ...[
                           const SizedBox(height: 18),
                           Text(
-                            'Часто ищут',
+                            context.t('search.frequent'),
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -333,8 +334,8 @@ class _SearchPageState extends State<SearchPage> {
                           const SizedBox(height: 16),
                           Text(
                             _mode == _SearchMode.music
-                                ? 'Введите запрос, чтобы найти треки и релизы'
-                                : 'Введите ник, чтобы найти пользователя',
+                                ? context.t('search.emptyMusic')
+                                : context.t('search.emptyPeople'),
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 15,
@@ -373,7 +374,7 @@ class _SearchPageState extends State<SearchPage> {
         children: [
           Expanded(
             child: _ModeChip(
-              label: 'Музыка',
+              label: context.t('search.musicMode'),
               icon: Icons.library_music_rounded,
               selected: _mode == _SearchMode.music,
               palette: palette,
@@ -384,7 +385,7 @@ class _SearchPageState extends State<SearchPage> {
           const SizedBox(width: 4),
           Expanded(
             child: _ModeChip(
-              label: 'Люди',
+              label: context.t('search.peopleMode'),
               icon: Icons.person_search_rounded,
               selected: _mode == _SearchMode.people,
               palette: palette,
@@ -407,7 +408,7 @@ class _SearchPageState extends State<SearchPage> {
             padding: const EdgeInsets.fromLTRB(24, 40, 24, 120),
             child: Center(
               child: Text(
-                'Ничего не найдено',
+                context.t('search.notFound'),
                 style: TextStyle(
                   fontSize: 16,
                   color: palette.textSecondary,
@@ -427,7 +428,7 @@ class _SearchPageState extends State<SearchPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
             child: Text(
-              'Альбомы и релизы',
+              context.t('search.albums'),
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -470,7 +471,7 @@ class _SearchPageState extends State<SearchPage> {
           child: Padding(
             padding: EdgeInsets.fromLTRB(20, albums.isNotEmpty ? 12 : 8, 20, 8),
             child: Text(
-              'Треки',
+              context.t('search.tracks'),
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -520,7 +521,7 @@ class _SearchPageState extends State<SearchPage> {
             padding: const EdgeInsets.fromLTRB(24, 40, 24, 120),
             child: Center(
               child: Text(
-                'Пользователи не найдены',
+                context.t('search.usersNotFound'),
                 style: TextStyle(
                   fontSize: 16,
                   color: palette.textSecondary,
@@ -695,7 +696,7 @@ class _AlbumResultTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Альбом · релиз',
+                      Localizations.localeOf(context).languageCode == 'en' ? 'Album · release' : 'Альбом · релиз',
                       style: TextStyle(
                         fontSize: 13,
                         color: palette.textSecondary,
@@ -805,7 +806,7 @@ class _SearchTrackTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       track.artistDisplay.isEmpty
-                          ? 'Неизвестный исполнитель'
+                          ? context.t('common.unknownArtist')
                           : track.artistDisplay,
                       style: TextStyle(
                         fontSize: 13,
@@ -895,7 +896,7 @@ class _UserResultTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Пользователь',
+                      Localizations.localeOf(context).languageCode == 'en' ? 'User' : 'Пользователь',
                       style: TextStyle(
                         fontSize: 13,
                         color: palette.textSecondary,

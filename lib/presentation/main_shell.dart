@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../core/audio/audio_player_service.dart';
 import '../core/history/listening_history_repository.dart';
+import '../core/l10n/app_localization.dart';
 import '../core/notifications/local_notifications_service.dart';
 import '../core/notifications/notification_intent.dart';
 import '../core/player/full_player_visibility.dart';
@@ -34,6 +35,7 @@ class MainShell extends StatefulWidget {
     required this.audioPlayerService,
     required this.themeMode,
     required this.onThemeChanged,
+    required this.onLanguageChanged,
     required this.settingsRepository,
     required this.initialSettings,
     required this.listeningHistoryRepository,
@@ -44,6 +46,7 @@ class MainShell extends StatefulWidget {
   final ListeningHistoryRepository listeningHistoryRepository;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
+  final ValueChanged<String> onLanguageChanged;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
 
@@ -277,6 +280,7 @@ class _MainShellState extends State<MainShell>
                                       widget.listeningHistoryRepository,
                                   themeMode: widget.themeMode,
                                   onThemeChanged: widget.onThemeChanged,
+                                  onLanguageChanged: widget.onLanguageChanged,
                                   settingsRepository: widget.settingsRepository,
                                   initialSettings: widget.initialSettings,
                                 ),
@@ -440,6 +444,7 @@ class _TabsView extends StatelessWidget {
     required this.listeningHistoryRepository,
     required this.themeMode,
     required this.onThemeChanged,
+    required this.onLanguageChanged,
     required this.settingsRepository,
     required this.initialSettings,
   });
@@ -451,6 +456,7 @@ class _TabsView extends StatelessWidget {
   final ListeningHistoryRepository listeningHistoryRepository;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
+  final ValueChanged<String> onLanguageChanged;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
 
@@ -471,6 +477,7 @@ class _TabsView extends StatelessWidget {
         ProfilePage(
           themeMode: themeMode,
           onThemeChanged: onThemeChanged,
+          onLanguageChanged: onLanguageChanged,
           settingsRepository: settingsRepository,
           initialSettings: initialSettings,
           audioPlayerService: audioPlayerService,
@@ -520,21 +527,21 @@ class _BottomNavBar extends StatelessWidget {
                 children: [
                     _NavItem(
                       icon: Icons.music_note_rounded,
-                      label: 'Music',
+                      label: context.t('search.musicMode'),
                       isSelected: selectedIndex == 0,
                       palette: palette,
                       onTap: () => onTap(0),
                     ),
                     _NavItem(
                       icon: Icons.search_rounded,
-                      label: 'Search',
+                      label: context.t('common.search'),
                       isSelected: selectedIndex == 1,
                       palette: palette,
                       onTap: () => onTap(1),
                     ),
                     _NavItem(
                       icon: Icons.person_rounded,
-                      label: 'Profile',
+                      label: context.t('settings.profile'),
                       isSelected: selectedIndex == 2,
                       palette: palette,
                       onTap: () => onTap(2),

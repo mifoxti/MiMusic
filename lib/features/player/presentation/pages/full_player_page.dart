@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../../../core/audio/audio_player_service.dart';
+import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/player/player_dock_host.dart';
@@ -47,7 +48,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                   if (track == null) {
                     return Center(
                       child: Text(
-                        'Сейчас ничего не играет',
+                        context.t('player.nothingPlaying'),
                         style: TextStyle(
                           color: palette.textSecondary,
                           fontSize: 16,
@@ -184,7 +185,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                           ),
                                           child: Text(
                                             track.artistDisplay.isEmpty
-                                                ? 'Исполнитель не указан'
+                                                ? context.t('common.notSpecifiedArtist')
                                                 : track.artistDisplay,
                                             textAlign: TextAlign.center,
                                             style: TextStyle(
@@ -266,12 +267,12 @@ class FullPlayerDockPanel extends StatelessWidget {
                                             Icons.groups_rounded,
                                             size: 22,
                                           ),
-                                          label: const Padding(
+                                          label: Padding(
                                             padding: EdgeInsets.symmetric(
                                               vertical: 4,
                                             ),
                                             child: Text(
-                                              'Слушать вместе',
+                                              context.t('player.listenTogether'),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,

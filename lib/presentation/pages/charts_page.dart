@@ -4,6 +4,7 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
@@ -55,10 +56,11 @@ class _ChartsPageState extends State<ChartsPage> {
     if (!mounted) return;
 
     // Пока нет API: порядок = локальный список, подписи — заглушки.
-    const playsMocks = [
-      '1,2 млн прослушиваний',
-      '982 тыс. прослушиваний',
-      '756 тыс. прослушиваний',
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
+    final playsMocks = [
+      isEn ? '1.2M plays' : '1,2 млн прослушиваний',
+      isEn ? '982K plays' : '982 тыс. прослушиваний',
+      isEn ? '756K plays' : '756 тыс. прослушиваний',
     ];
     const deltaMocks = <String?>[null, null, 'NEW'];
 
@@ -70,7 +72,7 @@ class _ChartsPageState extends State<ChartsPage> {
           track: tracks[i],
           playsLabel: i < playsMocks.length
               ? playsMocks[i]
-              : '${(340 - i * 12)} тыс. прослушиваний',
+              : (isEn ? '${(340 - i * 12)}K plays' : '${(340 - i * 12)} тыс. прослушиваний'),
           deltaLabel: i < deltaMocks.length ? deltaMocks[i] : null,
         ),
       );
@@ -146,7 +148,7 @@ class _ChartsPageState extends State<ChartsPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('Чарты'),
+          title: Text(context.t('charts.title')),
           titleTextStyle: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -180,7 +182,7 @@ class _ChartsPageState extends State<ChartsPage> {
                       padding: const EdgeInsets.symmetric(vertical: 48),
                       child: Center(
                         child: Text(
-                          'Добавьте треки в assets/music/',
+                          context.t('home.addTracksHint'),
                           style: TextStyle(
                             fontSize: 15,
                             color: palette.textSecondary,
@@ -226,7 +228,7 @@ class _ChartsPageState extends State<ChartsPage> {
           _buildChartIconCluster(),
           const SizedBox(height: 16),
           Text(
-            'Топ треков',
+            context.t('charts.topTracks'),
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.bold,
@@ -236,7 +238,7 @@ class _ChartsPageState extends State<ChartsPage> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Обновляется каждый день',
+            context.t('charts.updatedDaily'),
             style: TextStyle(
               fontSize: 14,
               color: palette.textSecondary,
@@ -408,7 +410,7 @@ class _ChartTrackTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       track.artistDisplay.isEmpty
-                          ? 'Неизвестный исполнитель'
+                          ? context.t('common.unknownArtist')
                           : track.artistDisplay,
                       style: TextStyle(
                         fontSize: 13,

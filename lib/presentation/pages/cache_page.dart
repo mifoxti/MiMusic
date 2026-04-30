@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/cache/cache_size.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_glass.dart';
@@ -10,14 +11,14 @@ import '../../core/theme/app_theme.dart';
 
 /// Дискретные позиции слайдера лимита.
 /// «0» — нулевой лимит (0 байт). «∞» — [AppSettings.cacheLimitUnlimited] (-1).
-const List<({int bytes, String label})> _cacheLimitSteps = [
-  (bytes: 0, label: '0'),
-  (bytes: 100 * 1024 * 1024, label: '100 МБ'),
-  (bytes: 200 * 1024 * 1024, label: '200 МБ'),
-  (bytes: 500 * 1024 * 1024, label: '500 МБ'),
-  (bytes: 1 * 1024 * 1024 * 1024, label: '1 ГБ'),
-  (bytes: 5 * 1024 * 1024 * 1024, label: '5 ГБ'),
-  (bytes: AppSettings.cacheLimitUnlimited, label: '∞'),
+const List<int> _cacheLimitSteps = [
+  0,
+  100 * 1024 * 1024,
+  200 * 1024 * 1024,
+  500 * 1024 * 1024,
+  1 * 1024 * 1024 * 1024,
+  5 * 1024 * 1024 * 1024,
+  AppSettings.cacheLimitUnlimited,
 ];
 
 /// Кэш: кольцо занятого места, лимит, очистка.
@@ -79,12 +80,12 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
     if (bytes == AppSettings.cacheLimitUnlimited) {
       return _cacheLimitSteps.length - 1;
     }
-    final exact = _cacheLimitSteps.indexWhere((s) => s.bytes == bytes);
+    final exact = _cacheLimitSteps.indexWhere((s) => s == bytes);
     if (exact >= 0) return exact;
     var bestI = 0;
     var bestDelta = 1 << 62;
     for (var i = 0; i < _cacheLimitSteps.length; i++) {
-      final b = _cacheLimitSteps[i].bytes;
+      final b = _cacheLimitSteps[i];
       if (b < 0) continue;
       final d = (bytes - b).abs();
       if (d < bestDelta) {
@@ -155,7 +156,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
     final palette = AppPaletteExtension.of(context).palette;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Кэш очищен'),
+        content: Text(context.t('cache.cleared')),
         behavior: SnackBarBehavior.floating,
         backgroundColor: palette.cardBackground,
       ),
@@ -206,7 +207,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Очистить кэш?',
+                          context.t('cache.confirmTitle'),
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
@@ -215,8 +216,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Будут удалены временные файлы и данные в каталоге кэша приложения. '
-                          'Треки из студии и загруженная музыка в документах не затрагиваются.',
+                          context.t('cache.confirmText'),
                           style: TextStyle(
                             fontSize: 15,
                             height: 1.45,
@@ -230,14 +230,14 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, false),
                               child: Text(
-                                'Отмена',
+                                context.t('common.cancel'),
                                 style: TextStyle(color: p.textSecondary),
                               ),
                             ),
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, true),
                               child: Text(
-                                'Очистить',
+                                context.t('cache.clear'),
                                 style: TextStyle(
                                   color: p.accent,
                                   fontWeight: FontWeight.w600,
@@ -315,7 +315,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                     ),
                     const Spacer(),
                     Text(
-                      'Кэш',
+                      context.t('cache.title'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -385,10 +385,10 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                                     const SizedBox(height: 4),
                                     Text(
                                       unlimited
-                                          ? 'без лимита'
+                                          ? context.t('cache.unlimited')
                                           : _limitBytes == 0
                                               ? 'из 0'
-                                              : 'из ${_formatBytes(_limitBytes)}',
+                                              : context.tr('cache.of', {'size': _formatBytes(_limitBytes)}),
                                       style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w500,
@@ -398,7 +398,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                                     if (overLimit) ...[
                                       const SizedBox(height: 8),
                                       Text(
-                                        'Превышен лимит',
+                                        context.t('cache.overLimit'),
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w600,
@@ -415,7 +415,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                       ),
                       const SizedBox(height: 28),
                       Text(
-                        'РАЗРЕШЁННЫЙ ОБЪЁМ',
+                        context.t('cache.allowed'),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -460,7 +460,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                                 onChanged: (v) {
                                   final idx =
                                       v.round().clamp(0, _cacheLimitSteps.length - 1);
-                                  _saveLimit(_cacheLimitSteps[idx].bytes);
+                                  _saveLimit(_cacheLimitSteps[idx]);
                                 },
                               ),
                             ),
@@ -488,7 +488,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          _cacheLimitSteps[i].label,
+                                          _cacheStepLabel(_cacheLimitSteps[i]),
                                           textAlign: TextAlign.center,
                                           maxLines: 2,
                                           overflow: TextOverflow.fade,
@@ -516,10 +516,10 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                       FilledButton.icon(
                         onPressed: _loading ? null : _confirmAndClear,
                         icon: const Icon(Icons.delete_sweep_rounded, size: 22),
-                        label: const Padding(
+                        label: Padding(
                           padding: EdgeInsets.symmetric(vertical: 14),
                           child: Text(
-                            'Очистить кэш',
+                            context.t('cache.clear'),
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -533,7 +533,7 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Учитываются временные файлы и системный каталог кэша приложения.',
+                        context.t('cache.note'),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,
@@ -553,13 +553,19 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
   }
 
   String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes Б';
+    if (bytes < 1024) return '$bytes ${context.t('cache.bytes')}';
     final kb = bytes / 1024;
-    if (kb < 1024) return '${kb.toStringAsFixed(kb >= 100 ? 0 : 1)} КБ';
+    if (kb < 1024) return '${kb.toStringAsFixed(kb >= 100 ? 0 : 1)} ${context.t('cache.kb')}';
     final mb = bytes / (1024 * 1024);
-    if (mb < 1024) return '${mb.toStringAsFixed(mb >= 100 ? 0 : 1)} МБ';
+    if (mb < 1024) return '${mb.toStringAsFixed(mb >= 100 ? 0 : 1)} ${context.t('cache.mb')}';
     final gb = bytes / (1024 * 1024 * 1024);
-    return '${gb.toStringAsFixed(gb >= 10 ? 1 : 2)} ГБ';
+    return '${gb.toStringAsFixed(gb >= 10 ? 1 : 2)} ${context.t('cache.gb')}';
+  }
+
+  String _cacheStepLabel(int bytes) {
+    if (bytes == AppSettings.cacheLimitUnlimited) return '∞';
+    if (bytes == 0) return '0';
+    return _formatBytes(bytes);
   }
 }
 

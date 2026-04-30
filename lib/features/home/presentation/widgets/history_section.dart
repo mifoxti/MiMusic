@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/theme/app_theme.dart';
 
 /// Карточка «История»: подпись и переход на экран истории.
@@ -9,10 +10,10 @@ class HistorySection extends StatelessWidget {
     super.key,
     required this.subtitle,
     this.onTap,
-    this.title = 'История',
+    this.title,
   });
 
-  final String title;
+  final String? title;
   final String subtitle;
   final VoidCallback? onTap;
 
@@ -52,7 +53,7 @@ class HistorySection extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      title,
+                      title ?? context.t('history.title'),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
