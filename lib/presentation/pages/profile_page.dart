@@ -14,6 +14,7 @@ import 'notifications_page.dart';
 import 'playlists_page.dart';
 import 'settings_page.dart';
 import 'studio_page.dart';
+import 'thoughts_page.dart';
 
 /// Страница профиля: коллапсирующий header с обложкой и аватаром + "поднимающийся" bottom-sheet.
 class ProfilePage extends StatelessWidget {
@@ -270,7 +271,18 @@ class ProfilePage extends StatelessWidget {
                                       color: Colors.white.withValues(alpha: 0.25),
                                       borderRadius: BorderRadius.circular(24),
                                       child: InkWell(
-                                        onTap: () {},
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute<void>(
+                                              builder: (_) => ThoughtsPage(
+                                                currentUsername:
+                                                    initialSettings.nickname,
+                                                audioPlayerService:
+                                                    audioPlayerService,
+                                              ),
+                                            ),
+                                          );
+                                        },
                                         borderRadius: BorderRadius.circular(24),
                                         child: const Padding(
                                           padding: EdgeInsets.symmetric(

@@ -13,6 +13,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
 import '../../features/home/domain/entities/release_item.dart';
 import '../../features/home/presentation/widgets/releases_section.dart';
+import 'thoughts_page.dart';
 
 /// Экран автора: обложка, имя, «Мысли», популярные треки и релизы (локальные данные + моки).
 class ArtistPage extends StatefulWidget {
@@ -249,12 +250,13 @@ class _ArtistPageState extends State<ArtistPage> {
                                     borderRadius: BorderRadius.circular(24),
                                     child: InkWell(
                                       onTap: () {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: const Text(
-                                              'Лента «Мысли» — скоро',
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => ThoughtsPage(
+                                              currentUsername: _currentUser,
+                                              audioPlayerService:
+                                                  widget.audioPlayerService,
                                             ),
-                                            behavior: SnackBarBehavior.floating,
                                           ),
                                         );
                                       },
