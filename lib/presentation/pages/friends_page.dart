@@ -175,7 +175,7 @@ class _FriendsPageState extends State<FriendsPage> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: EdgeInsets.fromLTRB(16, 12, 16, bottomInset),
                       itemCount: _items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final item = _items[index];
                         return _FriendCard(

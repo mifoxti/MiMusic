@@ -1,12 +1,9 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/audio/local_tracks.dart';
-import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/platform/platform.dart';
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
 import '../../features/playlists/domain/entities/playlist.dart';
@@ -154,7 +151,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                       Expanded(
                         child: ListView.separated(
                           itemCount: _playlists.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          separatorBuilder: (_, _) => const SizedBox(height: 10),
                           itemBuilder: (context, index) {
                             final p = _playlists[index];
                             return _PlaylistTile(

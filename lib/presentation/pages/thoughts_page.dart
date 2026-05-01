@@ -161,16 +161,16 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                         TextButton.icon(
                           onPressed: () async {
                             final type = await _showAttachmentTypePicker(dialogContext);
-                            if (!mounted) return;
+                            if (!dialogContext.mounted) return;
                             if (type == _ThoughtAttachmentType.track) {
                               final picked = await _pickTrackAttachment(dialogContext);
-                              if (!mounted) return;
+                              if (!dialogContext.mounted) return;
                               if (picked != null) {
                                 setDialogState(() => pendingAttachment = picked);
                               }
                             } else if (type == _ThoughtAttachmentType.playlist) {
                               final picked = await _pickPlaylistAttachment(dialogContext);
-                              if (!mounted) return;
+                              if (!dialogContext.mounted) return;
                               if (picked != null) {
                                 setDialogState(() => pendingAttachment = picked);
                               }
@@ -314,6 +314,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   Future<_ThoughtAttachment?> _pickTrackAttachment(BuildContext ownerContext) async {
     final tracks = await loadLocalTracks();
     if (!mounted || tracks.isEmpty) return null;
+    if (!ownerContext.mounted) return null;
     final likedPaths = widget.audioPlayerService?.likedPaths ?? <String>{};
     final likedTracks =
         tracks.where((t) => likedPaths.contains(t.assetPath)).toList();
@@ -454,7 +455,8 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   Future<_ThoughtAttachment?> _pickPlaylistAttachment(BuildContext ownerContext) async {
     final repo = LocalPlaylistsRepository();
     final playlists = await repo.getPlaylists();
-    if (!mounted || playlists.isEmpty) {
+    if (!mounted) return null;
+    if (playlists.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Create a playlist first'),
@@ -463,6 +465,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
       );
       return null;
     }
+    if (!ownerContext.mounted) return null;
     _overlayDepth++;
     final selected = await showModalBottomSheet<Playlist>(
       context: ownerContext,
@@ -541,6 +544,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
       var id = attachment.playlistId;
       if (id == null || id.isEmpty) {
         final all = await repo.getPlaylists();
+        if (!mounted) return;
         final matched = all.where((p) => p.title == attachment.title).toList();
         if (matched.isEmpty) return;
         id = matched.first.id;
@@ -637,7 +641,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                             : ListView.separated(
                                 shrinkWrap: true,
                                 itemCount: item.comments.length,
-                                separatorBuilder: (_, __) =>
+                                separatorBuilder: (_, _) =>
                                     const SizedBox(height: 8),
                                 itemBuilder: (context, i) => Text(
                                   '• ${item.comments[i]}',
@@ -838,7 +842,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
               itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 return _ThoughtCard(
                   item: items[index],

@@ -140,7 +140,7 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
                             width: 72,
                             height: 72,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (_, _, _) => Container(
                               width: 72,
                               height: 72,
                               color: palette.accent.withValues(alpha: 0.25),
@@ -222,7 +222,7 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
         child: Image.asset(
           imagePath,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
+          errorBuilder: (_, _, _) => Container(
             width: _circleAvatarSize,
             height: _circleAvatarSize,
             color: palette.accent.withValues(alpha: 0.25),
@@ -249,7 +249,7 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
                 child: Image.asset(
                   imagePath,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (_, _, _) => Container(
                     width: width,
                     height: height,
                     color: palette.accent.withValues(alpha: 0.25),

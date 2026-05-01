@@ -232,7 +232,7 @@ class ProfilePage extends StatelessWidget {
                               child: Image.asset(
                                 _avatarAsset,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
+                                errorBuilder: (_, _, _) => Container(
                                   color: palette.accent.withValues(alpha: 0.6),
                                   alignment: Alignment.center,
                                   child: const Icon(
@@ -400,7 +400,7 @@ class ProfilePage extends StatelessWidget {
           fit: BoxFit.cover,
           width: width,
           height: height,
-          errorBuilder: (_, __, ___) => Container(
+          errorBuilder: (_, _, _) => Container(
             color: palette.accent.withValues(alpha: 0.5),
             alignment: Alignment.center,
             child: Icon(Icons.person_rounded, color: Colors.white, size: 64),

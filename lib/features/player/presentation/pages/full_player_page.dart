@@ -547,7 +547,7 @@ void _showPlayerQueueSheet({
             ),
             child: ListenableBuilder(
               listenable: roomActive ? roomSession : audioPlayerService,
-              builder: (context, __) {
+              builder: (context, _) {
                 final queue = roomActive ? roomSession.queue : audioPlayerService.activeQueue;
                 final canEditQueue = roomActive ? roomSession.canEditQueue : true;
                 return Column(
@@ -742,7 +742,7 @@ Future<void> _showAddTrackToQueueSheet({
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               itemCount: tracks.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final item = tracks[index];
                 return ListTile(
@@ -800,7 +800,7 @@ void _showRoomManageSheet({
                   ),
                   child: ListenableBuilder(
                     listenable: roomSession,
-                    builder: (context, __) {
+                    builder: (context, _) {
                       final listeners = roomSession.listeners;
                       return ListView(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),

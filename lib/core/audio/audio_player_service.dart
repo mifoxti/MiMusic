@@ -128,8 +128,8 @@ class AudioPlayerService extends ChangeNotifier {
       'title': track.title,
       'artist': track.artist,
       'artPath': track.coverFallbackPath,
-      if (artUri != null) 'artUri': artUri,
-      if (queueMaps != null && queueMaps.isNotEmpty) 'queue': queueMaps,
+      'artUri': artUri,
+      if (queueMaps?.isNotEmpty ?? false) 'queue': queueMaps,
     });
   }
 

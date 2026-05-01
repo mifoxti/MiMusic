@@ -249,7 +249,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                                 )
                               : ListView.separated(
                                   itemCount: _tracks.length,
-                                  separatorBuilder: (_, __) =>
+                                  separatorBuilder: (_, _) =>
                                       const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
                                     final t = _tracks[index];

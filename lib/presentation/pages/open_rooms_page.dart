@@ -113,7 +113,7 @@ class _OpenRoomsPageState extends State<OpenRoomsPage> {
         body: ListView.separated(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, AppConstants.shellBottomInset),
           itemCount: _rooms.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
             final room = _rooms[index];
             return ClipRRect(

@@ -173,10 +173,10 @@ class _ArtistPageState extends State<ArtistPage> {
                       Image.network(
                         networkCover!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Image.asset(
+                        errorBuilder: (_, _, _) => Image.asset(
                           cover,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             color: palette.accent.withValues(alpha: 0.5),
                           ),
                         ),
@@ -185,7 +185,7 @@ class _ArtistPageState extends State<ArtistPage> {
                       Image.asset(
                         cover,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorBuilder: (_, _, _) => Container(
                           color: palette.accent.withValues(alpha: 0.5),
                         ),
                       ),

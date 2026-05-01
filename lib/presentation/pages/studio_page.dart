@@ -50,6 +50,7 @@ class _StudioPageState extends State<StudioPage> {
     final albums = await _repo.getAlbums();
     final overrides = await _repo.getTrackMetadataOverrides();
     final customPaths = await _repo.getCustomTrackPaths();
+    if (!mounted) return;
     final customTracks = <Track>[];
     for (final id in customPaths) {
       final o = overrides[id];
@@ -62,15 +63,13 @@ class _StudioPageState extends State<StudioPage> {
         audioFilePath: o?.audioFilePath,
       ));
     }
-    if (mounted) {
-      setState(() {
-        _albums = albums;
-        _overrides = overrides;
-        _customPaths = customPaths;
-        _tracks = customTracks;
-        _loading = false;
-      });
-    }
+    setState(() {
+      _albums = albums;
+      _overrides = overrides;
+      _customPaths = customPaths;
+      _tracks = customTracks;
+      _loading = false;
+    });
   }
 
   Track _trackWithOverrides(Track t) {

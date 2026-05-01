@@ -440,27 +440,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildNoTracksPlaceholder(AppColorPalette palette) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-      decoration: BoxDecoration(
-        color: palette.cardBackground.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.music_off_rounded, size: 32, color: palette.textMuted),
-          const SizedBox(width: 12),
-          Text(
-            context.t('home.addTracksHint'),
-            style: TextStyle(fontSize: 14, color: palette.textSecondary),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildRecommendationRow(
     BuildContext context, {
     required String title,
@@ -494,7 +473,7 @@ class _HomePageState extends State<HomePage> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               final item = items[index];
               final isDark = Theme.of(context).brightness == Brightness.dark;
