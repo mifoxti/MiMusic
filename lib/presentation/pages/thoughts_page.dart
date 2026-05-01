@@ -36,6 +36,9 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   final List<_ThoughtItem> _items = <_ThoughtItem>[];
   _ThoughtFeed _feed = _ThoughtFeed.friends;
   int _overlayDepth = 0;
+  final Set<String> _expandedComments = <String>{};
+  final Map<String, TextEditingController> _commentControllers =
+      <String, TextEditingController>{};
 
   @override
   void initState() {
@@ -45,7 +48,17 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
 
   @override
   void dispose() {
+    for (final controller in _commentControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  TextEditingController _commentControllerFor(String thoughtId) {
+    return _commentControllers.putIfAbsent(
+      thoughtId,
+      TextEditingController.new,
+    );
   }
 
   List<_ThoughtItem> _seedThoughts() {
@@ -64,7 +77,10 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
           trackAssetPath: 'assets/music/Cartoon - Why We Lose - Cartoon.mp3',
         ),
         likesCount: 28,
-        comments: const ['Согласен, дроп отличный', 'У меня этот трек в repeat'],
+        comments: const [
+          _ThoughtComment(author: 'nightcore_anna', text: 'Согласен, дроп отличный'),
+          _ThoughtComment(author: 'dockfr10', text: 'У меня этот трек в repeat'),
+        ],
       ),
       _ThoughtItem(
         id: '2',
@@ -79,7 +95,10 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
           playlistId: 'seed-night-drive',
         ),
         likesCount: 34,
-        comments: const ['Кинь ссылку на плейлист', 'Топ для вечерних поездок'],
+        comments: const [
+          _ThoughtComment(author: 'alexwave', text: 'Кинь ссылку на плейлист'),
+          _ThoughtComment(author: 'mifoxti', text: 'Топ для вечерних поездок'),
+        ],
       ),
       _ThoughtItem(
         id: '3',
@@ -94,7 +113,9 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
           trackAssetPath: 'assets/music/Gotarux - Lost Control.mp3',
         ),
         likesCount: 17,
-        comments: const ['Этот синт просто космос'],
+        comments: const [
+          _ThoughtComment(author: 'lofi_nora', text: 'Этот синт просто космос'),
+        ],
       ),
     ];
   }
@@ -232,7 +253,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
           isFriend: true,
           attachment: created.attachment,
           likesCount: 0,
-          comments: const [],
+          comments: const <_ThoughtComment>[],
         ),
       );
       _feed = _ThoughtFeed.friends;
@@ -575,122 +596,36 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     });
   }
 
-  Future<void> _openComments(String thoughtId) async {
+  void _toggleComments(String thoughtId) {
+    setState(() {
+      if (_expandedComments.contains(thoughtId)) {
+        _expandedComments.remove(thoughtId);
+      } else {
+        _expandedComments.add(thoughtId);
+      }
+    });
+  }
+
+  void _addComment(String thoughtId) {
     final index = _items.indexWhere((e) => e.id == thoughtId);
     if (index < 0) return;
-    final palette = AppPaletteExtension.of(context).palette;
-    final controller = TextEditingController();
-    _overlayDepth++;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      useRootNavigator: true,
-      useSafeArea: true,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        final media = MediaQuery.of(sheetContext);
-        final bottomInset = media.viewInsets.bottom > 0
-            ? media.viewInsets.bottom + 8
-            : max(
-                AppConstants.shellBottomInset - 28,
-                media.padding.bottom + 8,
-              );
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final item = _items[index];
-            return ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppConstants.radiusXLarge),
-              ),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  padding: EdgeInsets.fromLTRB(14, 12, 14, bottomInset),
-                  decoration: BoxDecoration(
-                    color: palette.cardBackground.withValues(alpha: 0.72),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(AppConstants.radiusXLarge),
-                    ),
-                    border: Border.all(
-                      color: palette.textPrimary.withValues(alpha: 0.12),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        context.t('thoughts.comments'),
-                        style: TextStyle(
-                          color: palette.textPrimary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 17,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 220),
-                        child: item.comments.isEmpty
-                            ? Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                child: Text(
-                                  context.t('thoughts.noComments'),
-                                  style: TextStyle(color: palette.textSecondary),
-                                ),
-                              )
-                            : ListView.separated(
-                                shrinkWrap: true,
-                                itemCount: item.comments.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(height: 8),
-                                itemBuilder: (context, i) => Text(
-                                  '• ${item.comments[i]}',
-                                  style: TextStyle(color: palette.textPrimary),
-                                ),
-                              ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: controller,
-                              decoration: InputDecoration(
-                                hintText: context.t('thoughts.addComment'),
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton(
-                            onPressed: () {
-                              final text = controller.text.trim();
-                              if (text.isEmpty) return;
-                              setState(() {
-                                final current = _items[index];
-                                _items[index] = current.copyWith(
-                                  comments: [...current.comments, text],
-                                );
-                              });
-                              controller.clear();
-                              setSheetState(() {});
-                            },
-                            child: const Icon(Icons.send_rounded),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-    controller.dispose();
-    _overlayDepth = max(0, _overlayDepth - 1);
+    final controller = _commentControllerFor(thoughtId);
+    final text = controller.text.trim();
+    if (text.isEmpty) return;
+    setState(() {
+      final current = _items[index];
+      _items[index] = current.copyWith(
+        comments: [
+          ...current.comments,
+          _ThoughtComment(
+            author: widget.currentUsername,
+            text: text,
+          ),
+        ],
+      );
+      _expandedComments.add(thoughtId);
+      controller.clear();
+    });
   }
 
   Future<void> _openAuthorProfile(String username) async {
@@ -744,7 +679,10 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 onFeedChanged: (f) => setState(() => _feed = f),
                 onAttachmentTap: _openAttachment,
                 onLikeTap: _toggleLike,
-                onCommentTap: _openComments,
+                onCommentTap: _toggleComments,
+                isCommentsExpanded: _expandedComments.contains,
+                commentControllerFor: _commentControllerFor,
+                onCommentSubmit: _addComment,
                 onAuthorTap: _openAuthorProfile,
                 onCreateTap: _openCreateThoughtDialog,
                 fabBottomInset: AppConstants.shellBottomInset,
@@ -763,7 +701,10 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               onFeedChanged: (f) => setState(() => _feed = f),
               onAttachmentTap: _openAttachment,
               onLikeTap: _toggleLike,
-              onCommentTap: _openComments,
+              onCommentTap: _toggleComments,
+              isCommentsExpanded: _expandedComments.contains,
+              commentControllerFor: _commentControllerFor,
+              onCommentSubmit: _addComment,
               onAuthorTap: _openAuthorProfile,
               onCreateTap: _openCreateThoughtDialog,
               fabBottomInset: fabBottomInset,
@@ -784,6 +725,9 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
     required this.onAttachmentTap,
     required this.onLikeTap,
     required this.onCommentTap,
+    required this.isCommentsExpanded,
+    required this.commentControllerFor,
+    required this.onCommentSubmit,
     required this.onAuthorTap,
     required this.onCreateTap,
     required this.fabBottomInset,
@@ -796,6 +740,9 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
   final ValueChanged<_ThoughtAttachment> onAttachmentTap;
   final ValueChanged<String> onLikeTap;
   final ValueChanged<String> onCommentTap;
+  final bool Function(String thoughtId) isCommentsExpanded;
+  final TextEditingController Function(String thoughtId) commentControllerFor;
+  final ValueChanged<String> onCommentSubmit;
   final ValueChanged<String> onAuthorTap;
   final VoidCallback onCreateTap;
   final double fabBottomInset;
@@ -849,7 +796,10 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
                   onAttachmentTap: onAttachmentTap,
                   onLikeTap: () => onLikeTap(items[index].id),
                   onCommentTap: () => onCommentTap(items[index].id),
-                  onAuthorTap: () => onAuthorTap(items[index].author),
+                  commentsExpanded: isCommentsExpanded(items[index].id),
+                  commentController: commentControllerFor(items[index].id),
+                  onCommentSubmit: () => onCommentSubmit(items[index].id),
+                  onAuthorTap: onAuthorTap,
                 );
               },
             ),
@@ -944,6 +894,9 @@ class _ThoughtCard extends StatelessWidget {
     required this.onAttachmentTap,
     required this.onLikeTap,
     required this.onCommentTap,
+    required this.commentsExpanded,
+    required this.commentController,
+    required this.onCommentSubmit,
     required this.onAuthorTap,
   });
 
@@ -951,7 +904,10 @@ class _ThoughtCard extends StatelessWidget {
   final ValueChanged<_ThoughtAttachment> onAttachmentTap;
   final VoidCallback onLikeTap;
   final VoidCallback onCommentTap;
-  final VoidCallback onAuthorTap;
+  final bool commentsExpanded;
+  final TextEditingController commentController;
+  final VoidCallback onCommentSubmit;
+  final ValueChanged<String> onAuthorTap;
 
   @override
   Widget build(BuildContext context) {
@@ -976,7 +932,7 @@ class _ThoughtCard extends StatelessWidget {
               Row(
                 children: [
                   InkWell(
-                    onTap: onAuthorTap,
+                    onTap: () => onAuthorTap(item.author),
                     borderRadius: BorderRadius.circular(26),
                     child: Row(
                       children: [
@@ -1030,35 +986,76 @@ class _ThoughtCard extends StatelessWidget {
                 children: [
                   InkWell(
                     onTap: onLikeTap,
-                    child: Icon(
-                      item.likedByMe
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      size: 18,
-                      color: item.likedByMe ? palette.accent : palette.textMuted,
+                    borderRadius: BorderRadius.circular(18),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            item.likedByMe
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            size: 22,
+                            color: item.likedByMe ? palette.accent : palette.textMuted,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${item.likesCount}',
+                            style: TextStyle(
+                              color: palette.textSecondary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${item.likesCount}',
-                    style: TextStyle(color: palette.textSecondary, fontSize: 12),
-                  ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 12),
                   InkWell(
                     onTap: onCommentTap,
-                    child: Icon(
-                      Icons.chat_bubble_outline_rounded,
-                      size: 18,
-                      color: palette.textMuted,
+                    borderRadius: BorderRadius.circular(18),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            commentsExpanded
+                                ? Icons.chat_bubble_rounded
+                                : Icons.chat_bubble_outline_rounded,
+                            size: 22,
+                            color: palette.textMuted,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${item.comments.length}',
+                            style: TextStyle(
+                              color: palette.textSecondary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${item.comments.length}',
-                    style: TextStyle(color: palette.textSecondary, fontSize: 12),
                   ),
                 ],
               ),
+              if (commentsExpanded) ...[
+                const SizedBox(height: 12),
+                _InlineCommentsBlock(
+                  comments: item.comments,
+                  controller: commentController,
+                  onSubmit: onCommentSubmit,
+                  onAuthorTap: onAuthorTap,
+                ),
+              ],
             ],
           ),
         ),
@@ -1077,6 +1074,129 @@ class _ThoughtCard extends StatelessWidget {
       return isEn ? '${diff.inHours} h ago' : '${diff.inHours} ч назад';
     }
     return isEn ? '${diff.inDays} d ago' : '${diff.inDays} д назад';
+  }
+}
+
+class _InlineCommentsBlock extends StatelessWidget {
+  const _InlineCommentsBlock({
+    required this.comments,
+    required this.controller,
+    required this.onSubmit,
+    required this.onAuthorTap,
+  });
+
+  final List<_ThoughtComment> comments;
+  final TextEditingController controller;
+  final VoidCallback onSubmit;
+  final ValueChanged<String> onAuthorTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: palette.primaryDark.withValues(alpha: 0.26),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+        border: Border.all(color: palette.textPrimary.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (comments.isEmpty)
+            Text(
+              context.t('thoughts.noComments'),
+              style: TextStyle(color: palette.textSecondary, fontSize: 12),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: comments.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final comment = comments[index];
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 2,
+                      height: 34,
+                      margin: const EdgeInsets.only(top: 2, right: 8),
+                      decoration: BoxDecoration(
+                        color: palette.textMuted.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => onAuthorTap(comment.author),
+                              borderRadius: BorderRadius.circular(6),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 2),
+                                child: Text(
+                                  '@${comment.author}',
+                                  style: TextStyle(
+                                    color: palette.textPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            comment.text,
+                            style: TextStyle(
+                              color: palette.textSecondary,
+                              fontSize: 13,
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => onSubmit(),
+                  decoration: InputDecoration(
+                    hintText: context.t('thoughts.addComment'),
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonalIcon(
+                onPressed: onSubmit,
+                icon: const Icon(Icons.reply_rounded),
+                label: Text(isEn ? 'Reply' : 'Ответить'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1217,13 +1337,13 @@ class _ThoughtItem {
   final DateTime createdAt;
   final bool isFriend;
   final int likesCount;
-  final List<String> comments;
+  final List<_ThoughtComment> comments;
   final bool likedByMe;
   final _ThoughtAttachment? attachment;
 
   _ThoughtItem copyWith({
     int? likesCount,
-    List<String>? comments,
+    List<_ThoughtComment>? comments,
     bool? likedByMe,
   }) {
     return _ThoughtItem(
@@ -1238,6 +1358,16 @@ class _ThoughtItem {
       likedByMe: likedByMe ?? this.likedByMe,
     );
   }
+}
+
+class _ThoughtComment {
+  const _ThoughtComment({
+    required this.author,
+    required this.text,
+  });
+
+  final String author;
+  final String text;
 }
 
 class _ThoughtAttachment {
