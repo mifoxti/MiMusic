@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/constants/app_constants.dart';
@@ -20,31 +21,42 @@ class NavCardButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glassTint = AppGlass.tint(isDark);
+    final borderGlass = AppGlass.border(isDark);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: palette.cardBackground,
-            borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildAvatarStack(palette),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: palette.textPrimary,
-                ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+          child: AppGlass.blurredTintLayer(
+            isDark: isDark,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: glassTint,
+                borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                border: Border.all(color: borderGlass),
+                boxShadow: AppGlass.cardShadows(isDark),
               ),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildAvatarStack(palette),
+                  const SizedBox(width: 12),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -77,10 +89,10 @@ class NavCardButton extends StatelessWidget {
               height: radius * 2,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: avatarColors[0],
+                color: avatarColors[0].withValues(alpha: 0.7),
                 boxShadow: _avatarShadow,
               ),
-              child: const Icon(Icons.person, color: Colors.white54, size: 20),
+              child: const Icon(Icons.person, color: Colors.white70, size: 20),
             ),
           ),
           Positioned(
@@ -91,10 +103,11 @@ class NavCardButton extends StatelessWidget {
               height: radius * 2,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: avatarColors.length > 1 ? avatarColors[1] : avatarColors[0],
+                color: (avatarColors.length > 1 ? avatarColors[1] : avatarColors[0])
+                    .withValues(alpha: 0.7),
                 boxShadow: _avatarShadow,
               ),
-              child: const Icon(Icons.person, color: Colors.white54, size: 20),
+              child: const Icon(Icons.person, color: Colors.white70, size: 20),
             ),
           ),
         ],

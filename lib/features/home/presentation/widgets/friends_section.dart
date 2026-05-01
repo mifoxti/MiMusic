@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cover_image.dart';
 import '../../../../core/widgets/marquee_text.dart';
@@ -28,6 +29,7 @@ class FriendsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -46,8 +48,10 @@ class FriendsSection extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-              child: Stack(
-                children: [
+              child: AppGlass.blurredTintLayer(
+                isDark: isDark,
+                child: Stack(
+                  children: [
                   // Подложка: прогресс трека (слева — пройденная часть, справа — остаток)
                   Positioned.fill(
                     child: LayoutBuilder(
@@ -60,7 +64,9 @@ class FriendsSection extends StatelessWidget {
                               child: Container(color: palette.accent.withValues(alpha: 0.35)),
                             ),
                             Expanded(
-                              child: Container(color: palette.primaryDark.withValues(alpha: 0.2)),
+                              child: Container(
+                                color: AppGlass.tint(isDark).withValues(alpha: 0.55),
+                              ),
                             ),
                           ],
                         );
@@ -73,8 +79,10 @@ class FriendsSection extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.only(left: 12, top: 10, bottom: 10),
                       decoration: BoxDecoration(
-                        color: palette.cardBackground.withValues(alpha: 0.88),
+                        color: AppGlass.tint(isDark),
                         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                        border: Border.all(color: AppGlass.border(isDark)),
+                        boxShadow: AppGlass.cardShadows(isDark),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
@@ -123,7 +131,8 @@ class FriendsSection extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

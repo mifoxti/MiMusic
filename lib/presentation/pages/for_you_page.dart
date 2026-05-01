@@ -266,6 +266,9 @@ class _ForYouPageState extends State<ForYouPage> {
                           return _ForYouTrackCard(
                             track: queue[index],
                             palette: palette,
+                            isDownloaded: widget.audioPlayerService.isTrackDownloaded(
+                              queue[index].assetPath,
+                            ),
                             onTap: () => _onTrackTap(queue[index]),
                           );
                         },
@@ -367,11 +370,13 @@ class _ForYouTrackCard extends StatelessWidget {
   const _ForYouTrackCard({
     required this.track,
     required this.palette,
+    required this.isDownloaded,
     required this.onTap,
   });
 
   final Track track;
   final AppColorPalette palette;
+  final bool isDownloaded;
   final VoidCallback onTap;
 
   static const double _cover = 120.0;
@@ -415,6 +420,18 @@ class _ForYouTrackCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (isDownloaded)
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Icon(
+                        Icons.download_done_rounded,
+                        size: 14,
+                        color: palette.accent,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 Text(
                   track.title,

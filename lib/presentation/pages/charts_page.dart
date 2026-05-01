@@ -204,6 +204,9 @@ class _ChartsPageState extends State<ChartsPage> {
                             child: _ChartTrackTile(
                               entry: entry,
                               rankColor: _rankColor(palette, entry.rank),
+                              isDownloaded: widget.audioPlayerService.isTrackDownloaded(
+                                entry.track.assetPath,
+                              ),
                               onTap: () => _onTrackTap(entry.track),
                             ),
                           );
@@ -321,11 +324,13 @@ class _ChartTrackTile extends StatelessWidget {
   const _ChartTrackTile({
     required this.entry,
     required this.rankColor,
+    required this.isDownloaded,
     required this.onTap,
   });
 
   final ChartEntry entry;
   final Color rankColor;
+  final bool isDownloaded;
   final VoidCallback onTap;
 
   @override
@@ -407,6 +412,14 @@ class _ChartTrackTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (isDownloaded) ...[
+                      const SizedBox(height: 2),
+                      Icon(
+                        Icons.download_done_rounded,
+                        size: 14,
+                        color: palette.accent,
+                      ),
+                    ],
                     const SizedBox(height: 2),
                     Text(
                       track.artistDisplay.isEmpty

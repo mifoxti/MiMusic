@@ -3,13 +3,16 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
+import '../../core/audio/local_tracks.dart';
+import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
+import '../../core/player/player_dock_host.dart';
+import '../../core/social/listening_room_session.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/friends/data/repositories/mock_friends_repository.dart';
 import '../../features/friends/domain/repositories/friends_repository.dart';
 import 'artist_page.dart';
-import 'listening_room_page.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({
@@ -70,6 +73,60 @@ class _FriendsPageState extends State<FriendsPage> {
         _error = context.t('common.errorLoading');
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _connectToFriendListening(_FriendVm friend) async {
+    final tracks = await loadLocalTracks();
+    if (!mounted) return;
+
+    final normalizedTitle = friend.trackTitle.trim().toLowerCase();
+    final normalizedArtist = friend.trackArtist.trim().toLowerCase();
+    final matched = tracks.where((t) {
+      final title = t.title.trim().toLowerCase();
+      final artist = t.artistDisplay.trim().toLowerCase();
+      return title == normalizedTitle && artist == normalizedArtist;
+    }).toList();
+
+    final fallbackByTitle = matched.isNotEmpty
+        ? matched
+        : tracks
+              .where((t) => t.title.trim().toLowerCase() == normalizedTitle)
+              .toList();
+    final List<Track> queue = fallbackByTitle.isNotEmpty
+        ? fallbackByTitle
+        : (tracks.isNotEmpty ? <Track>[tracks.first] : <Track>[]);
+
+    ListeningRoomSession.instance.start(
+      roomTitle: '@${friend.username}',
+      listeners: ['mifoxti', friend.username],
+      hostUsername: friend.username,
+      currentUsername: 'mifoxti',
+      privateRoom: false,
+      pauseHostOnly: true,
+      seekHostOnly: true,
+      shuffleHostOnly: true,
+      repeatHostOnly: true,
+      skipHostOnly: true,
+      playlistHostOnly: true,
+      selectedPlaylists: const [],
+      queue: queue,
+    );
+    PlayerDockHost.expand();
+    if (queue.isNotEmpty) {
+      await widget.audioPlayerService.playTrack(queue.first, queue: queue);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            Localizations.localeOf(context).languageCode == 'en'
+                ? 'No local track match found for this friend yet.'
+                : 'Пока не нашли локальный трек, который слушает друг.',
+          ),
+        ),
+      );
     }
   }
 
@@ -136,16 +193,7 @@ class _FriendsPageState extends State<FriendsPage> {
                               ),
                             );
                           },
-                          onOpenRoom: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                settings: const RouteSettings(
-                                  name: ListeningRoomPage.routeName,
-                                ),
-                                builder: (_) => const ListeningRoomPage(),
-                              ),
-                            );
-                          },
+                          onOpenRoom: () => _connectToFriendListening(item),
                         );
                       },
                     ),

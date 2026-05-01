@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/app_localization.dart';
+import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_theme.dart';
 
 /// Карточка «История»: подпись и переход на экран истории.
@@ -20,19 +21,26 @@ class HistorySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: palette.cardBackground,
-            borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-          ),
-          child: Row(
-            children: [
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+          child: AppGlass.blurredTintLayer(
+            isDark: isDark,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppGlass.tint(isDark),
+                borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                border: Border.all(color: AppGlass.border(isDark)),
+                boxShadow: AppGlass.cardShadows(isDark),
+              ),
+              child: Row(
+                children: [
               Container(
                 width: 40,
                 height: 40,
@@ -79,7 +87,9 @@ class HistorySection extends StatelessWidget {
                 Icons.chevron_right_rounded,
                 color: palette.textMuted,
               ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

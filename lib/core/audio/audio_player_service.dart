@@ -31,6 +31,10 @@ class AudioPlayerService extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration? _duration;
   bool _isPlaying = false;
+  List<Track> _activeQueue = const [];
+  final Set<String> _downloadingPaths = <String>{};
+  final Set<String> _downloadedPaths = <String>{};
+  final Map<String, Timer> _downloadTimers = <String, Timer>{};
 
   Track? get currentTrack => _currentTrack;
   bool get isPlaying => _isPlaying;
@@ -49,6 +53,9 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// Очередь из нескольких треков (для shuffle / repeat all).
   bool get hasMultiTrackQueue => _handler.hasMultiTrackQueue;
+  List<Track> get activeQueue => List.unmodifiable(_activeQueue);
+  Set<String> get downloadedPaths => Set.unmodifiable(_downloadedPaths);
+  Set<String> get downloadingPaths => Set.unmodifiable(_downloadingPaths);
 
   /// Путь текущего трека в очереди (как в плеере).
   String? get currentPlayablePath => _handler.currentPlayablePath;
@@ -58,6 +65,12 @@ class AudioPlayerService extends ChangeNotifier {
 
   bool isPathDisliked(String path) =>
       path.isNotEmpty && dislikedPaths.contains(path);
+
+  bool isTrackDownloading(String assetPath) =>
+      assetPath.isNotEmpty && _downloadingPaths.contains(assetPath);
+
+  bool isTrackDownloaded(String assetPath) =>
+      assetPath.isNotEmpty && _downloadedPaths.contains(assetPath);
 
   void _listenToHandler() {
     _handler.likedPathsNotifier.addListener(_onLikedPathsChanged);
@@ -97,6 +110,7 @@ class AudioPlayerService extends ChangeNotifier {
   /// [queue] — очередь для кнопок предыдущий/следующий в уведомлении.
   Future<void> playTrack(Track track, {List<Track>? queue}) async {
     _currentTrack = track;
+    _activeQueue = _normalizeQueue(track, queue);
     notifyListeners();
     String? artUri;
     if (track.coverBytes != null && track.coverBytes!.isNotEmpty) {
@@ -116,6 +130,93 @@ class AudioPlayerService extends ChangeNotifier {
       'artPath': track.coverFallbackPath,
       if (artUri != null) 'artUri': artUri,
       if (queueMaps != null && queueMaps.isNotEmpty) 'queue': queueMaps,
+    });
+  }
+
+  List<Track> _normalizeQueue(Track track, List<Track>? queue) {
+    if (queue == null || queue.isEmpty) return [track];
+    final hasTrack = queue.any((e) => playablePath(e) == playablePath(track));
+    if (hasTrack) return List<Track>.from(queue);
+    return [track, ...queue];
+  }
+
+  Future<void> _applyQueueKeepingCurrent(List<Track> nextQueue) async {
+    final current = _currentTrack;
+    if (current == null || nextQueue.isEmpty) {
+      _activeQueue = nextQueue;
+      notifyListeners();
+      return;
+    }
+    final resumeAt = position;
+    final wasPlaying = isPlaying;
+    await playTrack(current, queue: nextQueue);
+    if (resumeAt > Duration.zero) {
+      await seek(resumeAt);
+    }
+    if (!wasPlaying) {
+      await pause();
+    }
+  }
+
+  Future<void> removeFromQueue(String assetPath) async {
+    if (_activeQueue.isEmpty) return;
+    final nextQueue = _activeQueue.where((e) => e.assetPath != assetPath).toList();
+    if (nextQueue.length == _activeQueue.length) return;
+    if (nextQueue.isEmpty) {
+      await stop();
+      _activeQueue = const [];
+      notifyListeners();
+      return;
+    }
+
+    final current = _currentTrack;
+    if (current != null && current.assetPath == assetPath) {
+      await playTrack(nextQueue.first, queue: nextQueue);
+      return;
+    }
+    await _applyQueueKeepingCurrent(nextQueue);
+  }
+
+  Future<void> moveToPlayNext(String assetPath) async {
+    if (_activeQueue.length < 2) return;
+    final from = _activeQueue.indexWhere((e) => e.assetPath == assetPath);
+    if (from == -1) return;
+    final item = _activeQueue[from];
+    final updated = List<Track>.from(_activeQueue)..removeAt(from);
+    final currentPath = _currentTrack?.assetPath;
+    final currentIndex = currentPath == null
+        ? -1
+        : updated.indexWhere((e) => e.assetPath == currentPath);
+    final insertAt = currentIndex == -1 ? 0 : (currentIndex + 1).clamp(0, updated.length);
+    updated.insert(insertAt, item);
+    await _applyQueueKeepingCurrent(updated);
+  }
+
+  Future<void> addToQueue(Track track) async {
+    final updated = List<Track>.from(_activeQueue);
+    if (updated.any((e) => playablePath(e) == playablePath(track))) return;
+    updated.add(track);
+    if (_currentTrack == null) {
+      await playTrack(track, queue: updated);
+      return;
+    }
+    await _applyQueueKeepingCurrent(updated);
+  }
+
+  /// UX-заглушка скачивания: имитирует загрузку и помечает трек как закешированный.
+  Future<void> cacheTrackMock(Track track) async {
+    final path = track.assetPath;
+    if (path.isEmpty || _downloadedPaths.contains(path) || _downloadingPaths.contains(path)) {
+      return;
+    }
+    _downloadingPaths.add(path);
+    notifyListeners();
+    _downloadTimers[path]?.cancel();
+    _downloadTimers[path] = Timer(const Duration(seconds: 2), () {
+      _downloadingPaths.remove(path);
+      _downloadedPaths.add(path);
+      _downloadTimers.remove(path);
+      notifyListeners();
     });
   }
 
@@ -215,6 +316,10 @@ class AudioPlayerService extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final timer in _downloadTimers.values) {
+      timer.cancel();
+    }
+    _downloadTimers.clear();
     _handler.likedPathsNotifier.removeListener(_onLikedPathsChanged);
     _handler.dislikedPathsNotifier.removeListener(_onLikedPathsChanged);
     _handler.shuffleModeNotifier.removeListener(_onLikedPathsChanged);

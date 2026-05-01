@@ -17,6 +17,7 @@ import 'playlists_page.dart';
 import 'settings_page.dart';
 import 'studio_page.dart';
 import 'thoughts_page.dart';
+import 'open_rooms_page.dart';
 
 /// Страница профиля: коллапсирующий header с обложкой и аватаром + "поднимающийся" bottom-sheet.
 class ProfilePage extends StatelessWidget {
@@ -346,20 +347,23 @@ class ProfilePage extends StatelessWidget {
                   const SizedBox(height: 20),
                   _buildSectionCard(
                     palette,
-                    title: Localizations.localeOf(context).languageCode == 'en' ? 'Popular tracks' : 'Популярные треки',
+                    title: Localizations.localeOf(context).languageCode == 'en'
+                        ? 'Open rooms'
+                        : 'Открытые комнаты',
                     subtitle: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Tracks you listen to most often'
-                        : 'Треки, которые вы слушаете чаще всего',
-                    icon: Icons.music_note_rounded,
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: 12),
-                  _buildSectionCard(
-                    palette,
-                    title: Localizations.localeOf(context).languageCode == 'en' ? 'Favorite genres' : 'Любимые жанры',
-                    subtitle: 'Electronic, Ambient, Lo-Fi',
-                    icon: Icons.library_music_rounded,
-                    onTap: () {},
+                        ? 'Browse rooms and connect to live sessions'
+                        : 'Список комнат и быстрое подключение',
+                    icon: Icons.groups_rounded,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => OpenRoomsPage(
+                            currentUsername: initialSettings.nickname,
+                            audioPlayerService: audioPlayerService,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
                   _buildSectionCard(

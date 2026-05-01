@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/audio/audio_player_service.dart';
+import '../core/audio/local_tracks.dart';
 import '../core/history/listening_history_repository.dart';
 import '../core/l10n/app_localization.dart';
 import '../core/notifications/local_notifications_service.dart';
@@ -11,6 +12,7 @@ import '../core/notifications/notification_intent.dart';
 import '../core/player/full_player_visibility.dart';
 import '../core/player/player_dock_host.dart';
 import '../core/player/shell_navigator_host.dart';
+import '../core/social/listening_room_session.dart';
 import '../core/settings/app_settings.dart';
 import '../core/settings/settings_repository.dart';
 import '../core/theme/app_colors.dart';
@@ -137,6 +139,34 @@ class _MainShellState extends State<MainShell>
     if (!_playerDockController.isDismissed) {
       _playerDockController.reverse();
     }
+    if (intent.target == NotificationTarget.release) {
+      final navContext = _navigatorKey.currentContext;
+      if (navContext != null) {
+        Future<void> onListenTap() async {
+          final tracks = await loadLocalTracks();
+          if (tracks.isEmpty) return;
+          final lookup = (intent.releaseTitle ?? '').toLowerCase().trim();
+          final matched = tracks.where((t) {
+            final title = t.title.toLowerCase();
+            return title == lookup ||
+                (lookup.isNotEmpty && title.contains(lookup)) ||
+                (lookup.isNotEmpty && lookup.contains(title));
+          }).toList();
+          final queue = matched.isNotEmpty ? matched : tracks;
+          await widget.audioPlayerService.playTrack(queue.first, queue: queue);
+        }
+
+        ReleasePage.show(
+          navContext,
+          title: intent.releaseTitle ?? 'Новый релиз',
+          coverUrl: intent.releaseCoverUrl,
+          artistName: intent.username,
+          trackTitle: intent.releaseTitle,
+          onListenTap: onListenTap,
+        );
+      }
+      return;
+    }
     final route = switch (intent.target) {
       NotificationTarget.friendProfile => MaterialPageRoute<void>(
           builder: (_) => ArtistPage(
@@ -145,13 +175,9 @@ class _MainShellState extends State<MainShell>
             audioPlayerService: widget.audioPlayerService,
           ),
         ),
-      NotificationTarget.release => MaterialPageRoute<void>(
-          builder: (_) => ReleasePage(
-            title: intent.releaseTitle ?? 'Новый релиз',
-            coverUrl: intent.releaseCoverUrl,
-          ),
-        ),
+      NotificationTarget.release => null,
     };
+    if (route == null) return;
     final pushed = ShellNavigatorHost.push(route);
     if (!pushed) {
       _navigatorKey.currentState?.push(route);
@@ -374,7 +400,10 @@ class _MainShellState extends State<MainShell>
                                           12,
                                         ),
                                         child: ListenableBuilder(
-                                          listenable: widget.audioPlayerService,
+                                          listenable: Listenable.merge([
+                                            widget.audioPlayerService,
+                                            ListeningRoomSession.instance,
+                                          ]),
                                           builder: (context, _) {
                                             final t = widget
                                                 .audioPlayerService
@@ -398,6 +427,11 @@ class _MainShellState extends State<MainShell>
                                               isPlaying: widget
                                                   .audioPlayerService
                                                   .isPlaying,
+                                              collaborativeMode:
+                                                  ListeningRoomSession.instance.active,
+                                              collaborativeGuestMode:
+                                                  ListeningRoomSession.instance.active &&
+                                                  !ListeningRoomSession.instance.isHost,
                                               onTap: _expandPlayerDock,
                                               onPlayPause: () {
                                                 widget.audioPlayerService

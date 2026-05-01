@@ -13,12 +13,14 @@ class FavoriteTrackItem extends StatelessWidget {
     required this.track,
     required this.onTap,
     required this.onRemoveFavorite,
+    this.isDownloaded = false,
     this.onMore,
   });
 
   final Track track;
   final VoidCallback onTap;
   final VoidCallback onRemoveFavorite;
+  final bool isDownloaded;
   final VoidCallback? onMore;
 
   @override
@@ -87,6 +89,14 @@ class FavoriteTrackItem extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      if (isDownloaded) ...[
+                        const SizedBox(height: 2),
+                        Icon(
+                          Icons.download_done_rounded,
+                          size: 14,
+                          color: palette.accent,
+                        ),
+                      ],
                       const SizedBox(height: 2),
                       Text(
                         track.artistDisplay.isEmpty

@@ -16,14 +16,11 @@ class ReleasesSection extends StatelessWidget {
   final List<ReleaseItem> releases;
   final void Function(ReleaseItem item)? onItemTap;
 
-  static const double _itemSize = 152.0;
   static const double _spacing = 16.0;
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final paddingHorizontal = (screenWidth - _itemSize) / 2;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -38,22 +35,26 @@ class ReleasesSection extends StatelessWidget {
         const SizedBox(height: 12),
         SizedBox(
           height: 200,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.symmetric(horizontal: paddingHorizontal),
-            itemCount: releases.length,
-            itemBuilder: (context, index) {
-              final item = releases[index];
-              return Padding(
-                padding: EdgeInsets.only(
-                  right: index < releases.length - 1 ? _spacing : 0,
-                ),
-                child: _ReleaseChip(
-                  item: item,
-                  onTap: () => onItemTap?.call(item),
-                ),
-              );
-            },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ListView.builder(
+              clipBehavior: Clip.none,
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
+              itemCount: releases.length,
+              itemBuilder: (context, index) {
+                final item = releases[index];
+                return Padding(
+                  padding: EdgeInsets.only(
+                    right: index < releases.length - 1 ? _spacing : 0,
+                  ),
+                  child: _ReleaseChip(
+                    item: item,
+                    onTap: () => onItemTap?.call(item),
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ],

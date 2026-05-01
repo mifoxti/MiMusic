@@ -13,6 +13,8 @@ class MiniPlayerInterior extends StatelessWidget {
     required this.track,
     this.trackProgress = 0.5,
     this.isPlaying = true,
+    this.collaborativeMode = false,
+    this.collaborativeGuestMode = false,
     this.onTap,
     this.onPlayPause,
   });
@@ -20,6 +22,8 @@ class MiniPlayerInterior extends StatelessWidget {
   final Track track;
   final double trackProgress;
   final bool isPlaying;
+  final bool collaborativeMode;
+  final bool collaborativeGuestMode;
   final VoidCallback? onTap;
   final VoidCallback? onPlayPause;
 
@@ -36,10 +40,16 @@ class MiniPlayerInterior extends StatelessWidget {
     final progressRemainGlass = isDark
         ? Colors.white.withValues(alpha: 0.06)
         : Colors.white.withValues(alpha: 0.2);
+    final sessionAccent = collaborativeGuestMode
+        ? const Color(0xFFA5AEBB)
+        : collaborativeMode
+            ? const Color(0xFF5FD1FF)
+            : palette.accent;
     final progressPlayedGlass = Color.alphaBlend(
-      palette.accent.withValues(alpha: isDark ? 0.38 : 0.3),
+      sessionAccent.withValues(alpha: isDark ? 0.28 : 0.22),
       glassTint,
     );
+    final leadingIcon = isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded;
     return SizedBox(
       height: height,
       child: Stack(
@@ -109,11 +119,9 @@ class MiniPlayerInterior extends StatelessWidget {
                         width: 44,
                         height: 44,
                         child: Icon(
-                          isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
+                          leadingIcon,
                           size: 28,
-                          color: palette.textPrimary,
+                          color: collaborativeMode ? sessionAccent : palette.textPrimary,
                         ),
                       ),
                     ),
@@ -126,15 +134,34 @@ class MiniPlayerInterior extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 6),
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: Text(
-                            track.title,
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              color: palette.textPrimary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                track.title,
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  color: palette.textPrimary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (collaborativeGuestMode)
+                                Text(
+                                  Localizations.localeOf(context).languageCode == 'en'
+                                      ? 'Sync to host'
+                                      : 'Синхронизация с хостом',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: palette.textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -177,6 +204,8 @@ class FloatingMiniPlayer extends StatelessWidget {
     required this.track,
     this.trackProgress = 0.5,
     this.isPlaying = true,
+    this.collaborativeMode = false,
+    this.collaborativeGuestMode = false,
     this.onTap,
     this.onPlayPause,
   });
@@ -186,6 +215,8 @@ class FloatingMiniPlayer extends StatelessWidget {
   /// Прогресс трека 0.0..1.0.
   final double trackProgress;
   final bool isPlaying;
+  final bool collaborativeMode;
+  final bool collaborativeGuestMode;
   final VoidCallback? onTap;
   final VoidCallback? onPlayPause;
 
@@ -193,7 +224,15 @@ class FloatingMiniPlayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const radius = AppConstants.radiusLarge;
-    final glassTint = AppGlass.tint(isDark);
+    final hostCollaborativeTint = isDark
+        ? const Color(0xFF173247).withValues(alpha: 0.52)
+        : const Color(0xFFDFF4FF).withValues(alpha: 0.68);
+    final guestCollaborativeTint = isDark
+        ? const Color(0xFF2A2F38).withValues(alpha: 0.56)
+        : const Color(0xFFE8EBF0).withValues(alpha: 0.70);
+    final glassTint = collaborativeMode
+        ? (collaborativeGuestMode ? guestCollaborativeTint : hostCollaborativeTint)
+        : AppGlass.tint(isDark);
     final borderGlass = AppGlass.border(isDark);
     return Material(
       color: Colors.transparent,
@@ -213,6 +252,8 @@ class FloatingMiniPlayer extends StatelessWidget {
               track: track,
               trackProgress: trackProgress,
               isPlaying: isPlaying,
+              collaborativeMode: collaborativeMode,
+              collaborativeGuestMode: collaborativeGuestMode,
               onTap: onTap,
               onPlayPause: onPlayPause,
             ),

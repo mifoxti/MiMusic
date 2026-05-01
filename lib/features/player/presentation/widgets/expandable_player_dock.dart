@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_glass.dart';
 import '../../../home/presentation/widgets/floating_mini_player.dart';
 import '../pages/full_player_page.dart';
@@ -150,7 +151,7 @@ class _DockMiniLayer extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return ListenableBuilder(
-      listenable: audioPlayerService,
+      listenable: Listenable.merge([audioPlayerService, ListeningRoomSession.instance]),
       builder: (context, _) {
         final dur = audioPlayerService.duration;
         final pos = audioPlayerService.position;
@@ -172,6 +173,9 @@ class _DockMiniLayer extends StatelessWidget {
                   track: track,
                   trackProgress: progress,
                   isPlaying: audioPlayerService.isPlaying,
+                  collaborativeMode: ListeningRoomSession.instance.active,
+                  collaborativeGuestMode: ListeningRoomSession.instance.active &&
+                      !ListeningRoomSession.instance.isHost,
                   onTap: () {},
                   onPlayPause: () => audioPlayerService.togglePlayPause(),
                 ),

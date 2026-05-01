@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import '../history/listening_history_repository.dart';
 import '../platform/platform.dart';
 import '../settings/settings_repository.dart';
+import '../social/listening_room_session.dart';
 import 'local_tracks.dart';
 
 /// Конфигурация для [MiMusicAudioHandler]. Задаётся до [AudioService.init].
@@ -145,21 +146,31 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   );
 
   static const _systemActions = {MediaAction.seek};
+  bool get _roomGuest =>
+      ListeningRoomSession.instance.active &&
+      !ListeningRoomSession.instance.isHost;
+  bool get _canUseSkipControls =>
+      !_roomGuest || ListeningRoomSession.instance.canControlSkip;
+  bool get _canUseSeekControl =>
+      !_roomGuest || ListeningRoomSession.instance.canControlSeek;
 
   List<MediaControl> _currentControls() {
     final playing = _player.playing;
     final playPause = playing ? MediaControl.pause : MediaControl.play;
-    return [
+    final controls = <MediaControl>[
       _dislikeControl,
-      MediaControl.skipToPrevious,
       playPause,
-      MediaControl.skipToNext,
       _likeControl,
     ];
+    if (_canUseSkipControls) {
+      controls.insert(1, MediaControl.skipToPrevious);
+      controls.insert(3, MediaControl.skipToNext);
+    }
+    return controls;
   }
 
-  /// Компактный вид: дизлайк (0), play (2), лайк (4).
-  static const _compactIndices = [0, 2, 4];
+  /// Компактный вид: первые три доступные кнопки.
+  static const _compactIndices = [0, 1, 2];
 
   void _onSequenceStateChanged(SequenceState? state) {
     final idx = state?.currentIndex ?? 0;
@@ -243,6 +254,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> seek(Duration position) async {
+    if (!_canUseSeekControl) return;
     await _player.seek(position);
     playbackState.add(playbackState.value.copyWith(
       updatePosition: position,
@@ -253,6 +265,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToNext() async {
+    if (!_canUseSkipControls) return;
     if (_queue.isEmpty) return;
     if (_useConcatenatingSource) {
       if (_queueIndex < _queue.length - 1) {
@@ -275,6 +288,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToPrevious() async {
+    if (!_canUseSkipControls) return;
     if (_queue.isEmpty) return;
     if (_player.position.inSeconds > 3) {
       await _player.seek(Duration.zero);

@@ -494,6 +494,9 @@ class _SearchPageState extends State<SearchPage> {
                   child: _SearchTrackTile(
                     track: track,
                     palette: palette,
+                    isDownloaded: widget.audioPlayerService.isTrackDownloaded(
+                      track.assetPath,
+                    ),
                     onTap: () => _onTrackTap(track, tracks),
                   ),
                 );
@@ -734,11 +737,13 @@ class _SearchTrackTile extends StatelessWidget {
   const _SearchTrackTile({
     required this.track,
     required this.palette,
+    required this.isDownloaded,
     required this.onTap,
   });
 
   final Track track;
   final AppColorPalette palette;
+  final bool isDownloaded;
   final VoidCallback onTap;
 
   @override
@@ -803,6 +808,14 @@ class _SearchTrackTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (isDownloaded) ...[
+                      const SizedBox(height: 2),
+                      Icon(
+                        Icons.download_done_rounded,
+                        size: 14,
+                        color: palette.accent,
+                      ),
+                    ],
                     const SizedBox(height: 2),
                     Text(
                       track.artistDisplay.isEmpty

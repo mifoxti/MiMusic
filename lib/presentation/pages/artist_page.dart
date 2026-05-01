@@ -141,15 +141,19 @@ class _ArtistPageState extends State<ArtistPage> {
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, result) {
-            if (didPop) return;
-            if (FullPlayerVisibility.open.value) {
-              PlayerDockHost.collapse();
-              return;
-            }
-            Navigator.of(context).pop();
+        body: ValueListenableBuilder<bool>(
+          valueListenable: FullPlayerVisibility.open,
+          builder: (context, isFullPlayerOpen, child) {
+            return PopScope(
+              canPop: !isFullPlayerOpen,
+              onPopInvokedWithResult: (didPop, result) {
+                if (didPop) return;
+                if (isFullPlayerOpen) {
+                  PlayerDockHost.collapse();
+                }
+              },
+              child: child!,
+            );
           },
           child: CustomScrollView(
             slivers: [
