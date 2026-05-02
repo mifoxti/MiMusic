@@ -1,10 +1,11 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
+import '../../core/platform/cover_pick_save.dart';
 import '../../core/platform/platform.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -12,16 +13,19 @@ import '../../core/widgets/track_cover.dart';
 import '../../features/playlists/domain/entities/playlist.dart';
 import '../../features/playlists/domain/repositories/playlists_repository.dart';
 import '../../features/playlists/data/repositories/local_playlists_repository.dart';
+import '../../features/player/presentation/widgets/full_player_track_menu.dart';
 
 /// Детальная страница плейлиста: обложка, название, список треков и меню «три точки».
 class PlaylistDetailPage extends StatefulWidget {
   const PlaylistDetailPage({
     super.key,
     required this.playlistId,
+    required this.audioPlayerService,
     PlaylistsRepository? repository,
   }) : _repository = repository;
 
   final String playlistId;
+  final AudioPlayerService audioPlayerService;
   final PlaylistsRepository? _repository;
 
   @override
@@ -84,6 +88,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     final currentIds = Set<String>.from(current.trackAssetPaths);
     final selected = await showDialog<List<String>>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) {
         var localSelected = Set<String>.from(currentIds);
         return StatefulBuilder(
@@ -253,7 +258,19 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                                       const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
                                     final t = _tracks[index];
-                                    return _PlaylistTrackTile(track: t);
+                                    return _PlaylistTrackTile(
+                                      track: t,
+                                      audioPlayerService: widget.audioPlayerService,
+                                      playlistsRepository: _repo,
+                                      currentPlaylistId: widget.playlistId,
+                                      onTap: () {
+                                        final queue = List<Track>.from(_tracks);
+                                        widget.audioPlayerService.playTrack(
+                                          t,
+                                          queue: queue,
+                                        );
+                                      },
+                                    );
                                   },
                                 ),
                         ),
@@ -390,6 +407,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
     return showDialog<Playlist>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
@@ -439,17 +457,8 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                         Expanded(
                           child: TextButton.icon(
                             onPressed: () async {
-                              final result = await FilePicker.platform
-                                  .pickFiles(type: FileType.image);
-                              if (result == null ||
-                                  result.files.isEmpty ||
-                                  result.files.single.path == null) {
-                                return;
-                              }
-                              final copied = await copyPickedCoverToApp(
-                                result.files.single.path!,
-                                existing.id,
-                              );
+                              final copied =
+                                  await pickAndSaveCoverImage(existing.id);
                               if (copied != null && ctx.mounted) {
                                 setDialogState(() => coverPath = copied);
                               }
@@ -496,9 +505,17 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 class _PlaylistTrackTile extends StatelessWidget {
   const _PlaylistTrackTile({
     required this.track,
+    required this.onTap,
+    required this.audioPlayerService,
+    required this.playlistsRepository,
+    required this.currentPlaylistId,
   });
 
   final Track track;
+  final VoidCallback onTap;
+  final AudioPlayerService audioPlayerService;
+  final PlaylistsRepository playlistsRepository;
+  final String currentPlaylistId;
 
   @override
   Widget build(BuildContext context) {
@@ -524,47 +541,126 @@ class _PlaylistTrackTile extends StatelessWidget {
       placeholder: placeholder,
     );
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: palette.cardBackground.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-      ),
-      child: Row(
-        children: [
-          cover,
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    final radius = BorderRadius.circular(AppConstants.radiusLarge);
+    return ListenableBuilder(
+      listenable: audioPlayerService,
+      builder: (context, _) {
+        final path = AudioPlayerService.playablePath(track);
+        final liked = audioPlayerService.isPathLiked(path);
+        final downloading = audioPlayerService.isTrackDownloading(path);
+        final downloaded = audioPlayerService.isTrackDownloaded(path);
+
+        return Material(
+          color: palette.cardBackground.withValues(alpha: 0.9),
+          borderRadius: radius,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 2, 4),
+            child: Row(
               children: [
-                Text(
-                  track.title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (track.artistDisplay.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    track.artistDisplay,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: palette.textSecondary,
+                Expanded(
+                  child: InkWell(
+                    borderRadius: radius,
+                    onTap: onTap,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 4, 8, 4),
+                      child: Row(
+                        children: [
+                          cover,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  track.title,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: palette.textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (track.artistDisplay.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    track.artistDisplay,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: palette.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ],
+                ),
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  icon: Icon(
+                    Icons.more_vert_rounded,
+                    color: palette.textSecondary,
+                  ),
+                  onSelected: (value) async {
+                    if (value == 'fav') {
+                      if (path.isEmpty) return;
+                      await audioPlayerService.toggleLikePath(path);
+                      return;
+                    }
+                    if (value == 'dl') {
+                      if (path.isEmpty || downloading || downloaded) return;
+                      await audioPlayerService.cacheTrackMock(track);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          behavior: SnackBarBehavior.floating,
+                          content: Text(context.t('playlists.track.cachedMock')),
+                        ),
+                      );
+                      return;
+                    }
+                    if (value == 'pl') {
+                      await showTrackPlaylistPicker(
+                        context,
+                        track: track,
+                        repository: playlistsRepository,
+                        omitPlaylistId: currentPlaylistId,
+                      );
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    PopupMenuItem<String>(
+                      value: 'fav',
+                      enabled: path.isNotEmpty,
+                      child: Text(
+                        liked
+                            ? context.t('playlists.track.removeFromFavorites')
+                            : context.t('playlists.track.addToFavorites'),
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'dl',
+                      enabled:
+                          path.isNotEmpty && !downloading && !downloaded,
+                      child: Text(context.t('playlists.track.download')),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'pl',
+                      child: Text(context.t('player.menu.addToPlaylist')),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

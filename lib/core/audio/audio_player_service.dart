@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../settings/settings_repository.dart';
+import '../social/listening_room_session.dart';
 import 'mimusic_audio_handler.dart';
 import 'track.dart';
 
@@ -66,11 +67,11 @@ class AudioPlayerService extends ChangeNotifier {
   bool isPathDisliked(String path) =>
       path.isNotEmpty && dislikedPaths.contains(path);
 
-  bool isTrackDownloading(String assetPath) =>
-      assetPath.isNotEmpty && _downloadingPaths.contains(assetPath);
+  bool isTrackDownloading(String path) =>
+      path.isNotEmpty && _downloadingPaths.contains(path);
 
-  bool isTrackDownloaded(String assetPath) =>
-      assetPath.isNotEmpty && _downloadedPaths.contains(assetPath);
+  bool isTrackDownloaded(String path) =>
+      path.isNotEmpty && _downloadedPaths.contains(path);
 
   void _listenToHandler() {
     _handler.likedPathsNotifier.addListener(_onLikedPathsChanged);
@@ -84,7 +85,7 @@ class AudioPlayerService extends ChangeNotifier {
     });
     _mediaItemSub = _handler.mediaItem.listen((item) {
       if (item != null) {
-        _currentTrack = _mediaItemToTrack(item);
+        _currentTrack = _trackFromMediaItem(item);
       }
       _duration = item?.duration ?? _duration;
       notifyListeners();
@@ -103,12 +104,54 @@ class AudioPlayerService extends ChangeNotifier {
     );
   }
 
+  Track _trackFromMediaItem(MediaItem item) {
+    final fromQueue = _activeQueue.where((t) {
+      final playable = playablePath(t);
+      return playable == item.id || t.assetPath == item.id;
+    }).toList();
+    if (fromQueue.isNotEmpty) {
+      final base = fromQueue.first;
+      return Track(
+        assetPath: base.assetPath,
+        title: item.title.isNotEmpty ? item.title : base.title,
+        artist: (item.artist ?? '').isNotEmpty ? item.artist : base.artist,
+        coverBytes: base.coverBytes,
+        coverAssetPath: base.coverAssetPath,
+        audioFilePath: base.audioFilePath,
+      );
+    }
+
+    final current = _currentTrack;
+    if (current != null && playablePath(current) == item.id) {
+      return Track(
+        assetPath: current.assetPath,
+        title: item.title.isNotEmpty ? item.title : current.title,
+        artist: (item.artist ?? '').isNotEmpty ? item.artist : current.artist,
+        coverBytes: current.coverBytes,
+        coverAssetPath: current.coverAssetPath,
+        audioFilePath: current.audioFilePath,
+      );
+    }
+    return _mediaItemToTrack(item);
+  }
+
   /// Путь для воспроизведения: файл (если загружен в студии) или asset.
   static String playablePath(Track t) => t.audioFilePath ?? t.assetPath;
 
   /// Загружает и воспроизводит трек. Показывает медиа-уведомление на Android/iOS.
   /// [queue] — очередь для кнопок предыдущий/следующий в уведомлении.
-  Future<void> playTrack(Track track, {List<Track>? queue}) async {
+  ///
+  /// Если [leaveListeningRoomSession] и активна комната совместного прослушивания,
+  /// сессия сбрасывается — обычное воспроизведение из списков и карточек вне комнаты.
+  /// Для входа в комнату и правок очереди передайте `false`.
+  Future<void> playTrack(
+    Track track, {
+    List<Track>? queue,
+    bool leaveListeningRoomSession = true,
+  }) async {
+    if (leaveListeningRoomSession && ListeningRoomSession.instance.active) {
+      ListeningRoomSession.instance.end();
+    }
     _currentTrack = track;
     _activeQueue = _normalizeQueue(track, queue);
     notifyListeners();
@@ -149,7 +192,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
     final resumeAt = position;
     final wasPlaying = isPlaying;
-    await playTrack(current, queue: nextQueue);
+    await playTrack(current, queue: nextQueue, leaveListeningRoomSession: false);
     if (resumeAt > Duration.zero) {
       await seek(resumeAt);
     }
@@ -171,7 +214,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     final current = _currentTrack;
     if (current != null && current.assetPath == assetPath) {
-      await playTrack(nextQueue.first, queue: nextQueue);
+      await playTrack(nextQueue.first, queue: nextQueue, leaveListeningRoomSession: false);
       return;
     }
     await _applyQueueKeepingCurrent(nextQueue);
@@ -197,7 +240,7 @@ class AudioPlayerService extends ChangeNotifier {
     if (updated.any((e) => playablePath(e) == playablePath(track))) return;
     updated.add(track);
     if (_currentTrack == null) {
-      await playTrack(track, queue: updated);
+      await playTrack(track, queue: updated, leaveListeningRoomSession: false);
       return;
     }
     await _applyQueueKeepingCurrent(updated);
@@ -205,7 +248,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// UX-заглушка скачивания: имитирует загрузку и помечает трек как закешированный.
   Future<void> cacheTrackMock(Track track) async {
-    final path = track.assetPath;
+    final path = playablePath(track);
     if (path.isEmpty || _downloadedPaths.contains(path) || _downloadingPaths.contains(path)) {
       return;
     }
@@ -274,6 +317,12 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> toggleLike() async {
     await _handler.customAction('like');
+  }
+
+  /// Лайк/снятие лайка по пути воспроизведения (для строк списков, не только текущий трек).
+  Future<void> toggleLikePath(String path) async {
+    if (path.isEmpty) return;
+    await _handler.customAction('toggleLikePath', {'path': path});
   }
 
   Future<void> toggleDislikeCurrent() async {

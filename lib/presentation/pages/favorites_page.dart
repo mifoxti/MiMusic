@@ -55,7 +55,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
     if (mounted) {
       final liked = widget.audioPlayerService.likedPaths;
       setState(() {
-        _favoriteTracks = allTracks.where((t) => liked.contains(t.assetPath)).toList();
+        _favoriteTracks = allTracks
+            .where((t) {
+              final p = AudioPlayerService.playablePath(t);
+              return liked.contains(p) || liked.contains(t.assetPath);
+            })
+            .toList();
         _isLoading = false;
         _lastLikedCount = liked.length;
       });
@@ -94,7 +99,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   Future<void> _onRemoveFavorite(Track track) async {
-    await widget.audioPlayerService.removeFromFavorites(track.assetPath);
+    await widget.audioPlayerService.removeFromFavorites(
+      AudioPlayerService.playablePath(track),
+    );
     if (mounted) _loadFavorites();
   }
 
@@ -172,7 +179,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                           return FavoriteTrackItem(
                             track: track,
                             isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                              track.assetPath,
+                              AudioPlayerService.playablePath(track),
                             ),
                             onTap: () => _onTrackTap(track),
                             onRemoveFavorite: () => _onRemoveFavorite(track),

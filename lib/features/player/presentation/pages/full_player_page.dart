@@ -11,6 +11,7 @@ import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/player/player_dock_host.dart';
+import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/player/shell_navigator_host.dart';
 import '../../../../core/widgets/track_cover.dart';
 import '../../../../presentation/pages/artist_page.dart';
@@ -67,11 +68,12 @@ class FullPlayerDockPanel extends StatelessWidget {
                       ),
                     );
                   }
+                  final playable = AudioPlayerService.playablePath(track);
                   final downloading = audioPlayerService.isTrackDownloading(
-                    track.assetPath,
+                    playable,
                   );
                   final downloaded = audioPlayerService.isTrackDownloaded(
-                    track.assetPath,
+                    playable,
                   );
 
                   final clampedPosition = position.inMilliseconds.clamp(
@@ -232,7 +234,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                             ? null
                                             : () {
                                                 final route =
-                                                    MaterialPageRoute<void>(
+                                                    ShellMaterialPageRoute<void>(
                                                   builder: (_) => ArtistPage(
                                                     artistName:
                                                         track.artistDisplay,
@@ -390,7 +392,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                           child: FilledButton.icon(
                                             onPressed: () {
                                               Navigator.of(context).push(
-                                                MaterialPageRoute<void>(
+                                                ShellMaterialPageRoute<void>(
                                                   settings: const RouteSettings(
                                                     name: ListeningRoomPage.routeName,
                                                   ),
@@ -694,7 +696,11 @@ void _showPlayerQueueSheet({
                                       : null,
                                 ),
                                 onTap: () {
-                                  audioPlayerService.playTrack(item, queue: queue);
+                                  audioPlayerService.playTrack(
+                                    item,
+                                    queue: queue,
+                                    leaveListeningRoomSession: false,
+                                  );
                                   Navigator.of(context).pop();
                                 },
                               ),

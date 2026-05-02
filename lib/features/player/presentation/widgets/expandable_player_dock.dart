@@ -48,6 +48,8 @@ class ExpandablePlayerDock extends StatelessWidget {
           listenable: expandController,
           builder: (context, _) {
             final raw = expandController.value.clamp(0.0, 1.0);
+            // Пока док полностью свёрнут, не перехватываем тапы по экрану — иначе блокируются
+            // списки, диалоги и маршруты под слоем дока в MainShell.
             // Совпадает со сдвигом нижнего блока в MainShell; easeInOut сглаживает рывки на краях.
             final u = Curves.easeInOutCubic.transform(raw);
             final rect = Rect.lerp(begin, full, u)!;
@@ -70,11 +72,16 @@ class ExpandablePlayerDock extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onCollapse,
-                    child: ColoredBox(
-                      color: Colors.black.withValues(alpha: 0.42 * u),
+                  child: IgnorePointer(
+                    // Синхронизировать с «кривой» u: при малом raw затемнение уже почти 0,
+                    // а карта по u ещё заметна — иначе тапы проходят к списку под доком.
+                    ignoring: u < 0.02,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onCollapse,
+                      child: ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.42 * u),
+                      ),
                     ),
                   ),
                 ),

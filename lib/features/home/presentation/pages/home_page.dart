@@ -7,6 +7,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/history/listening_history_repository.dart';
 import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/player/player_dock_host.dart';
+import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -102,7 +103,7 @@ class _HomePageState extends State<HomePage> {
 
   void _openCharts(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      ShellMaterialPageRoute<void>(
         builder: (_) => ChartsPage(
           audioPlayerService: widget.audioPlayerService,
         ),
@@ -112,7 +113,7 @@ class _HomePageState extends State<HomePage> {
 
   void _openForYou(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      ShellMaterialPageRoute<void>(
         builder: (_) => ForYouPage(
           audioPlayerService: widget.audioPlayerService,
           getHomeSectionUseCase: widget.getHomeSectionUseCase,
@@ -123,7 +124,7 @@ class _HomePageState extends State<HomePage> {
 
   void _openListeningHistory(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      ShellMaterialPageRoute<void>(
         builder: (_) => ListeningHistoryPage(
           audioPlayerService: widget.audioPlayerService,
           listeningHistoryRepository: widget.listeningHistoryRepository,
@@ -142,8 +143,10 @@ class _HomePageState extends State<HomePage> {
 
   void _openRecommendedPlaylists(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const PlaylistsPage(),
+      ShellMaterialPageRoute<void>(
+        builder: (_) => PlaylistsPage(
+          audioPlayerService: widget.audioPlayerService,
+        ),
       ),
     );
   }
@@ -154,7 +157,7 @@ class _HomePageState extends State<HomePage> {
     String? avatarUrl,
   }) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      ShellMaterialPageRoute<void>(
         builder: (_) => ArtistPage(
           artistName: username,
           coverImageUrl: avatarUrl,
@@ -185,7 +188,11 @@ class _HomePageState extends State<HomePage> {
       queue: queue,
     );
     if (queue.isNotEmpty) {
-      await widget.audioPlayerService.playTrack(queue.first, queue: queue);
+      await widget.audioPlayerService.playTrack(
+        queue.first,
+        queue: queue,
+        leaveListeningRoomSession: false,
+      );
     }
     PlayerDockHost.expand();
   }

@@ -205,7 +205,7 @@ class _ChartsPageState extends State<ChartsPage> {
                               entry: entry,
                               rankColor: _rankColor(palette, entry.rank),
                               isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                                entry.track.assetPath,
+                                AudioPlayerService.playablePath(entry.track),
                               ),
                               onTap: () => _onTrackTap(entry.track),
                             ),

@@ -1,8 +1,10 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import '../../core/l10n/app_localization.dart';
+import '../../core/platform/cover_pick_save.dart';
 import '../../core/platform/platform.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
@@ -15,9 +17,11 @@ import 'playlist_detail_page.dart';
 class PlaylistsPage extends StatefulWidget {
   const PlaylistsPage({
     super.key,
+    required this.audioPlayerService,
     PlaylistsRepository? repository,
   }) : _repository = repository;
 
+  final AudioPlayerService audioPlayerService;
   final PlaylistsRepository? _repository;
 
   @override
@@ -57,9 +61,10 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
 
   Future<void> _openPlaylist(Playlist playlist) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      ShellMaterialPageRoute<void>(
         builder: (context) => PlaylistDetailPage(
           playlistId: playlist.id,
+          audioPlayerService: widget.audioPlayerService,
           repository: _repo,
         ),
       ),
@@ -227,17 +232,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                         Expanded(
                           child: TextButton.icon(
                             onPressed: () async {
-                              final result = await FilePicker.platform
-                                  .pickFiles(type: FileType.image);
-                              if (result == null ||
-                                  result.files.isEmpty ||
-                                  result.files.single.path == null) {
-                                return;
-                              }
-                              final copied = await copyPickedCoverToApp(
-                                result.files.single.path!,
-                                id,
-                              );
+                              final copied = await pickAndSaveCoverImage(id);
                               if (copied != null && ctx.mounted) {
                                 setDialogState(() => coverPath = copied);
                               }

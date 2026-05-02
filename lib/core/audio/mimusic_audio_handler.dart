@@ -342,9 +342,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final t = _queue[_queueIndex];
     final path = t['path'] as String? ?? '';
     final artPath = t['artPath'] as String?;
-    Uri? coverUri = artPath != null && artPath.isNotEmpty
-        ? await _assetToFileUri(artPath)
-        : null;
+    Uri? coverUri = await _coverUriFromPath(artPath: artPath);
     final duration = _player.duration ?? Duration.zero;
     mediaItem.add(MediaItem(
       id: path,
@@ -389,6 +387,11 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   void _toggleLike() {
     final path = currentPlayablePath;
     if (path == null) return;
+    _toggleLikePath(path);
+  }
+
+  void _toggleLikePath(String path) {
+    if (path.isEmpty) return;
     if (_likedPaths.contains(path)) {
       _likedPaths.remove(path);
     } else {
@@ -458,6 +461,32 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   static Future<Uri?> _assetToFileUri(String assetPath) =>
       assetToFileUri(assetPath);
 
+  static bool _isLocalFilePath(String path) {
+    if (path.startsWith('/')) return true;
+    if (path.length >= 2 && path[1] == ':') return true;
+    return false;
+  }
+
+  Future<Uri?> _coverUriFromPath({
+    String? artPath,
+    String? artUri,
+  }) async {
+    if (artUri != null && artUri.isNotEmpty) {
+      return Uri.tryParse(artUri);
+    }
+    if (artPath == null || artPath.isEmpty) return null;
+    if (artPath.startsWith('http://') || artPath.startsWith('https://')) {
+      return Uri.tryParse(artPath);
+    }
+    if (_isLocalFilePath(artPath)) {
+      return Uri.file(artPath);
+    }
+    if (artPath.startsWith('assets/')) {
+      return _assetToFileUri(artPath);
+    }
+    return null;
+  }
+
   /// Воспроизвести трек из assets. Вызывается из UI через customAction.
   /// artPath — путь к обложке в assets; копируется в temp для artUri в уведомлении.
   /// artUri — готовый file URI (если передан из UI).
@@ -480,10 +509,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       ];
       _queueIndex = 0;
     }
-    Uri? coverUri = artUri != null ? Uri.tryParse(artUri) : null;
-    if (coverUri == null && artPath != null && artPath.isNotEmpty) {
-      coverUri = await _assetToFileUri(artPath);
-    }
+    Uri? coverUri = await _coverUriFromPath(artPath: artPath, artUri: artUri);
     final item = MediaItem(
       id: path,
       title: title,
@@ -610,6 +636,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         break;
       case 'like':
         _toggleLike();
+        break;
+      case 'toggleLikePath':
+        _toggleLikePath(extras?['path'] as String? ?? '');
         break;
       case 'toggleDislikeCurrent':
         _toggleDislikeCurrent();

@@ -1,26 +1,32 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/track.dart';
-import '../../core/platform/platform.dart';
+import '../../core/player/player_dock_host.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
+import '../../core/platform/platform.dart';
 import '../../core/studio/album.dart';
 import '../../core/studio/local_studio_repository.dart';
-import '../../core/studio/studio_constants.dart';
 import '../../core/studio/studio_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
+import 'studio_album_detail_page.dart';
+import 'studio_editor_pages.dart';
+import 'studio_ui_helpers.dart';
 
 /// Страница «Студия»: создание, редактирование и удаление альбомов и треков.
 class StudioPage extends StatefulWidget {
   const StudioPage({
     super.key,
+    required this.audioPlayerService,
     this.repository,
     this.currentUserNickname,
   });
 
+  final AudioPlayerService audioPlayerService;
   final StudioRepository? repository;
 
   /// Ник текущего пользователя для кнопки «Я автор».
@@ -32,6 +38,14 @@ class StudioPage extends StatefulWidget {
 
 class _StudioPageState extends State<StudioPage> {
   late final StudioRepository _repo = widget.repository ?? LocalStudioRepository();
+  static const List<String> _artistSeedHints = [
+    'alexwave',
+    'lofi_nora',
+    'nightcore_anna',
+    'dockfr10',
+    'synthfox',
+    'mifoxti',
+  ];
 
   List<Album> _albums = [];
   List<Track> _tracks = [];
@@ -86,65 +100,116 @@ class _StudioPageState extends State<StudioPage> {
     );
   }
 
+  List<String> _artistSuggestions(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final names = <String>{
+      ..._artistSeedHints,
+      if ((widget.currentUserNickname ?? '').trim().isNotEmpty)
+        widget.currentUserNickname!.trim(),
+      ..._albums.map((e) => (e.artist ?? '').trim()).where((e) => e.isNotEmpty),
+      ..._tracks.map((e) => e.artistDisplay.trim()).where((e) => e.isNotEmpty),
+    };
+    final filtered = names.where((e) => e.toLowerCase().contains(q)).toList()..sort();
+    return filtered.take(6).toList(growable: false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: Text(context.t('studio.title')),
-          titleTextStyle: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: palette.textPrimary,
-          ),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded),
-            onPressed: () => Navigator.of(context).pop(),
-            color: palette.textPrimary,
-          ),
-          bottom: TabBar(
-            labelColor: palette.accent,
-            unselectedLabelColor: palette.textMuted,
-            indicatorColor: palette.accent,
-            tabs: [
-              Tab(text: context.t('studio.albums')),
-              Tab(text: context.t('studio.tracks')),
-            ],
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            palette.gradientStart,
+            palette.gradientMiddle,
+            palette.gradientEnd,
+          ],
         ),
-        body: _loading
-            ? Center(child: CircularProgressIndicator(color: palette.accent))
-            : TabBarView(
-                children: [
-                  _AlbumsTab(
-                    palette: palette,
-                    albums: _albums,
-                    allTracks: _tracks,
-                    onRefresh: _load,
-                    onAddAlbum: _addAlbum,
-                    onEditAlbum: _editAlbum,
-                    onDeleteAlbum: _deleteAlbum,
-                    repo: _repo,
+      ),
+      child: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            title: Text(context.t('studio.title')),
+            titleTextStyle: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: palette.textPrimary,
+            ),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () => Navigator.of(context).pop(),
+              color: palette.textPrimary,
+            ),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(54),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: palette.cardBackground.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                    border: Border.all(
+                      color: palette.textPrimary.withValues(alpha: 0.12),
+                    ),
                   ),
-                  _TracksTab(
-                    palette: palette,
-                    tracks: _tracks,
-                    overrides: _overrides,
-                    customPaths: _customPaths,
-                    trackWithOverrides: _trackWithOverrides,
-                    onRefresh: _load,
-                    onAddTrack: _addTrack,
-                    onEditTrack: _editTrack,
-                    onDeleteTrack: _deleteTrack,
-                    repo: _repo,
+                  child: TabBar(
+                    dividerColor: Colors.transparent,
+                    labelColor: palette.textPrimary,
+                    unselectedLabelColor: palette.textMuted,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicator: BoxDecoration(
+                      color: palette.accent.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusLarge - 2,
+                      ),
+                    ),
+                    tabs: [
+                      Tab(text: context.t('studio.tracks')),
+                      Tab(text: context.t('studio.albums')),
+                    ],
                   ),
-                ],
+                ),
               ),
+            ),
+          ),
+          body: _loading
+              ? Center(child: CircularProgressIndicator(color: palette.accent))
+              : TabBarView(
+                  children: [
+                    _TracksTab(
+                      palette: palette,
+                      audioPlayerService: widget.audioPlayerService,
+                      tracks: _tracks,
+                      overrides: _overrides,
+                      customPaths: _customPaths,
+                      trackWithOverrides: _trackWithOverrides,
+                      onRefresh: _load,
+                      onAddTrack: _addTrack,
+                      onEditTrack: _editTrack,
+                      onDeleteTrack: _deleteTrack,
+                      repo: _repo,
+                    ),
+                    _AlbumsTab(
+                      palette: palette,
+                      albums: _albums,
+                      allTracks: _tracks,
+                      onRefresh: _load,
+                      onAddAlbum: _addAlbum,
+                      onOpenAlbumDetail: _openAlbumDetail,
+                      onEditAlbum: _editAlbum,
+                      onDeleteAlbum: _deleteAlbum,
+                      repo: _repo,
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -165,9 +230,38 @@ class _StudioPageState extends State<StudioPage> {
     _load();
   }
 
+  Future<String?> _createStudioTrackReturnId() async {
+    final result = await _showTrackDialog();
+    if (result == null || !mounted) return null;
+    final customPaths = List<String>.from(_customPaths);
+    if (!customPaths.contains(result.assetPath)) customPaths.add(result.assetPath);
+    await _repo.saveCustomTrackPaths(customPaths);
+    await _repo.saveTrackMetadataOverride(result.assetPath, result.metadata);
+    await _load();
+    return result.assetPath;
+  }
+
+  void _openAlbumDetail(Album album) {
+    Navigator.of(context).push<void>(
+      ShellMaterialPageRoute<void>(
+        builder: (ctx) => StudioAlbumDetailPage(
+          albumId: album.id,
+          studioRepository: _repo,
+          audioPlayerService: widget.audioPlayerService,
+          onStudioDataChanged: _load,
+          showAlbumEditDialog: (a) => _showAlbumDialog(album: a),
+          onCreateNewStudioTrackReturnId: _createStudioTrackReturnId,
+          showEditTrackDialog: (t) => _showTrackDialog(track: t),
+          onDeleteAlbum: _deleteAlbum,
+        ),
+      ),
+    );
+  }
+
   Future<void> _deleteAlbum(Album album) async {
     final confirm = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: Text(context.t('studio.deleteAlbum')),
         content: Text('«${album.title}» будет удалён.'),
@@ -183,208 +277,17 @@ class _StudioPageState extends State<StudioPage> {
     _load();
   }
 
-  Future<Album?> _showAlbumDialog({Album? album}) async {
-    final albumId = album?.id ?? 'album_${DateTime.now().millisecondsSinceEpoch}';
-    var title = album?.title ?? '';
-    var artist = album?.artist ?? '';
-    var coverPath = album?.coverPath ?? '';
-    var trackIds = List<String>.from(album?.trackAssetPaths ?? []);
-    var genres = List<String>.from(album?.genres ?? []);
-
-    return showDialog<Album>(
-      context: context,
-      builder: (ctx) {
-        final dialogPalette = AppPaletteExtension.of(ctx).palette;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(album == null ? context.t('studio.newAlbum') : context.t('studio.editAlbum')),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      decoration: InputDecoration(labelText: context.t('playlists.name')),
-                      controller: TextEditingController(text: title)..selection = TextSelection.collapsed(offset: title.length),
-                      onChanged: (v) => title = v,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      decoration: InputDecoration(labelText: context.t('studio.artist')),
-                      controller: TextEditingController(text: artist)..selection = TextSelection.collapsed(offset: artist.length),
-                      onChanged: (v) => artist = v,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(context.t('playlists.cover'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
-                    const SizedBox(height: 6),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _coverPreview(dialogPalette, coverPath, 72),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextButton.icon(
-                            onPressed: () async {
-                              final result = await FilePicker.platform.pickFiles(type: FileType.image);
-                              if (result == null || result.files.isEmpty || result.files.single.path == null) return;
-                              final copied = await copyPickedCoverToApp(result.files.single.path!, albumId);
-                              if (copied != null && ctx.mounted) setDialogState(() => coverPath = copied);
-                            },
-                            icon: const Icon(Icons.image_rounded, size: 20),
-                            label: Text(coverPath.isEmpty ? context.t('playlists.chooseFile') : context.t('playlists.replace')),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(context.t('studio.genres'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        ...studioGenreOptions.map((g) {
-                          final selected = genres.contains(g);
-                          return FilterChip(
-                            label: Text(g),
-                            selected: selected,
-                            onSelected: (v) => setDialogState(() {
-                              if (v) {
-                                genres.add(g);
-                              } else {
-                                genres.remove(g);
-                              }
-                            }),
-                          );
-                        }),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(context.t('studio.tracksInAlbum'), style: TextStyle(fontSize: 14, color: dialogPalette.textSecondary)),
-                        TextButton.icon(
-                          onPressed: _tracks.isEmpty ? null : () async {
-                            final picked = await _showTrackPicker(ctx, _tracks, trackIds);
-                            if (picked != null) setDialogState(() => trackIds = picked);
-                          },
-                          icon: const Icon(Icons.add_rounded, size: 18),
-                          label: Text(context.t('studio.add')),
-                        ),
-                      ],
-                    ),
-                    ...trackIds.map((id) {
-                      Track? t;
-                      for (final x in _tracks) {
-                        if (x.assetPath == id) { t = x; break; }
-                      }
-                      return ListTile(
-                        title: Text(t?.title ?? id, style: const TextStyle(fontSize: 13)),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.remove_circle_outline, size: 20),
-                          onPressed: () => setDialogState(() => trackIds = trackIds.where((p) => p != id).toList()),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.cancel'))),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, Album(
-                    id: albumId,
-                    title: title.isEmpty ? context.t('playlists.untitled') : title,
-                    artist: artist.isEmpty ? null : artist,
-                    coverPath: coverPath.isEmpty ? null : coverPath,
-                    trackAssetPaths: trackIds,
-                    genres: genres,
-                  )),
-                  child: Text(context.t('common.save')),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _coverPreview(AppColorPalette palette, String path, double size) {
-    final placeholder = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: palette.primaryDark.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+  /// Редактор альбома — отдельный маршрут корневого [Navigator], иначе слой
+  /// дока в [MainShell] перекрывает диалоги.
+  Future<Album?> _showAlbumDialog({Album? album}) {
+    return Navigator.of(context, rootNavigator: true).push<Album>(
+      ShellMaterialPageRoute<Album>(
+        builder: (_) => StudioAlbumEditorPage(
+          initialAlbum: album,
+          allTracks: _tracks,
+          suggestArtists: _artistSuggestions,
+        ),
       ),
-      child: Icon(Icons.image_rounded, color: palette.textMuted, size: size * 0.5),
-    );
-    final brokenPlaceholder = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: palette.primaryDark.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-      ),
-      child: Icon(Icons.broken_image_rounded, color: palette.textMuted),
-    );
-    if (path.isEmpty) return placeholder;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: path.startsWith('assets/')
-            ? Image.asset(path, fit: BoxFit.cover, errorBuilder: (_, e, st) => brokenPlaceholder)
-            : studioCoverImageFromFile(path, size, brokenPlaceholder),
-      ),
-    );
-  }
-
-  Future<List<String>?> _showTrackPicker(BuildContext context, List<Track> allTracks, List<String> currentIds) async {
-    return showDialog<List<String>>(
-      context: context,
-      builder: (ctx) {
-        var selected = List<String>.from(currentIds);
-        return StatefulBuilder(
-          builder: (context, setPickerState) => AlertDialog(
-            title: Text(context.t('playlists.addTracks')),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: allTracks.isEmpty
-                  ? Text(context.t('studio.noTracksForAlbum'))
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: allTracks.length,
-                      itemBuilder: (context, i) {
-                        final track = allTracks[i];
-                        final added = selected.contains(track.assetPath);
-                        return CheckboxListTile(
-                          title: Text(track.title, style: const TextStyle(fontSize: 13)),
-                          subtitle: track.artist != null ? Text(track.artist!, style: const TextStyle(fontSize: 12)) : null,
-                          value: added,
-                          onChanged: (v) {
-                            if (v == true) {
-                              selected.add(track.assetPath);
-                            } else {
-                              selected.remove(track.assetPath);
-                            }
-                            setPickerState(() {});
-                          },
-                        );
-                      },
-                    ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.cancel'))),
-              FilledButton(onPressed: () => Navigator.pop(ctx, selected), child: Text(Localizations.localeOf(context).languageCode == 'en' ? 'Done' : 'Готово')),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -394,20 +297,21 @@ class _StudioPageState extends State<StudioPage> {
     final customPaths = List<String>.from(_customPaths);
     if (!customPaths.contains(result.assetPath)) customPaths.add(result.assetPath);
     await _repo.saveCustomTrackPaths(customPaths);
-    await _repo.saveTrackMetadataOverride(result.assetPath, result.override);
+    await _repo.saveTrackMetadataOverride(result.assetPath, result.metadata);
     _load();
   }
 
   Future<void> _editTrack(Track track) async {
     final result = await _showTrackDialog(track: track);
     if (result == null || !mounted) return;
-    await _repo.saveTrackMetadataOverride(result.assetPath, result.override);
+    await _repo.saveTrackMetadataOverride(result.assetPath, result.metadata);
     _load();
   }
 
   Future<void> _deleteTrack(Track track) async {
     final confirm = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: Text(context.t('studio.deleteTrack')),
         content: Text('«${track.title}» будет удалён из библиотеки.'),
@@ -428,193 +332,20 @@ class _StudioPageState extends State<StudioPage> {
     _load();
   }
 
-  Future<({String assetPath, TrackMetadataOverride override})?> _showTrackDialog({Track? track}) async {
+  Future<({String assetPath, TrackMetadataOverride metadata})?> _showTrackDialog({Track? track}) {
     final id = track?.assetPath ?? 'custom_${DateTime.now().millisecondsSinceEpoch}';
-    var title = track?.title ?? '';
-    var artist = track != null ? (_overrides[track.assetPath]?.artist ?? '') : '';
-    var coverPath = track != null ? (_overrides[track.assetPath]?.coverPath ?? '') : '';
-    var audioFilePath = track != null ? (_overrides[track.assetPath]?.audioFilePath ?? '') : '';
-    var genres = List<String>.from(track != null ? (_overrides[track.assetPath]?.genres ?? []) : []);
-    var coAuthors = List<String>.from(track != null ? (_overrides[track.assetPath]?.coAuthors ?? []) : []);
-    final nickname = widget.currentUserNickname ?? '';
-    var authorIsMe = nickname.isNotEmpty && artist == nickname;
-    final newCoAuthorController = TextEditingController();
-
-    try {
-      return await showDialog<({String assetPath, TrackMetadataOverride override})>(
-        context: context,
-        builder: (ctx) {
-          final dialogPalette = AppPaletteExtension.of(ctx).palette;
-          return StatefulBuilder(
-            builder: (context, setDialogState) {
-              return AlertDialog(
-                title: Text(track == null ? context.t('studio.newTrack') : context.t('studio.editTrack')),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      decoration: InputDecoration(labelText: context.t('playlists.name')),
-                      controller: TextEditingController(text: title)..selection = TextSelection.collapsed(offset: title.length),
-                      onChanged: (v) => title = v,
-                    ),
-                    const SizedBox(height: 12),
-                    if (nickname.isNotEmpty)
-                      CheckboxListTile(
-                        value: authorIsMe,
-                        onChanged: (v) => setDialogState(() {
-                          authorIsMe = v ?? false;
-                          artist = authorIsMe ? nickname : artist;
-                        }),
-                        title: Text(context.t('studio.iAmAuthor')),
-                        controlAffinity: ListTileControlAffinity.leading,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    TextField(
-                      decoration: InputDecoration(labelText: context.t('studio.artist')),
-                      controller: TextEditingController(text: artist)..selection = TextSelection.collapsed(offset: artist.length),
-                      onChanged: (v) => artist = v,
-                      readOnly: authorIsMe,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(context.t('studio.coAuthors'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: coAuthors.map((name) => Chip(
-                        label: Text(name),
-                        onDeleted: () => setDialogState(() => coAuthors.remove(name)),
-                        deleteIconColor: dialogPalette.textMuted,
-                      )).toList(),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: newCoAuthorController,
-                            decoration: InputDecoration(hintText: context.t('studio.coAuthorName'), isDense: true),
-                            onSubmitted: (value) {
-                              final name = value.trim();
-                              if (name.isNotEmpty && !coAuthors.contains(name)) {
-                                coAuthors.add(name);
-                                newCoAuthorController.clear();
-                                setDialogState(() {});
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () {
-                            final name = newCoAuthorController.text.trim();
-                            if (name.isNotEmpty && !coAuthors.contains(name)) {
-                              coAuthors.add(name);
-                              newCoAuthorController.clear();
-                              setDialogState(() {});
-                            }
-                          },
-                          child: Text(context.t('studio.add')),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(context.t('studio.audioFile'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            audioFilePath.isEmpty ? context.t('studio.notSelected') : audioFilePath.split(RegExp(r'[/\\]')).last,
-                            style: TextStyle(fontSize: 13, color: dialogPalette.textPrimary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () async {
-                            final result = await FilePicker.platform.pickFiles(type: FileType.audio);
-                            if (result == null || result.files.isEmpty || result.files.single.path == null) return;
-                            final pickedPath = result.files.single.path!;
-                            final copied = await copyPickedAudioToApp(pickedPath, id);
-                            if (copied != null && ctx.mounted) setDialogState(() => audioFilePath = copied);
-                          },
-                          icon: const Icon(Icons.upload_file_rounded, size: 20),
-                          label: Text(context.t('playlists.chooseFile')),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(context.t('playlists.cover'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
-                    const SizedBox(height: 6),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _coverPreview(dialogPalette, coverPath, 64),
-                        const SizedBox(width: 12),
-                        TextButton.icon(
-                          onPressed: () async {
-                            final result = await FilePicker.platform.pickFiles(type: FileType.image);
-                            if (result == null || result.files.isEmpty || result.files.single.path == null) return;
-                            final copied = await copyPickedCoverToApp(result.files.single.path!, id);
-                            if (copied != null && ctx.mounted) setDialogState(() => coverPath = copied);
-                          },
-                          icon: const Icon(Icons.image_rounded, size: 20),
-                          label: Text(coverPath.isEmpty ? context.t('playlists.chooseFile') : context.t('playlists.replace')),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(context.t('studio.genres'), style: TextStyle(fontSize: 12, color: dialogPalette.textSecondary)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: studioGenreOptions.map((g) {
-                        final selected = genres.contains(g);
-                        return FilterChip(
-                          label: Text(g),
-                          selected: selected,
-                          onSelected: (v) => setDialogState(() {
-                            if (v) {
-                              genres.add(g);
-                            } else {
-                              genres.remove(g);
-                            }
-                          }),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.cancel'))),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, (
-                    assetPath: id,
-                    override: TrackMetadataOverride(
-                      title: title.isEmpty ? null : title,
-                      artist: artist.isEmpty ? null : artist,
-                      coverPath: coverPath.isEmpty ? null : coverPath,
-                      genres: genres,
-                      audioFilePath: audioFilePath.isEmpty ? null : audioFilePath,
-                      coAuthors: coAuthors,
-                    ),
-                  )),
-                  child: Text(context.t('common.save')),
-                ),
-              ],
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      newCoAuthorController.dispose();
-    }
+    final o = track != null ? _overrides[track.assetPath] : null;
+    return Navigator.of(context, rootNavigator: true).push(
+      ShellMaterialPageRoute<({String assetPath, TrackMetadataOverride metadata})>(
+        builder: (_) => StudioTrackEditorPage(
+          assetPath: id,
+          track: track,
+          metadataOverride: o,
+          nickname: widget.currentUserNickname,
+          suggestArtists: _artistSuggestions,
+        ),
+      ),
+    );
   }
 }
 
@@ -625,6 +356,7 @@ class _AlbumsTab extends StatelessWidget {
     required this.allTracks,
     required this.onRefresh,
     required this.onAddAlbum,
+    required this.onOpenAlbumDetail,
     required this.onEditAlbum,
     required this.onDeleteAlbum,
     required this.repo,
@@ -635,6 +367,7 @@ class _AlbumsTab extends StatelessWidget {
   final List<Track> allTracks;
   final VoidCallback onRefresh;
   final Future<void> Function() onAddAlbum;
+  final void Function(Album album) onOpenAlbumDetail;
   final Future<void> Function(Album) onEditAlbum;
   final Future<void> Function(Album) onDeleteAlbum;
   final StudioRepository repo;
@@ -696,7 +429,7 @@ class _AlbumsTab extends StatelessWidget {
                                 spacing: 4,
                                 runSpacing: 2,
                                 children: album.genres.map((g) => Chip(
-                                  label: Text(g, style: TextStyle(fontSize: 10, color: palette.textSecondary)),
+                                  label: Text(studioGenreChipLabel(context, g), style: TextStyle(fontSize: 10, color: palette.textSecondary)),
                                   padding: EdgeInsets.zero,
                                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   visualDensity: VisualDensity.compact,
@@ -706,20 +439,16 @@ class _AlbumsTab extends StatelessWidget {
                           ],
                         ),
                         trailing: PopupMenuButton<String>(
-                          onSelected: (v) {
-                            if (v == 'edit') {
-                              onEditAlbum(album);
-                            }
-                            if (v == 'delete') {
-                              onDeleteAlbum(album);
-                            }
+                          onSelected: (v) async {
+                            if (v == 'edit') await onEditAlbum(album);
+                            if (v == 'delete') await onDeleteAlbum(album);
                           },
                           itemBuilder: (_) => [
                             PopupMenuItem(value: 'edit', child: Text(context.t('studio.edit'))),
                             PopupMenuItem(value: 'delete', child: Text(context.t('studio.delete'))),
                           ],
                         ),
-                        onTap: () => onEditAlbum(album),
+                        onTap: () => onOpenAlbumDetail(album),
                       ),
                     );
                   },
@@ -745,6 +474,7 @@ class _AlbumsTab extends StatelessWidget {
 class _TracksTab extends StatelessWidget {
   const _TracksTab({
     required this.palette,
+    required this.audioPlayerService,
     required this.tracks,
     required this.overrides,
     required this.customPaths,
@@ -757,6 +487,7 @@ class _TracksTab extends StatelessWidget {
   });
 
   final AppColorPalette palette;
+  final AudioPlayerService audioPlayerService;
   final List<Track> tracks;
   final Map<String, TrackMetadataOverride> overrides;
   final List<String> customPaths;
@@ -825,7 +556,7 @@ class _TracksTab extends StatelessWidget {
                           spacing: 4,
                           runSpacing: 2,
                           children: (overrides[track.assetPath]!.genres).map((g) => Chip(
-                            label: Text(g, style: TextStyle(fontSize: 10, color: palette.textSecondary)),
+                            label: Text(studioGenreChipLabel(context, g), style: TextStyle(fontSize: 10, color: palette.textSecondary)),
                             padding: EdgeInsets.zero,
                             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             visualDensity: VisualDensity.compact,
@@ -835,20 +566,28 @@ class _TracksTab extends StatelessWidget {
                     ],
                   ),
                   trailing: PopupMenuButton<String>(
-                    onSelected: (v) {
-                      if (v == 'edit') {
-                        onEditTrack(track);
-                      }
-                      if (v == 'delete') {
-                        onDeleteTrack(track);
-                      }
+                    onSelected: (v) async {
+                      if (v == 'edit') await onEditTrack(track);
+                      if (v == 'delete') await onDeleteTrack(track);
                     },
                     itemBuilder: (_) => [
                       PopupMenuItem(value: 'edit', child: Text(context.t('studio.edit'))),
                       PopupMenuItem(value: 'delete', child: Text(context.t('studio.delete'))),
                     ],
                   ),
-                  onTap: () => onEditTrack(track),
+                  onTap: () async {
+                    final queue = tracks.map(trackWithOverrides).toList();
+                    final service = audioPlayerService;
+                    final same = service.currentTrack?.assetPath == track.assetPath &&
+                        service.currentTrack?.audioFilePath == track.audioFilePath;
+                    if (same) {
+                      await service.togglePlayPause();
+                      return;
+                    }
+                    await service.playTrack(track, queue: queue);
+                    if (!context.mounted) return;
+                    PlayerDockHost.expand();
+                  },
                 ),
               );
             },

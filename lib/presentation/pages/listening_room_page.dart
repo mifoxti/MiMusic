@@ -93,7 +93,13 @@ class _ListeningRoomPageState extends State<ListeningRoomPage> {
     Navigator.of(context).pop();
     PlayerDockHost.expand();
     if (service != null && queue.isNotEmpty) {
-      unawaited(service.playTrack(queue.first, queue: queue));
+      unawaited(
+        service.playTrack(
+          queue.first,
+          queue: queue,
+          leaveListeningRoomSession: false,
+        ),
+      );
     }
   }
 

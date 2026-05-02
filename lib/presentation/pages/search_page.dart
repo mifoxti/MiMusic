@@ -12,6 +12,7 @@ import '../../features/home/domain/entities/listening_friend.dart';
 import '../../features/home/domain/entities/release_item.dart';
 import '../../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../../core/player/player_dock_host.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import 'artist_page.dart';
 
 /// Режим поиска: музыка (треки + релизы как альбомы) или пользователи.
@@ -495,7 +496,7 @@ class _SearchPageState extends State<SearchPage> {
                     track: track,
                     palette: palette,
                     isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                      track.assetPath,
+                      AudioPlayerService.playablePath(track),
                     ),
                     onTap: () => _onTrackTap(track, tracks),
                   ),
@@ -549,7 +550,7 @@ class _SearchPageState extends State<SearchPage> {
                   palette: palette,
                   onTap: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute<void>(
+                      ShellMaterialPageRoute<void>(
                         builder: (_) => ArtistPage(
                           artistName: friend.username,
                           coverImageUrl: friend.avatarUrl,

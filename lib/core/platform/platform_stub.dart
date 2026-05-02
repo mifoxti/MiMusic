@@ -6,6 +6,9 @@ Future<String?> copyPickedAudioToApp(String sourcePath, String trackId) async =>
     null;
 
 // --- copy_cover_to_app
+Future<String?> saveCoverBytesToApp(List<int> bytes, String id, String extension) async =>
+    null;
+
 Future<String?> copyPickedCoverToApp(String sourcePath, String id) async =>
     null;
 

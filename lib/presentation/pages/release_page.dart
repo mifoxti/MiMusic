@@ -5,6 +5,7 @@ import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/cover_image.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import 'artist_page.dart';
 
 class ReleasePage extends StatelessWidget {
@@ -110,7 +111,7 @@ class ReleasePage extends StatelessWidget {
                           onTap: () {
                             Navigator.of(context).pop();
                             Navigator.of(context).push(
-                              MaterialPageRoute<void>(
+                              ShellMaterialPageRoute<void>(
                                 builder: (_) => ArtistPage(
                                   artistName: releaseArtist,
                                 ),

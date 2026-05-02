@@ -267,7 +267,7 @@ class _ForYouPageState extends State<ForYouPage> {
                             track: queue[index],
                             palette: palette,
                             isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                              queue[index].assetPath,
+                              AudioPlayerService.playablePath(queue[index]),
                             ),
                             onTap: () => _onTrackTap(queue[index]),
                           );

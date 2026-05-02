@@ -6,8 +6,7 @@ import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/notifications/local_notifications_service.dart';
-import '../../core/player/full_player_visibility.dart';
-import '../../core/player/player_dock_host.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import '../../core/social/friend_request_notifications.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -141,21 +140,7 @@ class _ArtistPageState extends State<ArtistPage> {
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: ValueListenableBuilder<bool>(
-          valueListenable: FullPlayerVisibility.open,
-          builder: (context, isFullPlayerOpen, child) {
-            return PopScope(
-              canPop: !isFullPlayerOpen,
-              onPopInvokedWithResult: (didPop, result) {
-                if (didPop) return;
-                if (isFullPlayerOpen) {
-                  PlayerDockHost.collapse();
-                }
-              },
-              child: child!,
-            );
-          },
-          child: CustomScrollView(
+        body: CustomScrollView(
             slivers: [
               SliverAppBar(
                 expandedHeight: 280,
@@ -256,7 +241,7 @@ class _ArtistPageState extends State<ArtistPage> {
                                     child: InkWell(
                                       onTap: () {
                                         Navigator.of(context).push(
-                                          MaterialPageRoute<void>(
+                                          ShellMaterialPageRoute<void>(
                                             builder: (_) => ThoughtsPage(
                                               currentUsername: _currentUser,
                                               audioPlayerService:
@@ -371,7 +356,6 @@ class _ArtistPageState extends State<ArtistPage> {
               ),
             ],
           ),
-        ),
       ),
     );
   }

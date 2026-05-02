@@ -10,6 +10,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import '../../features/playlists/data/repositories/local_playlists_repository.dart';
 import '../../features/playlists/domain/entities/playlist.dart';
 import 'artist_page.dart';
@@ -571,11 +572,13 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
         id = matched.first.id;
       }
       if (id.isEmpty) return;
+      if (widget.audioPlayerService == null) return;
       final resolvedId = id;
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        ShellMaterialPageRoute<void>(
           builder: (_) => PlaylistDetailPage(
             playlistId: resolvedId,
+            audioPlayerService: widget.audioPlayerService!,
             repository: repo,
           ),
         ),
@@ -631,7 +634,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   Future<void> _openAuthorProfile(String username) async {
     if (!mounted) return;
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      ShellMaterialPageRoute<void>(
         builder: (_) => ArtistPage(
           artistName: username,
           audioPlayerService: widget.audioPlayerService,

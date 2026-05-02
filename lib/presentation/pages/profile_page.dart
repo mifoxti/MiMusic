@@ -10,6 +10,7 @@ import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/social/friend_request_notifications.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import 'favorites_page.dart';
 import 'friends_page.dart';
 import 'notifications_page.dart';
@@ -136,7 +137,7 @@ class ProfilePage extends StatelessWidget {
                             return IconButton(
                               onPressed: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
+                                  ShellMaterialPageRoute<void>(
                                     builder: (context) => NotificationsPage(
                                       currentUsername: initialSettings.nickname,
                                       audioPlayerService: audioPlayerService,
@@ -191,7 +192,7 @@ class ProfilePage extends StatelessWidget {
                         IconButton(
                           onPressed: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute<void>(
+                              ShellMaterialPageRoute<void>(
                                 builder: (context) => SettingsPage(
                                   themeMode: themeMode,
                                   onThemeChanged: onThemeChanged,
@@ -279,7 +280,7 @@ class ProfilePage extends StatelessWidget {
                                       child: InkWell(
                                         onTap: () {
                                           Navigator.of(context).push(
-                                            MaterialPageRoute<void>(
+                                            ShellMaterialPageRoute<void>(
                                               builder: (_) => ThoughtsPage(
                                                 currentUsername:
                                                     initialSettings.nickname,
@@ -356,7 +357,7 @@ class ProfilePage extends StatelessWidget {
                     icon: Icons.groups_rounded,
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute<void>(
+                        ShellMaterialPageRoute<void>(
                           builder: (_) => OpenRoomsPage(
                             currentUsername: initialSettings.nickname,
                             audioPlayerService: audioPlayerService,
@@ -375,8 +376,11 @@ class ProfilePage extends StatelessWidget {
                     icon: Icons.album_rounded,
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (context) => StudioPage(currentUserNickname: initialSettings.nickname),
+                        ShellMaterialPageRoute<void>(
+                          builder: (context) => StudioPage(
+                            currentUserNickname: initialSettings.nickname,
+                            audioPlayerService: audioPlayerService,
+                          ),
                         ),
                       );
                     },
@@ -419,8 +423,10 @@ class ProfilePage extends StatelessWidget {
             label: Localizations.localeOf(context).languageCode == 'en' ? 'Playlists' : 'Плейлисты',
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const PlaylistsPage(),
+                ShellMaterialPageRoute<void>(
+                  builder: (context) => PlaylistsPage(
+                    audioPlayerService: audioPlayerService,
+                  ),
                 ),
               );
             },
@@ -434,7 +440,7 @@ class ProfilePage extends StatelessWidget {
             label: Localizations.localeOf(context).languageCode == 'en' ? 'Friends' : 'Друзья',
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute<void>(
+                ShellMaterialPageRoute<void>(
                   builder: (_) => FriendsPage(
                     currentUsername: initialSettings.nickname,
                     audioPlayerService: audioPlayerService,
@@ -452,7 +458,7 @@ class ProfilePage extends StatelessWidget {
             label: Localizations.localeOf(context).languageCode == 'en' ? 'Favorites' : 'Избранное',
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute<void>(
+                ShellMaterialPageRoute<void>(
                   builder: (context) => FavoritesPage(
                     audioPlayerService: audioPlayerService,
                   ),

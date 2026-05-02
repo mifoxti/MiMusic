@@ -8,6 +8,7 @@ import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/player/player_dock_host.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import '../../core/social/listening_room_session.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/friends/data/repositories/mock_friends_repository.dart';
@@ -114,7 +115,11 @@ class _FriendsPageState extends State<FriendsPage> {
     );
     PlayerDockHost.expand();
     if (queue.isNotEmpty) {
-      await widget.audioPlayerService.playTrack(queue.first, queue: queue);
+      await widget.audioPlayerService.playTrack(
+        queue.first,
+        queue: queue,
+        leaveListeningRoomSession: false,
+      );
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -182,7 +187,7 @@ class _FriendsPageState extends State<FriendsPage> {
                           item: item,
                           onOpenProfile: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute<void>(
+                              ShellMaterialPageRoute<void>(
                                 builder: (_) => ArtistPage(
                                   artistName: item.username,
                                   coverImageUrl: item.avatarUrl.isEmpty

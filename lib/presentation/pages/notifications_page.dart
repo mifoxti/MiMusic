@@ -8,6 +8,7 @@ import '../../core/l10n/app_localization.dart';
 import '../../core/social/friend_request_notifications.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import 'artist_page.dart';
 
 class NotificationsPage extends StatelessWidget {
@@ -93,7 +94,7 @@ class NotificationsPage extends StatelessWidget {
                         : null,
                     onOpenProfile: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute<void>(
+                        ShellMaterialPageRoute<void>(
                           builder: (_) => ArtistPage(
                             artistName: item.fromUsername,
                             audioPlayerService: audioPlayerService,

@@ -11,6 +11,7 @@ import '../core/notifications/local_notifications_service.dart';
 import '../core/notifications/notification_intent.dart';
 import '../core/player/full_player_visibility.dart';
 import '../core/player/player_dock_host.dart';
+import '../core/player/shell_route_back_guard.dart';
 import '../core/player/shell_navigator_host.dart';
 import '../core/social/listening_room_session.dart';
 import '../core/settings/app_settings.dart';
@@ -71,20 +72,44 @@ class _MainShellState extends State<MainShell>
   /// Насколько уезжает вниз блок мини + нижняя навигация при развороте плеера.
   static const double _bottomChromeSlideDistance = 188;
 
-  void _syncFullPlayerVisibility() {
-    FullPlayerVisibility.open.value = !_playerDockController.isDismissed;
-    // Вложенный Navigator без второго маршрута шлёт canHandlePop: false; тогда Android
-    // может не передать назад во Flutter (predictive back / OnBackInvokedDispatcher).
-    // Пока открыт полный плеер, явно просим доставлять событие в фреймворк.
-    if (!_playerDockController.isDismissed) {
-      SystemNavigator.setFrameworkHandlesBack(true);
+  /// Становится `true` при развороте дока и сбрасывается только в [AnimationStatus.dismissed].
+  /// Дополняет эвристику по [AnimationController]: до первого тика после [forward] статус
+  /// может оставаться dismissed при value == 0 — без флага [FullPlayerVisibility] на кадр
+  /// становится false и системный «назад» снимает маршрут под доком вместо сворачивания.
+  bool _fullPlayerSessionActive = false;
+
+  bool _isPlayerDockExpanded() {
+    if (_fullPlayerSessionActive) return true;
+    final c = _playerDockController;
+    return c.isAnimating ||
+        c.value > 0.001 ||
+        c.status != AnimationStatus.dismissed;
+  }
+
+  void _onPlayerDockStatus(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed) {
+      _fullPlayerSessionActive = false;
     }
+    _syncFullPlayerVisibility();
+  }
+
+  void _syncFullPlayerVisibility() {
+    final expanded = _isPlayerDockExpanded();
+    FullPlayerVisibility.open.value = expanded;
+    // Predictive back: пока оверлей развёрнут — фреймворк обрабатывает «назад»;
+    // при свёрнутом мини-плеере возвращаем поведение по умолчанию.
+    SystemNavigator.setFrameworkHandlesBack(expanded);
   }
 
   void _expandPlayerDock() {
     if (widget.audioPlayerService.currentTrack == null) return;
-    if (_playerDockController.isCompleted) return;
+    if (_playerDockController.isCompleted) {
+      _fullPlayerSessionActive = true;
+      _syncFullPlayerVisibility();
+      return;
+    }
     if (_playerDockController.isAnimating) return;
+    _fullPlayerSessionActive = true;
     _playerDockController.forward();
   }
 
@@ -105,6 +130,7 @@ class _MainShellState extends State<MainShell>
       duration: const Duration(milliseconds: 560),
     );
     _playerDockController.addListener(_syncFullPlayerVisibility);
+    _playerDockController.addStatusListener(_onPlayerDockStatus);
     PlayerDockHost.register(
       expand: _expandPlayerDock,
       collapse: _collapsePlayerDock,
@@ -128,6 +154,7 @@ class _MainShellState extends State<MainShell>
     WidgetsBinding.instance.removeObserver(this);
     widget.audioPlayerService.removeListener(_onAudioServiceChanged);
     _playerDockController.removeListener(_syncFullPlayerVisibility);
+    _playerDockController.removeStatusListener(_onPlayerDockStatus);
     _playerDockController.dispose();
     _notificationIntentSub?.cancel();
     PlayerDockHost.unregister();
@@ -136,7 +163,7 @@ class _MainShellState extends State<MainShell>
   }
 
   void _openNotificationIntent(NotificationIntent intent) {
-    if (!_playerDockController.isDismissed) {
+    if (_isPlayerDockExpanded()) {
       _playerDockController.reverse();
     }
     if (intent.target == NotificationTarget.release) {
@@ -168,7 +195,7 @@ class _MainShellState extends State<MainShell>
       return;
     }
     final route = switch (intent.target) {
-      NotificationTarget.friendProfile => MaterialPageRoute<void>(
+      NotificationTarget.friendProfile => ShellMaterialPageRoute<void>(
           builder: (_) => ArtistPage(
             artistName: intent.username ?? 'Пользователь',
             coverImageUrl: intent.avatarUrl,
@@ -189,7 +216,7 @@ class _MainShellState extends State<MainShell>
   /// Сначала сворачивание полного плеера (оверлей поверх вложенных маршрутов), затем стек
   /// [Navigator], затем выход из приложения.
   Future<void> _handleBackSequence() async {
-    if (!_playerDockController.isDismissed) {
+    if (_isPlayerDockExpanded()) {
       await _playerDockController.reverse();
       return;
     }
@@ -294,7 +321,7 @@ class _MainShellState extends State<MainShell>
                             initialRoute: _ShellRoutes.tabs,
                             onGenerateRoute: (settings) {
                             if (settings.name == _ShellRoutes.tabs) {
-                              return MaterialPageRoute<void>(
+                              return ShellMaterialPageRoute<void>(
                                 builder: (_) => _TabsView(
                                   selectedIndex: _selectedIndex,
                                   onTabTap: (i) =>
@@ -316,7 +343,7 @@ class _MainShellState extends State<MainShell>
                               );
                             }
                             if (settings.name == _ShellRoutes.favorites) {
-                              return MaterialPageRoute<void>(
+                              return ShellMaterialPageRoute<void>(
                                 builder: (_) => FavoritesPage(
                                   audioPlayerService: widget.audioPlayerService,
                                 ),
@@ -366,91 +393,101 @@ class _MainShellState extends State<MainShell>
                       final dockShown = !_playerDockController.isDismissed;
                       final slide =
                           _dockProgressCurved() * _bottomChromeSlideDistance;
-                      return Stack(
-                        fit: StackFit.expand,
-                        clipBehavior: Clip.none,
-                        children: [
-                          if (dockShown)
-                            Positioned.fill(
-                              child: ExpandablePlayerDock(
-                                expandController: _playerDockController,
-                                audioPlayerService: widget.audioPlayerService,
-                                onCollapse: _collapsePlayerDock,
+                      final expanded = _isPlayerDockExpanded();
+                      return PopScope(
+                        canPop: !expanded,
+                        onPopInvokedWithResult: (didPop, _) {
+                          if (didPop) return;
+                          if (_isPlayerDockExpanded()) {
+                            _collapsePlayerDock();
+                          }
+                        },
+                        child: Stack(
+                          fit: StackFit.expand,
+                          clipBehavior: Clip.none,
+                          children: [
+                            if (dockShown)
+                              Positioned.fill(
+                                child: ExpandablePlayerDock(
+                                  expandController: _playerDockController,
+                                  audioPlayerService: widget.audioPlayerService,
+                                  onCollapse: _collapsePlayerDock,
+                                ),
                               ),
-                            ),
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            child: ClipRect(
-                              clipBehavior: Clip.hardEdge,
-                              child: Transform.translate(
-                                offset: Offset(0, slide),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    if (_playerDockController.isDismissed)
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          12,
-                                          0,
-                                          12,
-                                          12,
-                                        ),
-                                        child: ListenableBuilder(
-                                          listenable: Listenable.merge([
-                                            widget.audioPlayerService,
-                                            ListeningRoomSession.instance,
-                                          ]),
-                                          builder: (context, _) {
-                                            final t = widget
-                                                .audioPlayerService
-                                                .currentTrack;
-                                            if (t == null) {
-                                              return const SizedBox.shrink();
-                                            }
-                                            final dur = widget
-                                                .audioPlayerService.duration;
-                                            final pos = widget
-                                                .audioPlayerService.position;
-                                            final progress =
-                                                dur != null &&
-                                                    dur.inMilliseconds > 0
-                                                ? pos.inMilliseconds /
-                                                      dur.inMilliseconds
-                                                : 0.0;
-                                            return FloatingMiniPlayer(
-                                              track: t,
-                                              trackProgress: progress,
-                                              isPlaying: widget
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: ClipRect(
+                                clipBehavior: Clip.hardEdge,
+                                child: Transform.translate(
+                                  offset: Offset(0, slide),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (_playerDockController.isDismissed)
+                                        Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            12,
+                                            0,
+                                            12,
+                                            12,
+                                          ),
+                                          child: ListenableBuilder(
+                                            listenable: Listenable.merge([
+                                              widget.audioPlayerService,
+                                              ListeningRoomSession.instance,
+                                            ]),
+                                            builder: (context, _) {
+                                              final t = widget
                                                   .audioPlayerService
-                                                  .isPlaying,
-                                              collaborativeMode:
-                                                  ListeningRoomSession.instance.active,
-                                              collaborativeGuestMode:
-                                                  ListeningRoomSession.instance.active &&
-                                                  !ListeningRoomSession.instance.isHost,
-                                              onTap: _expandPlayerDock,
-                                              onPlayPause: () {
-                                                widget.audioPlayerService
-                                                    .togglePlayPause();
-                                              },
-                                            );
-                                          },
+                                                  .currentTrack;
+                                              if (t == null) {
+                                                return const SizedBox.shrink();
+                                              }
+                                              final dur = widget
+                                                  .audioPlayerService.duration;
+                                              final pos = widget
+                                                  .audioPlayerService.position;
+                                              final progress =
+                                                  dur != null &&
+                                                      dur.inMilliseconds > 0
+                                                  ? pos.inMilliseconds /
+                                                        dur.inMilliseconds
+                                                  : 0.0;
+                                              return FloatingMiniPlayer(
+                                                track: t,
+                                                trackProgress: progress,
+                                                isPlaying: widget
+                                                    .audioPlayerService
+                                                    .isPlaying,
+                                                collaborativeMode:
+                                                    ListeningRoomSession.instance.active,
+                                                collaborativeGuestMode:
+                                                    ListeningRoomSession.instance.active &&
+                                                    !ListeningRoomSession.instance.isHost,
+                                                onTap: _expandPlayerDock,
+                                                onPlayPause: () {
+                                                  widget.audioPlayerService
+                                                      .togglePlayPause();
+                                                },
+                                              );
+                                            },
+                                          ),
                                         ),
+                                      _BottomNavBar(
+                                        selectedIndex: _selectedIndex,
+                                        onTap: _onBottomNavTap,
                                       ),
-                                    _BottomNavBar(
-                                      selectedIndex: _selectedIndex,
-                                      onTap: _onBottomNavTap,
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       );
                     },
                   ),

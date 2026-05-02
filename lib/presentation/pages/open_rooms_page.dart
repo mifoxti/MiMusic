@@ -88,7 +88,11 @@ class _OpenRoomsPageState extends State<OpenRoomsPage> {
     );
     PlayerDockHost.expand();
     if (queue.isNotEmpty) {
-      await widget.audioPlayerService.playTrack(queue.first, queue: queue);
+      await widget.audioPlayerService.playTrack(
+        queue.first,
+        queue: queue,
+        leaveListeningRoomSession: false,
+      );
     }
   }
 

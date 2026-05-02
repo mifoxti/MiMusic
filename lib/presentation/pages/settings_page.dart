@@ -7,6 +7,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import 'about_page.dart';
 import 'cache_page.dart';
 import 'equalizer_page.dart';
@@ -247,7 +248,7 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: context.t('settings.profile'),
           onTap: () {
             Navigator.of(context).push(
-              MaterialPageRoute<void>(
+              ShellMaterialPageRoute<void>(
                 builder: (context) => PersonalSettingsPage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: widget.initialSettings,
@@ -264,7 +265,7 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: context.t('settings.equalizerSub'),
           onTap: () {
             Navigator.of(context).push(
-              MaterialPageRoute<void>(
+              ShellMaterialPageRoute<void>(
                 builder: (context) => EqualizerPage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: widget.initialSettings,
@@ -309,7 +310,7 @@ class _SettingsPageState extends State<SettingsPage> {
             final fresh = await widget.settingsRepository.getSettings();
             if (!mounted) return;
             await Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(
+              ShellMaterialPageRoute<void>(
                 builder: (context) => CachePage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: fresh,
@@ -326,7 +327,7 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: context.t('settings.aboutSub'),
           onTap: () {
             Navigator.of(context).push(
-              MaterialPageRoute<void>(
+              ShellMaterialPageRoute<void>(
                 builder: (context) => const AboutPage(),
               ),
             );
@@ -375,7 +376,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _openLanguagePage() async {
     final selected = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
+      ShellMaterialPageRoute<String>(
         builder: (_) => LanguagePage(
           currentLanguageCode: _languageCode,
           audioPlayerService: widget.audioPlayerService,

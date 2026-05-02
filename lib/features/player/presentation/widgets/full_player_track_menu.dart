@@ -77,10 +77,9 @@ Future<void> showFullPlayerTrackMenu(
                     ),
                     onTap: () {
                       Navigator.pop(ctx);
-                      _showPlaylistPicker(
+                      showTrackPlaylistPicker(
                         context,
                         track: track,
-                        audioPlayerService: audioPlayerService,
                         repository: playlistsRepository ?? LocalPlaylistsRepository(),
                       );
                     },
@@ -124,13 +123,17 @@ Future<void> showFullPlayerTrackMenu(
   );
 }
 
-Future<void> _showPlaylistPicker(
+/// Добавление трека в плейлист (стеклянный sheet). [omitPlaylistId] — не показывать этот плейлист в списке.
+Future<void> showTrackPlaylistPicker(
   BuildContext context, {
   required Track track,
-  required AudioPlayerService audioPlayerService,
   required PlaylistsRepository repository,
+  String? omitPlaylistId,
 }) async {
   final playlists = await repository.getPlaylists();
+  final filtered = omitPlaylistId == null
+      ? playlists
+      : playlists.where((p) => p.id != omitPlaylistId).toList();
   if (!context.mounted) return;
   final palette = AppPaletteExtension.of(context).palette;
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -189,19 +192,21 @@ Future<void> _showPlaylistPicker(
                         ),
                       ),
                       Expanded(
-                        child: playlists.isEmpty
+                        child: filtered.isEmpty
                             ? Center(
                                 child: Text(
-                                  context.t('player.menu.noPlaylists'),
+                                  omitPlaylistId != null && playlists.isNotEmpty
+                                      ? context.t('playlists.track.noOtherPlaylists')
+                                      : context.t('player.menu.noPlaylists'),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: palette.textSecondary),
                                 ),
                               )
                             : ListView.builder(
                                 controller: scrollController,
-                                itemCount: playlists.length,
+                                itemCount: filtered.length,
                                 itemBuilder: (context, i) {
-                                  final p = playlists[i];
+                                  final p = filtered[i];
                                   return ListTile(
                                     title: Text(
                                       p.title,
