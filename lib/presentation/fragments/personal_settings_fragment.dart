@@ -4,7 +4,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import 'profile_edit_fragment.dart';
 
-/// Фрагмент персональных настроек: только профиль (аватар, почта, пароль, ник). Тема в общих настройках.
+/// Фрагмент персональных настроек: только профиль (аватар, почта, пароль, ник).
 class PersonalSettingsFragment extends StatelessWidget {
   const PersonalSettingsFragment({
     super.key,

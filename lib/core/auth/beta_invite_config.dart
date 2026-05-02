@@ -1,3 +1,6 @@
+import 'auth_session_store.dart';
+import 'steam_invite_key.dart';
+
 /// Ключи закрытой беты. Замените/дополните список перед сборкой для тестеров.
 abstract final class BetaInviteConfig {
   /// Временно `false` — регистрация без проверки ключа. Включи перед закрытой бетой.
@@ -10,8 +13,10 @@ abstract final class BetaInviteConfig {
 
   static bool isValid(String raw) {
     if (!requireInviteKey) return true;
-    final k = raw.trim();
+    final k = SteamInviteKey.normalize(raw);
     if (k.isEmpty) return false;
-    return validKeys.contains(k);
+    if (validKeys.contains(k)) return true;
+    if (!SteamInviteKey.matchesFormat(k)) return false;
+    return AuthSessionStore.isKnownIssuedInviteKey(k);
   }
 }

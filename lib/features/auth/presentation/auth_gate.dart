@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -338,6 +340,12 @@ class _RegisterTabState extends State<_RegisterTab> {
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(AuthSessionStore.refreshIssuedInviteKeysCache());
+  }
 
   @override
   void dispose() {

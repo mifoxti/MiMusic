@@ -201,6 +201,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
   }
 
   Future<void> _enterMainFromPrefs() async {
+    await AuthSessionStore.refreshIssuedInviteKeysCache();
     final s = await widget.settingsRepository.getSettings();
     if (!mounted) return;
     setState(() {

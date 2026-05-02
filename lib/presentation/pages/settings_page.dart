@@ -13,6 +13,7 @@ import 'about_page.dart';
 import 'cache_page.dart';
 import 'equalizer_page.dart';
 import 'language_page.dart';
+import 'invite_key_page.dart';
 import 'personal_settings_page.dart';
 
 /// Экран настроек: тема, персональные данные, эквалайзер, прочее. Читает/сохраняет через [SettingsRepository].
@@ -254,6 +255,20 @@ class _SettingsPageState extends State<SettingsPage> {
                   settingsRepository: widget.settingsRepository,
                   initialSettings: widget.initialSettings,
                 ),
+              ),
+            );
+          },
+        ),
+        _rowDivider(palette),
+        _row(
+          palette,
+          Icons.vpn_key_rounded,
+          context.t('settings.inviteKey'),
+          subtitle: context.t('settings.inviteKeySub'),
+          onTap: () {
+            Navigator.of(context).push(
+              ShellMaterialPageRoute<void>(
+                builder: (context) => const InviteKeyPage(),
               ),
             );
           },
