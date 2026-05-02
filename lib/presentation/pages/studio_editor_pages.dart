@@ -1,11 +1,9 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/platform/cover_pick_save.dart';
-import '../../core/platform/platform.dart';
 import '../../core/studio/album.dart';
 import '../../core/studio/studio_constants.dart';
 import '../../core/studio/studio_repository.dart';
@@ -576,10 +574,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
                   ),
                   TextButton.icon(
                     onPressed: () async {
-                      final result = await FilePicker.platform.pickFiles(type: FileType.audio);
-                      if (result == null || result.files.isEmpty || result.files.single.path == null) return;
-                      final pickedPath = result.files.single.path!;
-                      final copied = await copyPickedAudioToApp(pickedPath, widget.assetPath);
+                      final copied = await pickAndSaveTrackAudio(widget.assetPath);
                       if (copied != null && mounted) setState(() => _audioPath = copied);
                     },
                     icon: const Icon(Icons.upload_file_rounded, size: 20),

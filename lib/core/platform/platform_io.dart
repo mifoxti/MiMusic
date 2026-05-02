@@ -58,6 +58,23 @@ Future<String?> copyPickedAudioToApp(String sourcePath, String trackId) async {
   }
 }
 
+/// Аудио из памяти в каталог треков (аналог [copyPickedAudioToApp] для байтов).
+Future<String?> saveAudioBytesToApp(List<int> bytes, String trackId, String extension) async {
+  try {
+    if (bytes.isEmpty) return null;
+    var ext = extension.trim();
+    if (ext.isEmpty) ext = '.mp3';
+    if (!ext.startsWith('.')) ext = '.$ext';
+    final trackDir = await _appMediaDirectory('mimusic_tracks');
+    await _removeSiblingVariants(directory: trackDir, fileId: trackId);
+    final dest = File('${trackDir.path}/$trackId$ext');
+    await dest.writeAsBytes(bytes, flush: true);
+    return dest.path;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Writes image bytes directly into app-private storage (avoids gallery indexing
 /// from picker cache paths on some Android versions).
 Future<String?> saveCoverBytesToApp(List<int> bytes, String id, String extension) async {

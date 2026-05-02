@@ -5,6 +5,9 @@ import 'package:just_audio/just_audio.dart';
 Future<String?> copyPickedAudioToApp(String sourcePath, String trackId) async =>
     null;
 
+Future<String?> saveAudioBytesToApp(List<int> bytes, String trackId, String extension) async =>
+    null;
+
 // --- copy_cover_to_app
 Future<String?> saveCoverBytesToApp(List<int> bytes, String id, String extension) async =>
     null;

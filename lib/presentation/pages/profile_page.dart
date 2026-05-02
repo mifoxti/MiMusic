@@ -10,7 +10,9 @@ import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/social/friend_request_notifications.dart';
+import '../../core/platform/platform.dart';
 import '../../core/player/shell_route_back_guard.dart';
+import '../widgets/user_avatar.dart';
 import 'favorites_page.dart';
 import 'friends_page.dart';
 import 'notifications_page.dart';
@@ -27,20 +29,22 @@ class ProfilePage extends StatelessWidget {
     required this.themeMode,
     required this.onThemeChanged,
     required this.onLanguageChanged,
+    required this.onShellSettingsReload,
     required this.settingsRepository,
     required this.initialSettings,
+    required this.settingsDisplayGeneration,
     required this.audioPlayerService,
   });
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final ValueChanged<String> onLanguageChanged;
+  final Future<void> Function() onShellSettingsReload;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+  /// Синхронизирован с [MiMusicApp] после сохранения настроек; сбрасывает кэш картинок.
+  final int settingsDisplayGeneration;
   final AudioPlayerService audioPlayerService;
-
-  static const String _avatarAsset = 'assets/images/identity.png';
-  static const String _profileName = 'mifoxti';
 
   /// Пропорция фона: высота = ширина * коэффициент (обложка не растягивается).
   static const double _coverAspectRatio = 1.25;
@@ -190,8 +194,8 @@ class ProfilePage extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         IconButton(
-                          onPressed: () {
-                            Navigator.of(context).push(
+                          onPressed: () async {
+                            await Navigator.of(context).push<void>(
                               ShellMaterialPageRoute<void>(
                                 builder: (context) => SettingsPage(
                                   themeMode: themeMode,
@@ -203,6 +207,8 @@ class ProfilePage extends StatelessWidget {
                                 ),
                               ),
                             );
+                            if (!context.mounted) return;
+                            await onShellSettingsReload();
                           },
                           icon: const Icon(
                             Icons.settings_rounded,
@@ -226,23 +232,13 @@ class ProfilePage extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          ClipOval(
-                            child: SizedBox(
-                              width: avatarSize,
-                              height: avatarSize,
-                              child: Image.asset(
-                                _avatarAsset,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
-                                  color: palette.accent.withValues(alpha: 0.6),
-                                  alignment: Alignment.center,
-                                  child: const Icon(
-                                    Icons.person_rounded,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
+                          UserAvatar(
+                            key: ValueKey(
+                              'profile-avatar-${initialSettings.avatarPath ?? ''}-$settingsDisplayGeneration',
                             ),
+                            avatarPath: initialSettings.avatarPath,
+                            size: avatarSize,
+                            palette: palette,
                           ),
                           const SizedBox(width: 14),
                           Transform.translate(
@@ -252,7 +248,7 @@ class ProfilePage extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _profileName,
+                                  initialSettings.nickname,
                                   style: TextStyle(
                                     fontSize: titleSize,
                                     fontWeight: FontWeight.bold,
@@ -395,22 +391,41 @@ class ProfilePage extends StatelessWidget {
   }
 
   Widget _buildCoverBackground(BuildContext context, AppColorPalette palette, double width, double height) {
-    return ClipRect(
-      child: SizedBox(
+    final raw = initialSettings.avatarPath?.trim();
+    final resolved = (raw != null && raw.isNotEmpty) ? raw : kDefaultUserAvatarAsset;
+    final placeholder = Container(
+      width: width,
+      height: height,
+      color: palette.accent.withValues(alpha: 0.5),
+      alignment: Alignment.center,
+      child: const Icon(Icons.person_rounded, color: Colors.white, size: 64),
+    );
+
+    final Widget image;
+    if (resolved.startsWith('assets/')) {
+      image = Image.asset(
+        resolved,
+        fit: BoxFit.cover,
         width: width,
         height: height,
-        child: Image.asset(
-          _avatarAsset,
-          fit: BoxFit.cover,
-          width: width,
-          height: height,
-          errorBuilder: (_, _, _) => Container(
-            color: palette.accent.withValues(alpha: 0.5),
-            alignment: Alignment.center,
-            child: Icon(Icons.person_rounded, color: Colors.white, size: 64),
-          ),
-        ),
+        errorBuilder: (_, _, _) => placeholder,
+      );
+    } else {
+      image = buildCoverImageFromFile(
+        resolved,
+        width,
+        height,
+        BorderRadius.zero,
+        placeholder,
+        BoxFit.cover,
+      );
+    }
+
+    return ClipRect(
+      key: ValueKey(
+        'profile-cover-${resolved.hashCode}-$settingsDisplayGeneration',
       ),
+      child: SizedBox(width: width, height: height, child: image),
     );
   }
 

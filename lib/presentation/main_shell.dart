@@ -39,8 +39,10 @@ class MainShell extends StatefulWidget {
     required this.themeMode,
     required this.onThemeChanged,
     required this.onLanguageChanged,
+    required this.onShellSettingsReload,
     required this.settingsRepository,
     required this.initialSettings,
+    required this.settingsDisplayGeneration,
     required this.listeningHistoryRepository,
   });
 
@@ -50,8 +52,12 @@ class MainShell extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final ValueChanged<String> onLanguageChanged;
+  /// После сохранения настроек (профиль и т.д.) перечитать [AppSettings] в корне приложения.
+  final Future<void> Function() onShellSettingsReload;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+  /// Меняется при перезагрузке настроек, чтобы сбросить кэш изображений с тем же путём.
+  final int settingsDisplayGeneration;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -334,8 +340,12 @@ class _MainShellState extends State<MainShell>
                                   themeMode: widget.themeMode,
                                   onThemeChanged: widget.onThemeChanged,
                                   onLanguageChanged: widget.onLanguageChanged,
+                                  onShellSettingsReload:
+                                      widget.onShellSettingsReload,
                                   settingsRepository: widget.settingsRepository,
                                   initialSettings: widget.initialSettings,
+                                  settingsDisplayGeneration:
+                                      widget.settingsDisplayGeneration,
                                 ),
                                 settings: const RouteSettings(
                                   name: _ShellRoutes.tabs,
@@ -516,8 +526,10 @@ class _TabsView extends StatelessWidget {
     required this.themeMode,
     required this.onThemeChanged,
     required this.onLanguageChanged,
+    required this.onShellSettingsReload,
     required this.settingsRepository,
     required this.initialSettings,
+    required this.settingsDisplayGeneration,
   });
 
   final int selectedIndex;
@@ -528,8 +540,10 @@ class _TabsView extends StatelessWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final ValueChanged<String> onLanguageChanged;
+  final Future<void> Function() onShellSettingsReload;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+  final int settingsDisplayGeneration;
 
   @override
   Widget build(BuildContext context) {
@@ -549,8 +563,10 @@ class _TabsView extends StatelessWidget {
           themeMode: themeMode,
           onThemeChanged: onThemeChanged,
           onLanguageChanged: onLanguageChanged,
+          onShellSettingsReload: onShellSettingsReload,
           settingsRepository: settingsRepository,
           initialSettings: initialSettings,
+          settingsDisplayGeneration: settingsDisplayGeneration,
           audioPlayerService: audioPlayerService,
         ),
       ],

@@ -176,6 +176,8 @@ class _MiMusicAppState extends State<MiMusicApp> {
   late ThemeMode _themeMode;
   late Locale _locale;
   late AppSettings _shellSettings;
+  /// Сбрасывает кэш [Image] для аватара, если путь к файлу тот же, а содержимое изменилось.
+  int _shellSettingsDisplayGeneration = 0;
   AudioPlayerService? _audioPlayerService;
   GetHomeSectionUseCase? _getHomeSectionUseCase;
 
@@ -206,6 +208,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
     if (!mounted) return;
     setState(() {
       _shellSettings = s;
+      _shellSettingsDisplayGeneration++;
       _themeMode = s.themeMode;
       _locale = Locale(s.languageCode);
     });
@@ -268,6 +271,15 @@ class _MiMusicAppState extends State<MiMusicApp> {
     if (mounted) setState(() => _shellSettings = s);
   }
 
+  Future<void> _reloadShellSettingsFromRepository() async {
+    final s = await widget.settingsRepository.getSettings();
+    if (!mounted) return;
+    setState(() {
+      _shellSettings = s;
+      _shellSettingsDisplayGeneration++;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -312,8 +324,10 @@ class _MiMusicAppState extends State<MiMusicApp> {
             themeMode: _themeMode,
             onThemeChanged: _onThemeChanged,
             onLanguageChanged: _onLanguageChanged,
+            onShellSettingsReload: _reloadShellSettingsFromRepository,
             settingsRepository: widget.settingsRepository,
             initialSettings: _shellSettings,
+            settingsDisplayGeneration: _shellSettingsDisplayGeneration,
             listeningHistoryRepository: widget.listeningHistoryRepository,
           ),
         );
