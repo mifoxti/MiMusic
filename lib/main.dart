@@ -7,6 +7,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/audio/audio_player_service.dart';
 import 'core/audio/mimusic_audio_handler.dart';
+import 'core/auth/auth_session_store.dart';
+import 'core/auth/session_scope.dart';
 import 'core/history/in_memory_listening_history_repository.dart';
 import 'core/history/listening_history_repository.dart';
 import 'core/l10n/app_localization.dart';
@@ -15,8 +17,10 @@ import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
 import 'core/settings/settings_repository.dart';
 import 'core/theme/app_theme.dart';
+import 'features/auth/presentation/auth_gate.dart';
 import 'features/home/data/repositories/home_repository_impl.dart';
 import 'features/home/domain/use_cases/get_home_section_use_case.dart';
+import 'features/onboarding/presentation/onboarding_flow.dart';
 import 'presentation/main_shell.dart';
 
 void main() {
@@ -67,11 +71,11 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
       final listeningHistoryRepository = InMemoryListeningHistoryRepository();
       final handler = await AudioService.init(
         builder: () => MiMusicAudioHandler(),
-      config: AudioServiceConfig(
-        androidNotificationChannelId: 'com.example.mimusic.audio',
-        androidNotificationChannelName: 'Playback',
-        androidStopForegroundOnPause: false,
-      ),
+        config: AudioServiceConfig(
+          androidNotificationChannelId: 'com.example.mimusic.audio',
+          androidNotificationChannelName: 'Playback',
+          androidStopForegroundOnPause: false,
+        ),
       );
       setListeningHistoryRepository(listeningHistoryRepository);
       return _InitResult(settings, repository, handler, listeningHistoryRepository);
@@ -116,7 +120,7 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
                         AppLocalization(
                           WidgetsBinding.instance.platformDispatcher.locale,
                         ).t('init.error'),
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                         ),
@@ -147,6 +151,8 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
   }
 }
 
+enum _AppGate { loading, onboarding, auth, main }
+
 class MiMusicApp extends StatefulWidget {
   const MiMusicApp({
     super.key,
@@ -166,29 +172,80 @@ class MiMusicApp extends StatefulWidget {
 }
 
 class _MiMusicAppState extends State<MiMusicApp> {
+  _AppGate _gate = _AppGate.loading;
   late ThemeMode _themeMode;
   late Locale _locale;
-  late final AudioPlayerService _audioPlayerService;
-  late final GetHomeSectionUseCase _getHomeSectionUseCase;
+  late AppSettings _shellSettings;
+  AudioPlayerService? _audioPlayerService;
+  GetHomeSectionUseCase? _getHomeSectionUseCase;
 
   @override
   void initState() {
     super.initState();
+    _shellSettings = widget.initialSettings;
     _themeMode = widget.initialSettings.themeMode;
     _locale = Locale(widget.initialSettings.languageCode);
+    unawaited(_bootstrapGate());
+  }
+
+  Future<void> _bootstrapGate() async {
+    if (!await AuthSessionStore.isOnboardingCompleted()) {
+      if (mounted) setState(() => _gate = _AppGate.onboarding);
+      return;
+    }
+    if (!await AuthSessionStore.isLoggedIn()) {
+      if (mounted) setState(() => _gate = _AppGate.auth);
+      return;
+    }
+    await _enterMainFromPrefs();
+  }
+
+  Future<void> _enterMainFromPrefs() async {
+    final s = await widget.settingsRepository.getSettings();
+    if (!mounted) return;
+    setState(() {
+      _shellSettings = s;
+      _themeMode = s.themeMode;
+      _locale = Locale(s.languageCode);
+    });
+    _ensurePlayerServices();
+    if (mounted) setState(() => _gate = _AppGate.main);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_audioPlayerService?.applyEqualizerFromSettings() ?? Future.value());
+    });
+  }
+
+  void _ensurePlayerServices() {
+    if (_audioPlayerService != null) return;
     _audioPlayerService = AudioPlayerService(
       audioHandler: widget.audioHandler,
       settingsRepository: widget.settingsRepository,
     );
     _getHomeSectionUseCase = GetHomeSectionUseCase(HomeRepositoryImpl());
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_audioPlayerService.applyEqualizerFromSettings());
-    });
+  }
+
+  Future<void> _onOnboardingDone() async {
+    await AuthSessionStore.setOnboardingCompleted();
+    if (!mounted) return;
+    setState(() => _gate = _AppGate.auth);
+  }
+
+  Future<void> _onAuthenticated() async {
+    await _enterMainFromPrefs();
+  }
+
+  Future<void> _onSignOut() async {
+    await AuthSessionStore.clearSessionToken();
+    if (!mounted) return;
+    _audioPlayerService?.dispose();
+    _audioPlayerService = null;
+    _getHomeSectionUseCase = null;
+    setState(() => _gate = _AppGate.auth);
   }
 
   @override
   void dispose() {
-    _audioPlayerService.dispose();
+    _audioPlayerService?.dispose();
     super.dispose();
   }
 
@@ -196,6 +253,8 @@ class _MiMusicAppState extends State<MiMusicApp> {
     setState(() => _themeMode = mode);
     final current = await widget.settingsRepository.getSettings();
     await widget.settingsRepository.saveSettings(current.copyWith(themeMode: mode));
+    final s = await widget.settingsRepository.getSettings();
+    if (mounted) setState(() => _shellSettings = s);
   }
 
   Future<void> _onLanguageChanged(String languageCode) async {
@@ -204,6 +263,8 @@ class _MiMusicAppState extends State<MiMusicApp> {
     await widget.settingsRepository.saveSettings(
       current.copyWith(languageCode: languageCode),
     );
+    final s = await widget.settingsRepository.getSettings();
+    if (mounted) setState(() => _shellSettings = s);
   }
 
   @override
@@ -221,16 +282,40 @@ class _MiMusicAppState extends State<MiMusicApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       debugShowCheckedModeBanner: false,
-      home: MainShell(
-        getHomeSectionUseCase: _getHomeSectionUseCase,
-        audioPlayerService: _audioPlayerService,
-        themeMode: _themeMode,
-        onThemeChanged: _onThemeChanged,
-        onLanguageChanged: _onLanguageChanged,
-        settingsRepository: widget.settingsRepository,
-        initialSettings: widget.initialSettings,
-        listeningHistoryRepository: widget.listeningHistoryRepository,
-      ),
+      home: _buildHome(),
     );
+  }
+
+  Widget _buildHome() {
+    switch (_gate) {
+      case _AppGate.loading:
+        return const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        );
+      case _AppGate.onboarding:
+        return OnboardingFlow(onCompleted: _onOnboardingDone);
+      case _AppGate.auth:
+        return AuthGate(
+          settingsRepository: widget.settingsRepository,
+          initialSettings: _shellSettings,
+          onAuthenticated: _onAuthenticated,
+        );
+      case _AppGate.main:
+        final audio = _audioPlayerService!;
+        final homeCase = _getHomeSectionUseCase!;
+        return SessionScope(
+          onSignOut: _onSignOut,
+          child: MainShell(
+            getHomeSectionUseCase: homeCase,
+            audioPlayerService: audio,
+            themeMode: _themeMode,
+            onThemeChanged: _onThemeChanged,
+            onLanguageChanged: _onLanguageChanged,
+            settingsRepository: widget.settingsRepository,
+            initialSettings: _shellSettings,
+            listeningHistoryRepository: widget.listeningHistoryRepository,
+          ),
+        );
+    }
   }
 }

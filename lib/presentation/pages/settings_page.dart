@@ -7,6 +7,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/auth/session_scope.dart';
 import '../../core/player/shell_route_back_guard.dart';
 import 'about_page.dart';
 import 'cache_page.dart';
@@ -317,6 +318,37 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             );
+          },
+        ),
+        _rowDivider(palette),
+        _row(
+          palette,
+          Icons.logout_rounded,
+          context.t('settings.logout'),
+          subtitle: context.t('settings.logoutSub'),
+          onTap: () async {
+            final nav = Navigator.of(context);
+            final signOut = SessionScope.of(context).onSignOut;
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: Text(context.t('settings.logoutConfirmTitle')),
+                content: Text(context.t('settings.logoutConfirmBody')),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(context.t('common.cancel')),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: Text(context.t('settings.logoutConfirmAction')),
+                  ),
+                ],
+              ),
+            );
+            if (ok != true || !context.mounted) return;
+            nav.pop();
+            await signOut();
           },
         ),
         _rowDivider(palette),
