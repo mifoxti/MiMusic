@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_session_store.dart';
-import '../../../core/auth/steam_invite_key.dart';
+import '../../../core/auth/invite_key_format.dart';
 import '../../../core/l10n/app_localization.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -31,7 +31,7 @@ class _InviteKeyGenerationPageState extends State<InviteKeyGenerationPage>
   @override
   void initState() {
     super.initState();
-    _key = SteamInviteKey.generate();
+    _key = InviteKeyFormat.generate();
     _particleStart = List.generate(
       36,
       (_) => Alignment(

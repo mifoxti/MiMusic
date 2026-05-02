@@ -1,5 +1,5 @@
 import 'auth_session_store.dart';
-import 'steam_invite_key.dart';
+import 'invite_key_format.dart';
 
 /// Ключи закрытой беты. Замените/дополните список перед сборкой для тестеров.
 abstract final class BetaInviteConfig {
@@ -13,10 +13,10 @@ abstract final class BetaInviteConfig {
 
   static bool isValid(String raw) {
     if (!requireInviteKey) return true;
-    final k = SteamInviteKey.normalize(raw);
+    final k = InviteKeyFormat.normalize(raw);
     if (k.isEmpty) return false;
     if (validKeys.contains(k)) return true;
-    if (!SteamInviteKey.matchesFormat(k)) return false;
+    if (!InviteKeyFormat.matchesFormat(k)) return false;
     return AuthSessionStore.isKnownIssuedInviteKey(k);
   }
 }

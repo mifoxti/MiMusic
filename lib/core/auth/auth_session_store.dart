@@ -3,7 +3,7 @@ import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'steam_invite_key.dart';
+import 'invite_key_format.dart';
 
 const _kOnboarding = 'mimusic_onboarding_completed_v1';
 const _kAccount = 'mimusic_local_account_v1';
@@ -24,7 +24,7 @@ class LocalAccount {
   final String nickname;
   final String sessionToken;
 
-  /// Один сгенерированный пригласительный ключ (Steam-формат), если уже создан.
+  /// Один сгенерированный пригласительный ключ, если уже создан.
   final String? myInviteKey;
 
   bool get isLoggedIn => sessionToken.isNotEmpty;
@@ -90,7 +90,7 @@ abstract final class AuthSessionStore {
       final list = jsonDecode(raw) as List<dynamic>;
       for (final e in list) {
         if (e is String && e.isNotEmpty) {
-          _issuedInviteKeysCache.add(SteamInviteKey.normalize(e));
+          _issuedInviteKeysCache.add(InviteKeyFormat.normalize(e));
         }
       }
     } catch (_) {}
@@ -105,8 +105,8 @@ abstract final class AuthSessionStore {
   }
 
   static Future<void> registerIssuedInviteKey(String key) async {
-    final k = SteamInviteKey.normalize(key);
-    if (!SteamInviteKey.matchesFormat(k)) return;
+    final k = InviteKeyFormat.normalize(key);
+    if (!InviteKeyFormat.matchesFormat(k)) return;
     await refreshIssuedInviteKeysCache();
     _issuedInviteKeysCache.add(k);
     await _persistIssuedInviteKeys();
@@ -119,8 +119,8 @@ abstract final class AuthSessionStore {
   static Future<void> saveGeneratedInviteKey(String key) async {
     final acc = await readAccount();
     if (acc == null || acc.hasMyInviteKey) return;
-    final k = SteamInviteKey.normalize(key);
-    if (!SteamInviteKey.matchesFormat(k)) return;
+    final k = InviteKeyFormat.normalize(key);
+    if (!InviteKeyFormat.matchesFormat(k)) return;
     await registerIssuedInviteKey(k);
     await writeAccount(acc.copyWith(myInviteKey: k));
   }

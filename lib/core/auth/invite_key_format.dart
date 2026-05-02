@@ -1,7 +1,7 @@
 import 'dart:math';
 
-/// Ключ в стиле Steam: `XXXXX-XXXXX-XXXXX` (латиница A–Z и цифры 0–9).
-abstract final class SteamInviteKey {
+/// Генерация и проверка пригласительного ключа: три группы по 5 символов (A–Z, 0–9), через дефис.
+abstract final class InviteKeyFormat {
   static const _alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
   static String _segment(Random r) {

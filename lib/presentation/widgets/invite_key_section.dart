@@ -6,7 +6,7 @@ import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/auth/presentation/invite_key_generation_page.dart';
 
-/// Блок «пригласительный ключ»: один ключ на аккаунт, формат Steam.
+/// Блок «пригласительный ключ»: один ключ на аккаунт.
 class InviteKeySection extends StatefulWidget {
   const InviteKeySection({super.key, this.showSectionTitle = true});
 
