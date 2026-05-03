@@ -5,7 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../../../core/auth/auth_session_store.dart';
 import '../../../core/auth/beta_invite_config.dart';
-import '../../../core/auth/password_hash.dart';
+import '../../../core/auth/invite_key_format.dart';
+import '../../../core/network/auth_api.dart';
 import '../../../core/l10n/app_localization.dart';
 import '../../../core/settings/app_settings.dart';
 import '../../../core/settings/settings_repository.dart';
@@ -206,7 +207,7 @@ class _LoginTab extends StatefulWidget {
 }
 
 class _LoginTabState extends State<_LoginTab> {
-  final _email = TextEditingController();
+  final _loginId = TextEditingController();
   final _password = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
@@ -214,7 +215,7 @@ class _LoginTabState extends State<_LoginTab> {
 
   @override
   void dispose() {
-    _email.dispose();
+    _loginId.dispose();
     _password.dispose();
     super.dispose();
   }
@@ -224,29 +225,35 @@ class _LoginTabState extends State<_LoginTab> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _busy = true);
     try {
-      final acc = await AuthSessionStore.readAccount();
-      if (acc == null) {
-        setState(() => _error = 'auth.error.noAccount');
-        return;
-      }
-      if (!verifyPassword(_password.text, acc.passwordHash)) {
-        setState(() => _error = 'auth.error.badCredentials');
-        return;
-      }
-      if (_email.text.trim().toLowerCase() != acc.email.toLowerCase()) {
-        setState(() => _error = 'auth.error.badCredentials');
-        return;
-      }
-      final token = AuthSessionStore.generateSessionToken();
-      await AuthSessionStore.writeAccount(acc.copyWith(sessionToken: token));
+      final api = AuthApi();
+      final session = await api.login(
+        emailOrNickname: _loginId.text.trim(),
+        password: _password.text,
+      );
+      final email = session.email?.trim().isNotEmpty == true
+          ? session.email!.trim()
+          : (_loginId.text.contains('@') ? _loginId.text.trim() : '');
+      await AuthSessionStore.writeAccount(
+        LocalAccount(
+          email: email,
+          passwordHash: '',
+          nickname: session.nickname,
+          sessionToken: session.token,
+          userId: session.userId,
+        ),
+      );
       final current = await widget.settingsRepository.getSettings();
       await widget.settingsRepository.saveSettings(
         current.copyWith(
-          email: acc.email,
-          nickname: acc.nickname,
+          email: email.isNotEmpty ? email : current.email,
+          nickname: session.nickname,
         ),
       );
       await widget.onSuccess();
+    } on AuthApiException catch (e) {
+      setState(() => _error = e.messageKey);
+    } catch (_) {
+      setState(() => _error = 'auth.error.server');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -263,12 +270,19 @@ class _LoginTabState extends State<_LoginTab> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextFormField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: _inputDeco(context, widget.palette, context.t('auth.email')),
+              controller: _loginId,
+              keyboardType: TextInputType.text,
+              decoration: _inputDeco(context, widget.palette, context.t('auth.loginOrEmail')),
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return context.t('auth.error.emailInvalid');
-                if (!v.contains('@')) return context.t('auth.error.emailInvalid');
+                final t = v?.trim() ?? '';
+                if (t.isEmpty) return context.t('auth.error.credentialEmpty');
+                if (t.contains('@')) {
+                  if (!t.contains('.') || t.split('@').length != 2) {
+                    return context.t('auth.error.emailInvalid');
+                  }
+                } else if (t.length < 2) {
+                  return context.t('auth.error.nicknameTooShort');
+                }
                 return null;
               },
             ),
@@ -372,30 +386,38 @@ class _RegisterTabState extends State<_RegisterTab> {
       setState(() => _error = 'auth.error.inviteInvalid');
       return;
     }
-    final existing = await AuthSessionStore.readAccount();
-    if (existing != null) {
-      setState(() => _error = 'auth.error.accountExists');
-      return;
-    }
     setState(() => _busy = true);
     try {
       final email = _email.text.trim();
       final nick = _nickname.text.trim().isEmpty ? email.split('@').first : _nickname.text.trim();
-      final hash = hashPassword(_password.text);
-      final token = AuthSessionStore.generateSessionToken();
+      final inviteRaw = _invite.text.trim();
+      final inviteNorm =
+          inviteRaw.isEmpty ? null : InviteKeyFormat.normalize(inviteRaw);
+      final api = AuthApi();
+      final session = await api.register(
+        email: email,
+        nickname: nick,
+        password: _password.text,
+        inviteCode: inviteNorm,
+      );
       await AuthSessionStore.writeAccount(
         LocalAccount(
-          email: email,
-          passwordHash: hash,
-          nickname: nick,
-          sessionToken: token,
+          email: session.email?.trim().isNotEmpty == true ? session.email!.trim() : email,
+          passwordHash: '',
+          nickname: session.nickname,
+          sessionToken: session.token,
+          userId: session.userId,
         ),
       );
       final current = await widget.settingsRepository.getSettings();
       await widget.settingsRepository.saveSettings(
-        current.copyWith(email: email, nickname: nick),
+        current.copyWith(email: email, nickname: session.nickname),
       );
       await widget.onSuccess();
+    } on AuthApiException catch (e) {
+      setState(() => _error = e.messageKey);
+    } catch (_) {
+      setState(() => _error = 'auth.error.server');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -428,6 +450,12 @@ class _RegisterTabState extends State<_RegisterTab> {
                 widget.palette,
                 context.t('auth.nickname'),
               ),
+              validator: (v) {
+                final t = v?.trim() ?? '';
+                if (t.isEmpty) return null;
+                if (t.length < 2) return context.t('auth.error.nicknameTooShort');
+                return null;
+              },
             ),
             const SizedBox(height: 12),
             TextFormField(

@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/audio/audio_player_service.dart';
 import 'core/audio/mimusic_audio_handler.dart';
 import 'core/auth/auth_session_store.dart';
+import 'core/network/api_config.dart';
 import 'core/auth/session_scope.dart';
 import 'core/history/in_memory_listening_history_repository.dart';
 import 'core/history/listening_history_repository.dart';
@@ -23,8 +24,9 @@ import 'features/home/domain/use_cases/get_home_section_use_case.dart';
 import 'features/onboarding/presentation/onboarding_flow.dart';
 import 'presentation/main_shell.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiConfig.ensureAndroidDevBaseUrl();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

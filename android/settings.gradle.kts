@@ -19,7 +19,8 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.11.1" apply false
+    // 8.11.x: occasional bundleLibRuntimeToDirDebug duplicate .class (just_audio/audio_service) on Windows.
+    id("com.android.application") version "8.9.2" apply false
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }
 

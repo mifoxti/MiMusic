@@ -6,28 +6,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'invite_key_format.dart';
 
 const _kOnboarding = 'mimusic_onboarding_completed_v1';
-const _kAccount = 'mimusic_local_account_v1';
+const _kAccount = 'mimusic_account_v2';
 const _kIssuedInviteKeys = 'mimusic_issued_invite_keys_v1';
 
-/// Локальная учётная запись (без сервера): хэш пароля + токен сессии в SharedPreferences.
+/// Учётная запись: после входа через API — [userId] и [sessionToken] с сервера; [passwordHash] не хранится.
 class LocalAccount {
   const LocalAccount({
     required this.email,
     required this.passwordHash,
     required this.nickname,
     required this.sessionToken,
+    this.userId,
     this.myInviteKey,
   });
 
   final String email;
+  /// Локальный хэш пароля (устаревший режим). Для серверной авторизации — пустая строка.
   final String passwordHash;
   final String nickname;
   final String sessionToken;
+  final int? userId;
 
   /// Один сгенерированный пригласительный ключ, если уже создан.
   final String? myInviteKey;
 
-  bool get isLoggedIn => sessionToken.isNotEmpty;
+  bool get isLoggedIn =>
+      sessionToken.isNotEmpty && (userId != null || passwordHash.isNotEmpty);
 
   bool get hasMyInviteKey =>
       myInviteKey != null && myInviteKey!.trim().isNotEmpty;
@@ -37,6 +41,7 @@ class LocalAccount {
         'passwordHash': passwordHash,
         'nickname': nickname,
         'sessionToken': sessionToken,
+        if (userId != null) 'userId': userId,
         if (myInviteKey != null && myInviteKey!.trim().isNotEmpty)
           'myInviteKey': myInviteKey,
       };
@@ -45,12 +50,17 @@ class LocalAccount {
     if (map == null) return null;
     final email = map['email'] as String? ?? '';
     final passwordHash = map['passwordHash'] as String? ?? '';
-    if (email.isEmpty || passwordHash.isEmpty) return null;
+    final sessionToken = map['sessionToken'] as String? ?? '';
+    final userId = (map['userId'] as num?)?.toInt();
+    if (sessionToken.isEmpty) return null;
+    if (email.isEmpty && userId == null && passwordHash.isEmpty) return null;
     return LocalAccount(
       email: email,
       passwordHash: passwordHash,
-      nickname: map['nickname'] as String? ?? email.split('@').first,
-      sessionToken: map['sessionToken'] as String? ?? '',
+      nickname: map['nickname'] as String? ??
+          (email.isNotEmpty ? email.split('@').first : 'user'),
+      sessionToken: sessionToken,
+      userId: userId,
       myInviteKey: map['myInviteKey'] as String?,
     );
   }
@@ -60,6 +70,7 @@ class LocalAccount {
     String? passwordHash,
     String? nickname,
     String? sessionToken,
+    int? userId,
     String? myInviteKey,
   }) {
     return LocalAccount(
@@ -67,6 +78,7 @@ class LocalAccount {
       passwordHash: passwordHash ?? this.passwordHash,
       nickname: nickname ?? this.nickname,
       sessionToken: sessionToken ?? this.sessionToken,
+      userId: userId ?? this.userId,
       myInviteKey: myInviteKey ?? this.myInviteKey,
     );
   }

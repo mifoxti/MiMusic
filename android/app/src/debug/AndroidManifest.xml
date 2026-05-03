@@ -4,4 +4,7 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- HTTP к dev-серверу (Ktor на ПК). Для release используйте HTTPS. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>
