@@ -15,8 +15,13 @@ class ShellRouteBackGuard extends StatelessWidget {
     return ValueListenableBuilder<bool>(
       valueListenable: FullPlayerVisibility.open,
       builder: (context, playerFullOpen, _) {
+        // Пока полный плеер открыт, на корне вкладки «назад» сворачивает док.
+        // Если поверх shell уже открыт маршрут (напр. настройка комнаты), его нужно
+        // закрывать pop'ом — иначе canPop: false блокирует и системный back, и стрелку AppBar.
+        final nav = Navigator.maybeOf(context);
+        final canPopRoute = nav?.canPop() ?? false;
         return PopScope(
-          canPop: !playerFullOpen,
+          canPop: !playerFullOpen || canPopRoute,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
             if (playerFullOpen) {

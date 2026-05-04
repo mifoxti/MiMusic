@@ -132,6 +132,9 @@ bool _isFilePath(String path) {
 }
 
 AudioSource createAudioSource(String path) {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return AudioSource.uri(Uri.parse(path));
+  }
   if (_isFilePath(path)) {
     return AudioSource.file(path);
   }

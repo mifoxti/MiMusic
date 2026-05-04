@@ -20,6 +20,9 @@ Future<Uri?> assetToFileUri(String assetPath) async => null;
 
 // --- audio_source_from_path
 AudioSource createAudioSource(String path) {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return AudioSource.uri(Uri.parse(path));
+  }
   if (!path.startsWith('assets/')) {
     throw UnsupportedError(
       'Воспроизведение из файла недоступно на этой платформе',
