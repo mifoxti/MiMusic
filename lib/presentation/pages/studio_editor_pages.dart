@@ -1,13 +1,19 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio/track.dart';
+import '../../core/auth/auth_session_store.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/platform/cover_pick_save.dart';
 import '../../core/studio/album.dart';
+import '../../core/network/albums_api.dart';
+import '../../core/network/tracks_upload_api.dart';
 import '../../core/studio/studio_constants.dart';
 import '../../core/studio/studio_repository.dart';
 import '../../core/theme/app_theme.dart';
+import '../widgets/studio_genre_picker.dart';
 import 'studio_ui_helpers.dart';
 
 /// Выбор треков для альбома — отдельный диалог на корневом навигаторе (поверх [MainShell]).
@@ -86,6 +92,7 @@ class _StudioAlbumEditorPageState extends State<StudioAlbumEditorPage> {
   late String _coverPath;
   late List<String> _trackIds;
   late List<String> _genres;
+  bool _serverLoggedIn = false;
 
   @override
   void initState() {
@@ -97,6 +104,13 @@ class _StudioAlbumEditorPageState extends State<StudioAlbumEditorPage> {
     _coverPath = a?.coverPath ?? '';
     _trackIds = List<String>.from(a?.trackAssetPaths ?? []);
     _genres = normalizeStudioGenreList(a?.genres ?? []);
+    AuthSessionStore.readAccount().then((acc) {
+      if (!mounted) return;
+      setState(() {
+        _serverLoggedIn =
+            acc != null && acc.sessionToken.isNotEmpty && acc.userId != null;
+      });
+    });
   }
 
   @override
@@ -104,6 +118,32 @@ class _StudioAlbumEditorPageState extends State<StudioAlbumEditorPage> {
     _titleCtrl.dispose();
     _artistCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _publishAlbumToServer() async {
+    if (!_serverLoggedIn) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(context.t('studio.serverNeedLogin'))),
+      );
+      return;
+    }
+    final title = _titleCtrl.text.trim();
+    final resolvedTitle = title.isEmpty ? context.t('playlists.untitled') : title;
+    try {
+      await AlbumsApi().createAlbum(
+        title: resolvedTitle,
+        genreSlugs: _genres,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('studio.serverAlbumOk'))),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('studio.serverAlbumFail'))),
+      );
+    }
   }
 
   void _submit() {
@@ -156,6 +196,12 @@ class _StudioAlbumEditorPageState extends State<StudioAlbumEditorPage> {
               ),
             ),
             actions: [
+              if (_serverLoggedIn)
+                IconButton(
+                  tooltip: context.t('studio.publishAlbumServer'),
+                  onPressed: _publishAlbumToServer,
+                  icon: const Icon(Icons.cloud_upload_rounded),
+                ),
               TextButton(onPressed: () => Navigator.pop(context), child: Text(context.t('common.cancel'))),
               FilledButton(onPressed: _submit, child: Text(context.t('common.save'))),
               const SizedBox(width: 8),
@@ -232,23 +278,10 @@ class _StudioAlbumEditorPageState extends State<StudioAlbumEditorPage> {
               const SizedBox(height: 20),
               Text(context.t('studio.genres'), style: TextStyle(fontSize: 12, color: palette.textSecondary)),
               const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: studioGenreIds.map((gid) {
-                  final selected = _genres.contains(gid);
-                  return FilterChip(
-                    label: Text(context.t('studio.genre.$gid')),
-                    selected: selected,
-                    onSelected: (v) => setState(() {
-                      if (v) {
-                        _genres.add(gid);
-                      } else {
-                        _genres.remove(gid);
-                      }
-                    }),
-                  );
-                }).toList(),
+              StudioGenrePicker(
+                palette: palette,
+                selected: _genres,
+                onSelectionChanged: (v) => setState(() => _genres = v),
               ),
               const SizedBox(height: 20),
               Row(
@@ -328,6 +361,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
   late List<String> _genres;
   late List<String> _coAuthors;
   late bool _authorIsMe;
+  bool _serverLoggedIn = false;
 
   @override
   void initState() {
@@ -343,6 +377,13 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
     final nick = widget.nickname ?? '';
     _authorIsMe = nick.isNotEmpty && _artistCtrl.text.trim() == nick;
     _coAuthorCtrl = TextEditingController();
+    AuthSessionStore.readAccount().then((acc) {
+      if (!mounted) return;
+      setState(() {
+        _serverLoggedIn =
+            acc != null && acc.sessionToken.isNotEmpty && acc.userId != null;
+      });
+    });
   }
 
   @override
@@ -351,6 +392,45 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
     _artistCtrl.dispose();
     _coAuthorCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _publishTrackToServer() async {
+    if (!_serverLoggedIn) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(context.t('studio.serverNeedLogin'))),
+      );
+      return;
+    }
+    if (_audioPath.isEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(context.t('studio.serverUploadNeedAudio'))),
+      );
+      return;
+    }
+    final file = File(_audioPath);
+    if (!await file.exists()) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(context.t('studio.serverUploadNeedAudio'))),
+      );
+      return;
+    }
+    try {
+      await TracksUploadApi().uploadTrackMp3(
+        file: file,
+        title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
+        genreSlugs: _genres,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('studio.serverUploadOk'))),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('studio.serverUploadFail'))),
+      );
+    }
   }
 
   void _addCoAuthorFromField() {
@@ -417,6 +497,12 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
               ),
             ),
             actions: [
+              if (_serverLoggedIn)
+                IconButton(
+                  tooltip: context.t('studio.publishToServer'),
+                  onPressed: _publishTrackToServer,
+                  icon: const Icon(Icons.cloud_upload_rounded),
+                ),
               TextButton(onPressed: () => Navigator.pop(context), child: Text(context.t('common.cancel'))),
               FilledButton(onPressed: _submit, child: Text(context.t('common.save'))),
               const SizedBox(width: 8),
@@ -607,23 +693,10 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
               const SizedBox(height: 16),
               Text(context.t('studio.genres'), style: TextStyle(fontSize: 12, color: palette.textSecondary)),
               const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: studioGenreIds.map((gid) {
-                  final selected = _genres.contains(gid);
-                  return FilterChip(
-                    label: Text(context.t('studio.genre.$gid')),
-                    selected: selected,
-                    onSelected: (v) => setState(() {
-                      if (v) {
-                        _genres.add(gid);
-                      } else {
-                        _genres.remove(gid);
-                      }
-                    }),
-                  );
-                }).toList(),
+              StudioGenrePicker(
+                palette: palette,
+                selected: _genres,
+                onSelectionChanged: (v) => setState(() => _genres = v),
               ),
             ],
           ),

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/auth/auth_session_store.dart';
+import '../../core/network/recommendations_api.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
@@ -32,6 +34,8 @@ class _ForYouPageState extends State<ForYouPage> {
   HomeSection? _section;
   List<Track> _tracks = [];
   List<Track> _recommendedOrder = [];
+  List<Track> _serverRecTracks = [];
+  String? _serverRecError;
   bool _loading = true;
 
   @override
@@ -45,11 +49,37 @@ class _ForYouPageState extends State<ForYouPage> {
     try {
       final section = await widget.getHomeSectionUseCase();
       final tracks = await loadLocalTracks();
+      List<Track> serverQueue = [];
+      String? serverErr;
+      final acc = await AuthSessionStore.readAccount();
+      if (acc != null && acc.sessionToken.isNotEmpty && acc.userId != null) {
+        try {
+          final dto = await RecommendationsApi().fetchRecommendedTracks(limit: 24);
+          serverQueue = dto.map((e) => e.toTrack()).toList();
+          await RecommendationsApi().postEvents(
+            dto
+                .map(
+                  (e) => <String, dynamic>{
+                    'surface': 'for_you',
+                    'targetType': 'track',
+                    'targetId': e.id,
+                    'interaction': 'impression',
+                    'scorePresent': e.score,
+                  },
+                )
+                .toList(),
+          );
+        } catch (e) {
+          serverErr = e.toString();
+        }
+      }
       if (!mounted) return;
       setState(() {
         _section = section;
         _tracks = tracks;
         _recommendedOrder = _buildRecommendedOrder(section, tracks);
+        _serverRecTracks = serverQueue;
+        _serverRecError = serverErr;
         _loading = false;
       });
     } catch (_) {
@@ -81,8 +111,26 @@ class _ForYouPageState extends State<ForYouPage> {
     PlayerDockHost.expand();
   }
 
+  Future<void> _onServerRecTap(Track track) async {
+    final idStr = track.assetPath.replaceFirst('server_track_', '');
+    final id = int.tryParse(idStr);
+    if (id != null) {
+      try {
+        await RecommendationsApi().postEvents([
+          {
+            'surface': 'for_you',
+            'targetType': 'track',
+            'targetId': id,
+            'interaction': 'click',
+          },
+        ]);
+      } catch (_) {}
+    }
+    await _onTrackTap(track);
+  }
+
   Future<void> _onTrackTap(Track track) async {
-    final queue = _recommendedOrder.isNotEmpty ? _recommendedOrder : _tracks;
+    final queue = _queueForTrack(track);
     if (queue.isEmpty) return;
     final service = widget.audioPlayerService;
     final same = service.currentTrack?.assetPath == track.assetPath &&
@@ -95,8 +143,16 @@ class _ForYouPageState extends State<ForYouPage> {
     if (mounted) _openFullPlayer();
   }
 
+  List<Track> _queueForTrack(Track track) {
+    if (track.assetPath.startsWith('server_track_')) {
+      if (_serverRecTracks.isNotEmpty) return _serverRecTracks;
+    }
+    return _recommendedOrder.isNotEmpty ? _recommendedOrder : _tracks;
+  }
+
   Future<void> _onPlayMixPressed() async {
-    final queue = _recommendedOrder.isNotEmpty ? _recommendedOrder : _tracks;
+    final queue =
+        _serverRecTracks.isNotEmpty ? _serverRecTracks : (_recommendedOrder.isNotEmpty ? _recommendedOrder : _tracks);
     if (queue.isEmpty) return;
     final service = widget.audioPlayerService;
     final first = queue.first;
@@ -223,6 +279,54 @@ class _ForYouPageState extends State<ForYouPage> {
                           ),
                         ),
                         const SizedBox(height: 28),
+                        if (_serverRecError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Text(
+                              _serverRecError!,
+                              style: TextStyle(fontSize: 12, color: palette.textMuted),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (_serverRecTracks.isNotEmpty) ...[
+                          Text(
+                            context.t('forYou.serverPick'),
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: palette.textPrimary,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            context.t('forYou.serverPickSub'),
+                            style: TextStyle(fontSize: 13, color: palette.textSecondary),
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 196,
+                            child: ListView.separated(
+                              padding: const EdgeInsets.symmetric(horizontal: 0),
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _serverRecTracks.length,
+                              separatorBuilder: (context, _) => const SizedBox(width: 12),
+                              itemBuilder: (context, index) {
+                                final t = _serverRecTracks[index];
+                                return _ForYouTrackCard(
+                                  track: t,
+                                  palette: palette,
+                                  isDownloaded: widget.audioPlayerService.isTrackDownloaded(
+                                    AudioPlayerService.playablePath(t),
+                                  ),
+                                  onTap: () => _onServerRecTap(t),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                        ],
                         Text(
                           context.t('forYou.curated'),
                           style: TextStyle(

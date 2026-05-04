@@ -9,19 +9,23 @@ class ServerTrackListItem {
     required this.title,
     this.artist,
     this.durationSec,
+    this.genres = const [],
   });
 
   final int id;
   final String title;
   final String? artist;
   final int? durationSec;
+  final List<String> genres;
 
   factory ServerTrackListItem.fromJson(Map<String, dynamic> json) {
+    final g = json['genres'];
     return ServerTrackListItem(
       id: (json['id'] as num).toInt(),
       title: json['title'] as String? ?? '',
       artist: json['artist'] as String?,
       durationSec: (json['duration'] as num?)?.toInt(),
+      genres: g is List ? g.map((e) => e.toString()).toList() : const [],
     );
   }
 

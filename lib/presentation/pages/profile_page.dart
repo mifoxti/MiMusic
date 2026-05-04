@@ -13,6 +13,7 @@ import '../../core/social/friend_request_notifications.dart';
 import '../../core/platform/platform.dart';
 import '../../core/player/shell_route_back_guard.dart';
 import '../widgets/user_avatar.dart';
+import 'genre_preferences_page.dart';
 import 'favorites_page.dart';
 import 'friends_page.dart';
 import 'notifications_page.dart';
@@ -377,6 +378,20 @@ class ProfilePage extends StatelessWidget {
                             currentUserNickname: initialSettings.nickname,
                             audioPlayerService: audioPlayerService,
                           ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSectionCard(
+                    palette,
+                    title: context.t('profile.genrePrefs'),
+                    subtitle: context.t('profile.genrePrefsSub'),
+                    icon: Icons.tune_rounded,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        ShellMaterialPageRoute<void>(
+                          builder: (_) => const GenrePreferencesPage(),
                         ),
                       );
                     },
