@@ -6,11 +6,12 @@ import '../../../../core/audio/track.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/history/listening_history_repository.dart';
 import '../../../../core/l10n/app_localization.dart';
+import '../../../../core/network/tracks_api.dart';
 import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/social/listening_room_session.dart';
-import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cover_image.dart';
 import '../../../../presentation/pages/artist_page.dart';
@@ -47,6 +48,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   HomeSection? _section;
   List<Track> _localTracks = [];
+  List<ServerTrackListItem> _serverTracks = [];
+  String? _serverTracksError;
   bool _isLoading = true;
 
   @override
@@ -56,16 +59,28 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _load() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _serverTracksError = null;
+    });
     try {
       final results = await Future.wait([
         widget.getHomeSectionUseCase(),
         loadLocalTracks(),
       ]);
+      List<ServerTrackListItem> remote = [];
+      String? remoteErr;
+      try {
+        remote = await TracksApi().fetchTracks(limit: 25);
+      } catch (e) {
+        remoteErr = e.toString();
+      }
       if (mounted) {
         setState(() {
           _section = results[0] as HomeSection;
           _localTracks = results[1] as List<Track>;
+          _serverTracks = remote;
+          _serverTracksError = remoteErr;
           _isLoading = false;
         });
       }
@@ -139,6 +154,35 @@ class _HomePageState extends State<HomePage> {
   }) async {
     if (queue.isEmpty) return;
     await widget.audioPlayerService.playTrack(selected, queue: queue);
+  }
+
+  Track _trackFromServerItem(ServerTrackListItem e) {
+    return Track(
+      assetPath: 'server_track_${e.id}',
+      title: e.title,
+      artist: e.artist,
+      audioFilePath: e.streamUrl(),
+      coverAssetPath: e.coverUrl(),
+    );
+  }
+
+  Future<void> _playServerTrack(ServerTrackListItem item) async {
+    if (_serverTracks.isEmpty) return;
+    final queue = _serverTracks.map(_trackFromServerItem).toList();
+    final selected = _trackFromServerItem(item);
+    final same = widget.audioPlayerService.currentTrack?.audioFilePath == selected.audioFilePath;
+    if (same) {
+      await widget.audioPlayerService.togglePlayPause();
+      return;
+    }
+    await widget.audioPlayerService.playTrack(selected, queue: queue);
+  }
+
+  String _formatServerDuration(int? sec) {
+    if (sec == null || sec <= 0) return '—';
+    final m = sec ~/ 60;
+    final s = sec % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
   }
 
   void _openRecommendedPlaylists(BuildContext context) {
@@ -437,6 +481,17 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _ServerTracksDevSection(
+                      tracks: _serverTracks,
+                      errorText: _serverTracksError,
+                      palette: palette,
+                      formatDuration: _formatServerDuration,
+                      onTrackTap: _playServerTrack,
+                    ),
+                  ),
                   SizedBox(height: bottomContentInset),
                 ],
               ),
@@ -562,6 +617,139 @@ class _HomePageState extends State<HomePage> {
             },
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// Нижний блок главной: последние треки с API (для проверки, что отдаёт сервер).
+class _ServerTracksDevSection extends StatelessWidget {
+  const _ServerTracksDevSection({
+    required this.tracks,
+    required this.errorText,
+    required this.palette,
+    required this.formatDuration,
+    required this.onTrackTap,
+  });
+
+  final List<ServerTrackListItem> tracks;
+  final String? errorText;
+  final AppColorPalette palette;
+  final String Function(int? sec) formatDuration;
+  final void Function(ServerTrackListItem) onTrackTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.t('home.serverTracks'),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: palette.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+          child: AppGlass.blurredTintLayer(
+            isDark: isDark,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppGlass.tint(isDark),
+                borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                border: Border.all(color: AppGlass.border(isDark)),
+                boxShadow: AppGlass.cardShadows(isDark),
+              ),
+              child: _buildBody(context),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    if (errorText != null) {
+      return Text(
+        '${context.t('home.serverTracksError')}\n$errorText',
+        style: TextStyle(color: palette.textSecondary, fontSize: 13),
+      );
+    }
+    if (tracks.isEmpty) {
+      return Text(
+        context.t('home.serverTracksEmpty'),
+        style: TextStyle(color: palette.textSecondary, fontSize: 13),
+      );
+    }
+    return Column(
+      children: [
+        for (var i = 0; i < tracks.length; i++) ...[
+          if (i > 0) Divider(height: 1, color: palette.textMuted.withValues(alpha: 0.25)),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => onTrackTap(tracks[i]),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    buildCoverImage(
+                      imageUrl: tracks[i].coverUrl(),
+                      width: 44,
+                      height: 44,
+                      borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                      placeholder: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: palette.primaryDark.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(Icons.music_note_rounded, color: palette.textMuted, size: 22),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tracks[i].title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.textPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          if ((tracks[i].artist ?? '').isNotEmpty)
+                            Text(
+                              tracks[i].artist!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: palette.textSecondary, fontSize: 12),
+                            ),
+                          Text(
+                            'id ${tracks[i].id} · ${formatDuration(tracks[i].durationSec)}',
+                            style: TextStyle(color: palette.textMuted, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.play_circle_outline_rounded, color: palette.accent, size: 28),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

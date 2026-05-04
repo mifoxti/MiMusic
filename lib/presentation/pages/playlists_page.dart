@@ -59,6 +59,11 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     if (mounted) await _load();
   }
 
+  Future<void> _togglePlaylistLike(Playlist p) async {
+    await _repo.savePlaylist(p.copyWith(isLiked: !p.isLiked));
+    if (mounted) await _load();
+  }
+
   Future<void> _openPlaylist(Playlist playlist) async {
     await Navigator.of(context).push(
       ShellMaterialPageRoute<void>(
@@ -162,6 +167,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                             return _PlaylistTile(
                               playlist: p,
                               onTap: () => _openPlaylist(p),
+                              onToggleLike: () => _togglePlaylistLike(p),
                             );
                           },
                         ),
@@ -264,6 +270,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                       isPrivate: isPrivate,
                       coverPath: coverPath.isEmpty ? null : coverPath,
                       trackAssetPaths: existing?.trackAssetPaths ?? const [],
+                      isLiked: existing?.isLiked ?? false,
                     );
                     Navigator.pop(ctx, playlist);
                   },
@@ -282,10 +289,12 @@ class _PlaylistTile extends StatelessWidget {
   const _PlaylistTile({
     required this.playlist,
     required this.onTap,
+    required this.onToggleLike,
   });
 
   final Playlist playlist;
   final VoidCallback onTap;
+  final VoidCallback onToggleLike;
 
   @override
   Widget build(BuildContext context) {
@@ -362,7 +371,16 @@ class _PlaylistTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              IconButton(
+                tooltip: context.t('playlists.likePlaylist'),
+                onPressed: onToggleLike,
+                icon: Icon(
+                  playlist.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: playlist.isLiked ? palette.accent : palette.textMuted,
+                  size: 22,
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
               if (playlist.isPrivate)
                 Icon(
                   Icons.lock_rounded,

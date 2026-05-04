@@ -6,6 +6,7 @@ import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/player/player_dock_host.dart';
 import '../widgets/favorite_track_item.dart';
@@ -105,6 +106,21 @@ class _FavoritesPageState extends State<FavoritesPage> {
     if (mounted) _loadFavorites();
   }
 
+  /// Как на главной: диагональный градиент с акцентом.
+  LinearGradient _pageGradient(AppColorPalette palette) {
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        palette.gradientStart,
+        Color.lerp(palette.gradientStart, palette.accent, 0.35)!,
+        Color.lerp(palette.gradientMiddle, palette.accent, 0.18)!,
+        palette.gradientEnd,
+      ],
+      stops: const [0.0, 0.28, 0.62, 1.0],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
@@ -112,15 +128,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            palette.gradientStart,
-            palette.gradientMiddle,
-            palette.gradientEnd,
-          ],
-        ),
+        gradient: _pageGradient(palette),
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -156,22 +164,48 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 if (_favoriteTracks.isEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 48),
+                      padding: const EdgeInsets.fromLTRB(16, 32, 16, 48),
                       child: Center(
-                        child: Text(
-                          context.t('favorites.empty'),
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: palette.textSecondary,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                            child: Builder(
+                              builder: (ctx) {
+                                final isDark = Theme.of(ctx).brightness == Brightness.dark;
+                                final p = AppPaletteExtension.of(ctx).palette;
+                                return AppGlass.blurredTintLayer(
+                                  isDark: isDark,
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+                                    decoration: BoxDecoration(
+                                      color: AppGlass.tint(isDark),
+                                      borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                                      border: Border.all(color: AppGlass.border(isDark)),
+                                      boxShadow: AppGlass.cardShadows(isDark),
+                                    ),
+                                    child: Text(
+                                      context.t('favorites.empty'),
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        height: 1.35,
+                                        color: p.textSecondary,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                          textAlign: TextAlign.center,
                         ),
                       ),
                     ),
                   )
                 else
                   SliverPadding(
-                    padding: EdgeInsets.fromLTRB(20, 8, 20, bottomContentInset),
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, bottomContentInset),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
@@ -200,7 +234,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
   Widget _buildHeader(AppColorPalette palette, double topPadding) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, 8 + topPadding, 24, 24),
+      padding: EdgeInsets.fromLTRB(16, 8 + topPadding, 16, 20),
       child: Column(
         children: [
           _buildHeartWithRings(palette),

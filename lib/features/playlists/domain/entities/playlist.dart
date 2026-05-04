@@ -6,6 +6,7 @@ class Playlist {
     this.isPrivate = false,
     this.coverPath,
     this.trackAssetPaths = const [],
+    this.isLiked = false,
   });
 
   /// Уникальный идентификатор (локальный или серверный).
@@ -23,12 +24,16 @@ class Playlist {
   /// Идентификаторы треков (assetPath).
   final List<String> trackAssetPaths;
 
+  /// Пользователь отметил плейлист «лайком» (избранные чужие / свои в отдельном списке).
+  final bool isLiked;
+
   Playlist copyWith({
     String? id,
     String? title,
     bool? isPrivate,
     String? coverPath,
     List<String>? trackAssetPaths,
+    bool? isLiked,
   }) {
     return Playlist(
       id: id ?? this.id,
@@ -36,6 +41,7 @@ class Playlist {
       isPrivate: isPrivate ?? this.isPrivate,
       coverPath: coverPath ?? this.coverPath,
       trackAssetPaths: trackAssetPaths ?? List<String>.from(this.trackAssetPaths),
+      isLiked: isLiked ?? this.isLiked,
     );
   }
 
@@ -46,6 +52,7 @@ class Playlist {
       'isPrivate': isPrivate,
       'coverPath': coverPath,
       'trackAssetPaths': trackAssetPaths,
+      'isLiked': isLiked,
     };
   }
 
@@ -57,6 +64,7 @@ class Playlist {
       isPrivate: (json['isPrivate'] as bool?) ?? false,
       coverPath: json['coverPath'] as String?,
       trackAssetPaths: paths is List ? List<String>.from(paths.map((e) => e.toString())) : const [],
+      isLiked: (json['isLiked'] as bool?) ?? false,
     );
   }
 }
