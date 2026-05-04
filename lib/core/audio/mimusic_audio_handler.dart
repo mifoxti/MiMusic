@@ -69,7 +69,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         audioPipeline: AudioPipeline(androidAudioEffects: [eq]),
       );
       _androidEqualizer = eq;
-      eq.setEnabled(true);
+      // Включается после применения настроек; при плоской кривой остаётся выкл. (меньше окраски/артефактов).
+      eq.setEnabled(false);
     }
   }
 
@@ -575,40 +576,51 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  Future<void> _applyEqualizerFromSettings() async {
-    if (_androidEqualizer == null) return;
-    final repo = _handlerSettingsRepository;
-    if (repo == null) return;
+  /// «Басс-буст» распределяем по двум нижним полосам, чтобы один пиковый фильтр не перегружал сигнал.
+  /// При нулевых полосах и преампе DSP отключается (меньше шумов/искажений на части устройств).
+  Future<void> _syncAndroidEqualizer(List<double> gains, double preamp) async {
+    final eq = _androidEqualizer;
+    if (eq == null) return;
     try {
-      await _androidEqualizer!.setEnabled(true);
-      final settings = await repo.getSettings();
-      final params = await _androidEqualizer!.parameters;
+      final params = await eq.parameters;
       final bands = params.bands;
-      final gains = settings.equalizerGains;
-      final preamp = settings.equalizerPreamp;
-      for (var i = 0; i < bands.length; i++) {
+      final n = bands.length;
+      var flat = preamp.abs() < 0.05;
+      for (var i = 0; i < n && flat; i++) {
+        final g = i < gains.length ? gains[i] : 0.0;
+        if (g.abs() >= 0.05) flat = false;
+      }
+      await eq.setEnabled(!flat);
+      if (flat) return;
+
+      for (var i = 0; i < n; i++) {
         var gain = i < gains.length ? gains[i] : 0.0;
-        if (i == 0) gain += preamp;
+        if (n >= 2) {
+          if (i == 0) gain += preamp * 0.55;
+          if (i == 1) gain += preamp * 0.45;
+        } else if (i == 0) {
+          gain += preamp;
+        }
         await bands[i].setGain(gain.clamp(params.minDecibels, params.maxDecibels));
       }
     } catch (_) {}
   }
 
-  Future<void> _applyEqualizerGains(List<double> gains) async {
-    if (_androidEqualizer == null) return;
+  Future<void> _applyEqualizerFromSettings() async {
     final repo = _handlerSettingsRepository;
     if (repo == null) return;
     try {
-      await _androidEqualizer!.setEnabled(true);
       final settings = await repo.getSettings();
-      final params = await _androidEqualizer!.parameters;
-      final bands = params.bands;
-      final preamp = settings.equalizerPreamp;
-      for (var i = 0; i < bands.length; i++) {
-        var gain = i < gains.length ? gains[i] : 0.0;
-        if (i == 0) gain += preamp;
-        await bands[i].setGain(gain.clamp(params.minDecibels, params.maxDecibels));
-      }
+      await _syncAndroidEqualizer(settings.equalizerGains, settings.equalizerPreamp);
+    } catch (_) {}
+  }
+
+  Future<void> _applyEqualizerGains(List<double> gains) async {
+    final repo = _handlerSettingsRepository;
+    if (repo == null) return;
+    try {
+      final settings = await repo.getSettings();
+      await _syncAndroidEqualizer(gains, settings.equalizerPreamp);
     } catch (_) {}
   }
 

@@ -10,7 +10,7 @@ import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 
-/// Пресет эквалайзера: название и значения полос [60, 230, 910, 3600, 14000] Hz в дБ.
+/// Пресет эквалайзера: название и усиление полос в дБ (подписи на экране ориентировочные; центры полос задаёт Android).
 class _EqualizerPreset {
   const _EqualizerPreset(this.name, this.gains);
 
@@ -38,24 +38,38 @@ class EqualizerPage extends StatefulWidget {
 
 class _EqualizerPageState extends State<EqualizerPage> {
   static const int _bands = 5;
+  /// Узкий диапазон ±6 дБ: меньше клиппинга и резких провалов между полосами.
+  static const double _eqMinDb = -6;
+  static const double _eqMaxDb = 6;
   static const List<String> _labels = ['60', '230', '910', '3.6k', '14k'];
 
   List<_EqualizerPreset> _presets(BuildContext context) => [
     _EqualizerPreset(context.t('equalizer.preset.flat'), [0, 0, 0, 0, 0]),
-    _EqualizerPreset(context.t('equalizer.preset.bass'), [6, 4, 0, -2, -2]),
-    _EqualizerPreset(context.t('equalizer.preset.treble'), [-2, -1, 0, 2, 6]),
-    _EqualizerPreset(context.t('equalizer.preset.vocal'), [-1, 2, 4, 2, -1]),
-    _EqualizerPreset(context.t('equalizer.preset.rock'), [5, 3, 0, 2, 4]),
-    _EqualizerPreset(context.t('equalizer.preset.jazz'), [4, 2, -1, 1, 3]),
-    _EqualizerPreset(context.t('equalizer.preset.pop'), [2, 1, 0, -1, 2]),
-    _EqualizerPreset(context.t('equalizer.preset.classic'), [3, 1, 1, 2, 3]),
+    _EqualizerPreset(context.t('equalizer.preset.bass'), [3, 2, 0, -1, -1]),
+    _EqualizerPreset(context.t('equalizer.preset.treble'), [-1, -1, 0, 1, 3]),
+    _EqualizerPreset(context.t('equalizer.preset.vocal'), [-1, 1, 2, 1, -1]),
+    _EqualizerPreset(context.t('equalizer.preset.rock'), [2, 2, 0, 1, 2]),
+    _EqualizerPreset(context.t('equalizer.preset.jazz'), [2, 1, -1, 1, 2]),
+    _EqualizerPreset(context.t('equalizer.preset.pop'), [1, 1, 0, -1, 1]),
+    _EqualizerPreset(context.t('equalizer.preset.classic'), [2, 1, 1, 1, 2]),
   ];
 
-  static const List<double> _dbTicks = [-12, -6, 0, 6, 12];
+  static const List<double> _dbTicks = [-6, -3, 0, 3, 6];
 
   late List<double> _gains;
   late double _preamp;
   int? _selectedPresetIndex;
+  Timer? _eqApplyDebounce;
+  Timer? _eqSaveDebounce;
+
+  double _clampDb(double v) => v.clamp(_eqMinDb, _eqMaxDb);
+
+  void _clampGainsInPlace() {
+    for (var i = 0; i < _bands; i++) {
+      _gains[i] = _clampDb(_gains[i]);
+    }
+    _preamp = _clampDb(_preamp);
+  }
 
   @override
   void initState() {
@@ -63,6 +77,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
     final g = widget.initialSettings.equalizerGains;
     _gains = List.generate(_bands, (i) => i < g.length ? g[i] : 0.0);
     _preamp = widget.initialSettings.equalizerPreamp;
+    _clampGainsInPlace();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_reloadEqualizerFromStorage());
     });
@@ -76,6 +91,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
       final g = s.equalizerGains;
       _gains = List.generate(_bands, (i) => i < g.length ? g[i] : 0.0);
       _preamp = s.equalizerPreamp;
+      _clampGainsInPlace();
     });
   }
 
@@ -87,22 +103,45 @@ class _EqualizerPageState extends State<EqualizerPage> {
     await widget.audioPlayerService.applyEqualizerFromSettings();
   }
 
+  void _scheduleApplyGainsDebounced() {
+    _eqApplyDebounce?.cancel();
+    _eqApplyDebounce = Timer(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      unawaited(widget.audioPlayerService.applyEqualizerGains(_gains));
+    });
+  }
+
+  void _scheduleSaveDebounced() {
+    _eqSaveDebounce?.cancel();
+    _eqSaveDebounce = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      unawaited(_saveEqualizer());
+    });
+  }
+
   @override
   void dispose() {
+    _eqApplyDebounce?.cancel();
+    _eqSaveDebounce?.cancel();
     unawaited(_saveEqualizer());
     super.dispose();
   }
 
   Future<void> _applyPreset(int index) async {
+    _eqApplyDebounce?.cancel();
+    _eqSaveDebounce?.cancel();
     setState(() {
       _selectedPresetIndex = index;
       _gains = List<double>.from(_presets(context)[index].gains);
+      _clampGainsInPlace();
     });
     await widget.audioPlayerService.applyEqualizerGains(_gains);
     await _saveEqualizer();
   }
 
   Future<void> _reset() async {
+    _eqApplyDebounce?.cancel();
+    _eqSaveDebounce?.cancel();
     setState(() {
       _gains = List.filled(_bands, 0.0);
       _preamp = 0.0;
@@ -310,13 +349,17 @@ class _EqualizerPageState extends State<EqualizerPage> {
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
             ),
             child: Slider(
-              value: _preamp.clamp(-12.0, 12.0),
-              min: -12,
-              max: 12,
+              value: _preamp.clamp(_eqMinDb, _eqMaxDb),
+              min: _eqMinDb,
+              max: _eqMaxDb,
               divisions: 24,
-              onChanged: (v) async {
+              onChanged: (v) {
                 setState(() => _preamp = v);
-                await _saveEqualizer();
+                _scheduleSaveDebounced();
+              },
+              onChangeEnd: (_) {
+                _eqSaveDebounce?.cancel();
+                unawaited(_saveEqualizer());
               },
             ),
           ),
@@ -407,18 +450,20 @@ class _EqualizerPageState extends State<EqualizerPage> {
                                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
                                     ),
                                     child: Slider(
-                                      value: _gains[i].clamp(-12.0, 12.0),
-                                      min: -12,
-                                      max: 12,
+                                      value: _gains[i].clamp(_eqMinDb, _eqMaxDb),
+                                      min: _eqMinDb,
+                                      max: _eqMaxDb,
                                       divisions: 24,
-                                      onChanged: (v) async {
+                                      onChanged: (v) {
                                         setState(() {
                                           _gains[i] = v;
                                           _selectedPresetIndex = null;
                                         });
-                                        await widget.audioPlayerService.applyEqualizerGains(_gains);
+                                        _scheduleApplyGainsDebounced();
                                       },
                                       onChangeEnd: (_) {
+                                        _eqApplyDebounce?.cancel();
+                                        unawaited(widget.audioPlayerService.applyEqualizerGains(_gains));
                                         unawaited(_saveEqualizer());
                                       },
                                     ),
