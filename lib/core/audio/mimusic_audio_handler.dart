@@ -330,8 +330,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final t = _queue[_queueIndex];
     final path = t['path'] as String? ?? '';
     if (path.isEmpty) return;
+    final stableId = (t['itemId'] as String?)?.trim();
     repo.recordPlayback(
-      playablePath: path,
+      playablePath: (stableId != null && stableId.isNotEmpty) ? stableId : path,
       title: t['title'] as String? ?? '',
       artist: t['artist'] as String?,
       coverAssetPath: t['artPath'] as String?,
@@ -342,11 +343,16 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_queueIndex < 0 || _queueIndex >= _queue.length) return;
     final t = _queue[_queueIndex];
     final path = t['path'] as String? ?? '';
+    final itemId = (t['itemId'] as String?)?.trim();
+    final mediaId = (itemId != null && itemId.isNotEmpty) ? itemId : path;
     final artPath = t['artPath'] as String?;
-    Uri? coverUri = await _coverUriFromPath(artPath: artPath);
+    Uri? coverUri = await _coverUriFromPath(
+      artPath: artPath,
+      artUri: t['artUri'] as String?,
+    );
     final duration = _player.duration ?? Duration.zero;
     mediaItem.add(MediaItem(
-      id: path,
+      id: mediaId,
       title: t['title'] as String? ?? '',
       artist: t['artist'] as String? ?? '',
       duration: duration,
@@ -370,6 +376,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       title: t['title'] as String? ?? '',
       artist: t['artist'] as String?,
       artPath: t['artPath'] as String?,
+      artUri: t['artUri'] as String?,
+      mediaItemId: t['itemId'] as String?,
       queue: _queue,
     );
   }
@@ -378,7 +386,10 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_queue.isEmpty || _queueIndex < 0 || _queueIndex >= _queue.length) {
       return null;
     }
-    final p = _queue[_queueIndex]['path'] as String?;
+    final row = _queue[_queueIndex];
+    final id = (row['itemId'] as String?)?.trim();
+    if (id != null && id.isNotEmpty) return id;
+    final p = row['path'] as String?;
     if (p == null || p.isEmpty) return null;
     return p;
   }
@@ -498,6 +509,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     String? artist,
     String? artPath,
     String? artUri,
+    String? mediaItemId,
     List<Map<String, dynamic>>? queue,
   }) async {
     if (queue != null && queue.isNotEmpty) {
@@ -506,13 +518,30 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       if (_queueIndex < 0) _queueIndex = 0;
     } else {
       _queue = [
-        {'path': path, 'title': title, 'artist': artist, 'artPath': artPath, 'artUri': artUri}
+        {
+          'path': path,
+          'title': title,
+          'artist': artist,
+          'artPath': artPath,
+          'artUri': artUri,
+          if (mediaItemId != null && mediaItemId.trim().isNotEmpty)
+            'itemId': mediaItemId.trim(),
+        },
       ];
       _queueIndex = 0;
     }
     Uri? coverUri = await _coverUriFromPath(artPath: artPath, artUri: artUri);
+    final resolvedMediaId = () {
+      final trimmed = mediaItemId?.trim();
+      if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+      if (_queueIndex >= 0 && _queueIndex < _queue.length) {
+        final id = (_queue[_queueIndex]['itemId'] as String?)?.trim();
+        if (id != null && id.isNotEmpty) return id;
+      }
+      return path;
+    }();
     final item = MediaItem(
-      id: path,
+      id: resolvedMediaId,
       title: title,
       artist: artist ?? '',
       artUri: coverUri,
@@ -643,6 +672,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
           artist: artist,
           artPath: artPath,
           artUri: extras?['artUri'] as String?,
+          mediaItemId: extras?['itemId'] as String?,
           queue: queue,
         );
         break;

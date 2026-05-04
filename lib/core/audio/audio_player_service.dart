@@ -106,8 +106,8 @@ class AudioPlayerService extends ChangeNotifier {
 
   Track _trackFromMediaItem(MediaItem item) {
     final fromQueue = _activeQueue.where((t) {
-      final playable = playablePath(t);
-      return playable == item.id || t.assetPath == item.id;
+      final play = playablePath(t);
+      return play == item.id || t.assetPath == item.id;
     }).toList();
     if (fromQueue.isNotEmpty) {
       final base = fromQueue.first;
@@ -162,12 +162,14 @@ class AudioPlayerService extends ChangeNotifier {
     final path = playablePath(track);
     final queueMaps = queue?.map((t) => {
       'path': playablePath(t),
+      'itemId': t.assetPath,
       'title': t.title,
       'artist': t.artist,
       'artPath': t.coverFallbackPath,
     }).toList();
     await _handler.customAction('playAsset', {
       'path': path,
+      'itemId': track.assetPath,
       'title': track.title,
       'artist': track.artist,
       'artPath': track.coverFallbackPath,

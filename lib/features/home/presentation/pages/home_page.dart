@@ -170,7 +170,7 @@ class _HomePageState extends State<HomePage> {
     if (_serverTracks.isEmpty) return;
     final queue = _serverTracks.map(_trackFromServerItem).toList();
     final selected = _trackFromServerItem(item);
-    final same = widget.audioPlayerService.currentTrack?.audioFilePath == selected.audioFilePath;
+    final same = widget.audioPlayerService.currentTrack?.assetPath == selected.assetPath;
     if (same) {
       await widget.audioPlayerService.togglePlayPause();
       return;
