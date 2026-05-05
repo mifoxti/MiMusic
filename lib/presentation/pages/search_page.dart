@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
@@ -12,8 +14,14 @@ import '../../features/home/domain/entities/listening_friend.dart';
 import '../../features/home/domain/entities/release_item.dart';
 import '../../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../../core/player/player_dock_host.dart';
+import '../../core/auth/auth_session_store.dart';
+import '../../core/network/playlists_api.dart';
+import '../../core/network/users_api.dart';
 import '../../core/player/shell_route_back_guard.dart';
+import '../../features/playlists/data/repositories/remote_playlists_repository.dart';
+import '../../features/playlists/domain/repositories/playlists_repository.dart';
 import 'artist_page.dart';
+import 'playlist_detail_page.dart';
 
 /// Режим поиска: музыка (треки + релизы как альбомы) или пользователи.
 enum _SearchMode { music, people }
@@ -24,29 +32,33 @@ class SearchPage extends StatefulWidget {
     super.key,
     required this.audioPlayerService,
     required this.getHomeSectionUseCase,
+    required this.playlistsRepository,
   });
 
   final AudioPlayerService audioPlayerService;
   final GetHomeSectionUseCase getHomeSectionUseCase;
+  final PlaylistsRepository playlistsRepository;
 
   @override
   State<SearchPage> createState() => _SearchPageState();
 }
 
 class _SearchPageState extends State<SearchPage> {
-  static const List<ListeningFriend> _fallbackFriends = [
-    ListeningFriend(username: 'alexwave'),
-    ListeningFriend(username: 'lofi_nora'),
-  ];
-
   final TextEditingController _queryController = TextEditingController();
   _SearchMode _mode = _SearchMode.music;
 
   List<Track> _allTracks = [];
   List<ReleaseItem> _releases = [];
-  List<ListeningFriend> _friends = [];
   List<String> _suggestionArtists = [];
   bool _loading = true;
+  Timer? _playlistSearchDebounce;
+  List<PublicPlaylistItemRemote> _publicPlaylistResults = [];
+  bool _playlistSearchBusy = false;
+  Timer? _peopleSearchDebounce;
+  List<ListeningFriend> _peopleResults = [];
+  bool _peopleSearchBusy = false;
+  /// В выдаче был только текущий пользователь — показываем шутку вместо «не найдено».
+  bool _peopleSearchOnlySelf = false;
 
   @override
   void initState() {
@@ -57,6 +69,8 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   void dispose() {
+    _playlistSearchDebounce?.cancel();
+    _peopleSearchDebounce?.cancel();
     _queryController.removeListener(_onQueryChanged);
     _queryController.dispose();
     super.dispose();
@@ -64,6 +78,100 @@ class _SearchPageState extends State<SearchPage> {
 
   void _onQueryChanged() {
     setState(() {});
+    _schedulePublicPlaylistSearch();
+    _schedulePeopleSearch();
+  }
+
+  void _schedulePublicPlaylistSearch() {
+    _playlistSearchDebounce?.cancel();
+    if (_mode != _SearchMode.music) return;
+    if (_query.trim().isEmpty) {
+      setState(() {
+        _publicPlaylistResults = [];
+        _playlistSearchBusy = false;
+      });
+      return;
+    }
+    _playlistSearchDebounce = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted) return;
+      setState(() => _playlistSearchBusy = true);
+      try {
+        final list = await PlaylistsApi().fetchPublicPlaylists(query: _query.trim(), limit: 40);
+        if (!mounted) return;
+        setState(() {
+          _publicPlaylistResults = list;
+          _playlistSearchBusy = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _publicPlaylistResults = [];
+          _playlistSearchBusy = false;
+        });
+      }
+    });
+  }
+
+  void _schedulePeopleSearch() {
+    _peopleSearchDebounce?.cancel();
+    if (_mode != _SearchMode.people) return;
+    final q = _query.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _peopleResults = [];
+        _peopleSearchBusy = false;
+        _peopleSearchOnlySelf = false;
+      });
+      return;
+    }
+    if (q.length < 2) {
+      setState(() {
+        _peopleResults = [];
+        _peopleSearchBusy = false;
+        _peopleSearchOnlySelf = false;
+      });
+      return;
+    }
+    _peopleSearchDebounce = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted) return;
+      setState(() {
+        _peopleSearchBusy = true;
+        _peopleSearchOnlySelf = false;
+      });
+      try {
+        final rows = await UsersApi().searchUsers(q);
+        if (!mounted) return;
+        final acc = await AuthSessionStore.readAccount();
+        final myId = acc?.userId;
+        final bust = DateTime.now().millisecondsSinceEpoch;
+        final others =
+            myId == null ? rows : rows.where((u) => u.id != myId).toList(growable: false);
+        final onlySelf = myId != null &&
+            rows.isNotEmpty &&
+            others.isEmpty &&
+            rows.every((u) => u.id == myId);
+        if (!mounted) return;
+        setState(() {
+          _peopleSearchOnlySelf = onlySelf;
+          _peopleResults = others
+              .map(
+                (u) => ListeningFriend(
+                  username: u.nickname,
+                  avatarUrl: userAvatarUrl(u.id, cacheBust: bust),
+                ),
+              )
+              .toList();
+          _peopleSearchBusy = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _peopleResults = [];
+          _peopleSearchBusy = false;
+          _peopleSearchOnlySelf = false;
+        });
+      }
+    });
   }
 
   Future<void> _load() async {
@@ -75,9 +183,6 @@ class _SearchPageState extends State<SearchPage> {
       setState(() {
         _allTracks = tracks;
         _releases = section.latestReleases;
-        _friends = section.listeningFriends.isEmpty
-            ? _fallbackFriends
-            : section.listeningFriends;
         _suggestionArtists = section.historyArtists;
         _loading = false;
       });
@@ -110,14 +215,6 @@ class _SearchPageState extends State<SearchPage> {
     if (q.isEmpty) return [];
     return _releases
         .where((r) => r.title.toLowerCase().contains(q))
-        .toList();
-  }
-
-  List<ListeningFriend> get _filteredFriends {
-    final q = _query.toLowerCase();
-    if (q.isEmpty) return [];
-    return _friends
-        .where((f) => f.username.toLowerCase().contains(q))
         .toList();
   }
 
@@ -380,7 +477,11 @@ class _SearchPageState extends State<SearchPage> {
               selected: _mode == _SearchMode.music,
               palette: palette,
               isDark: isDark,
-              onTap: () => setState(() => _mode = _SearchMode.music),
+              onTap: () {
+                setState(() => _mode = _SearchMode.music);
+                _peopleSearchDebounce?.cancel();
+                _schedulePublicPlaylistSearch();
+              },
             ),
           ),
           const SizedBox(width: 4),
@@ -391,7 +492,11 @@ class _SearchPageState extends State<SearchPage> {
               selected: _mode == _SearchMode.people,
               palette: palette,
               isDark: isDark,
-              onTap: () => setState(() => _mode = _SearchMode.people),
+              onTap: () {
+                setState(() => _mode = _SearchMode.people);
+                _playlistSearchDebounce?.cancel();
+                _schedulePeopleSearch();
+              },
             ),
           ),
         ],
@@ -402,7 +507,8 @@ class _SearchPageState extends State<SearchPage> {
   List<Widget> _buildMusicResultsSlivers(AppColorPalette palette) {
     final albums = _filteredAlbums;
     final tracks = _filteredTracks;
-    if (albums.isEmpty && tracks.isEmpty) {
+    final playlists = _publicPlaylistResults;
+    if (albums.isEmpty && tracks.isEmpty && playlists.isEmpty && !_playlistSearchBusy) {
       return [
         SliverToBoxAdapter(
           child: Padding(
@@ -422,6 +528,72 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     final children = <Widget>[];
+
+    if (_playlistSearchBusy && _query.isNotEmpty) {
+      children.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+            child: LinearProgressIndicator(
+              minHeight: 3,
+              borderRadius: BorderRadius.circular(99),
+              color: palette.accent,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (playlists.isNotEmpty) {
+      children.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+            child: Text(
+              context.t('search.playlists'),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: palette.textMuted,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+        ),
+      );
+      children.add(
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final p = playlists[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _PublicPlaylistSearchTile(
+                    item: p,
+                    palette: palette,
+                    audioPlayerService: widget.audioPlayerService,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        ShellMaterialPageRoute<void>(
+                          builder: (_) => PlaylistDetailPage(
+                            playlistId: RemotePlaylistsRepository.idForServer(p.id),
+                            audioPlayerService: widget.audioPlayerService,
+                            repository: widget.playlistsRepository,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+              childCount: playlists.length,
+            ),
+          ),
+        ),
+      );
+    }
 
     if (albums.isNotEmpty) {
       children.add(
@@ -470,7 +642,7 @@ class _SearchPageState extends State<SearchPage> {
       children.add(
         SliverToBoxAdapter(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(20, albums.isNotEmpty ? 12 : 8, 20, 8),
+            padding: EdgeInsets.fromLTRB(20, (albums.isNotEmpty || playlists.isNotEmpty) ? 12 : 8, 20, 8),
             child: Text(
               context.t('search.tracks'),
               style: TextStyle(
@@ -517,9 +689,65 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   List<Widget> _buildPeopleResultsSlivers(AppColorPalette palette) {
-    final users = _filteredFriends;
-    if (users.isEmpty) {
+    final q = _query.trim();
+    if (q.length == 1) {
       return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 40, 24, 120),
+            child: Center(
+              child: Text(
+                context.t('search.peopleMinChars'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: palette.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    final children = <Widget>[];
+    if (_peopleSearchBusy && q.length >= 2) {
+      children.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+            child: LinearProgressIndicator(
+              minHeight: 3,
+              borderRadius: BorderRadius.circular(99),
+              color: palette.accent,
+            ),
+          ),
+        ),
+      );
+    }
+    final users = q.length >= 2 ? _peopleResults : const <ListeningFriend>[];
+    if (q.length >= 2 && !_peopleSearchBusy && users.isEmpty && _peopleSearchOnlySelf) {
+      children.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 40, 24, 120),
+            child: Center(
+              child: Text(
+                context.t('search.peopleSelfSnark'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  height: 1.35,
+                  color: palette.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      return children;
+    }
+    if (q.length >= 2 && !_peopleSearchBusy && users.isEmpty) {
+      children.add(
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 40, 24, 120),
@@ -534,9 +762,13 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ),
         ),
-      ];
+      );
+      return children;
     }
-    return [
+    if (users.isEmpty) {
+      return children;
+    }
+    children.add(
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
         sliver: SliverList(
@@ -566,7 +798,8 @@ class _SearchPageState extends State<SearchPage> {
           ),
         ),
       ),
-    ];
+    );
+    return children;
   }
 }
 
@@ -845,6 +1078,298 @@ class _SearchTrackTile extends StatelessWidget {
   }
 }
 
+class _PublicPlaylistSearchTile extends StatefulWidget {
+  const _PublicPlaylistSearchTile({
+    required this.item,
+    required this.palette,
+    required this.audioPlayerService,
+    required this.onTap,
+  });
+
+  final PublicPlaylistItemRemote item;
+  final AppColorPalette palette;
+  final AudioPlayerService audioPlayerService;
+  final VoidCallback onTap;
+
+  @override
+  State<_PublicPlaylistSearchTile> createState() => _PublicPlaylistSearchTileState();
+}
+
+class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
+  late int _likesCount;
+  bool _liked = false;
+  bool _likeBusy = false;
+  bool _canUseLike = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _likesCount = widget.item.likesCount;
+    _initLike();
+  }
+
+  Future<void> _initLike() async {
+    final acc = await AuthSessionStore.readAccount();
+    final ok = acc != null &&
+        acc.sessionToken.trim().isNotEmpty &&
+        acc.userId != null;
+    if (!mounted) return;
+    setState(() => _canUseLike = ok);
+    if (!ok) return;
+    try {
+      final st = await PlaylistsApi().getPlaylistLike(widget.item.id);
+      if (!mounted) return;
+      setState(() {
+        _liked = st.liked;
+        _likesCount = st.likesCount;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggleLike() async {
+    if (!_canUseLike || _likeBusy) return;
+    setState(() => _likeBusy = true);
+    try {
+      final st = await PlaylistsApi().postPlaylistLike(widget.item.id);
+      if (!mounted) return;
+      setState(() {
+        _liked = st.liked;
+        _likesCount = st.likesCount;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Localizations.localeOf(context).languageCode == 'en'
+                ? 'Could not update like'
+                : 'Не удалось обновить лайк',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _likeBusy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final palette = widget.palette;
+    final title = (item.title ?? '').trim().isEmpty ? '—' : item.title!.trim();
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
+    final sub = isEn
+        ? '${item.trackCount} tracks · ♥ $_likesCount'
+        : '${item.trackCount} треков · ♥ $_likesCount';
+    final nick = (item.ownerNickname ?? '').trim();
+    final authorLabel = nick.isNotEmpty ? '@$nick' : (isEn ? 'Author' : 'Автор');
+    final coverUrl = playlistCoverUrl(item.id);
+    final authorAvatar = userAvatarUrl(item.ownerUserId);
+    final placeholder = Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: palette.primaryDark.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+      ),
+      child: Icon(Icons.queue_music_rounded, color: palette.textMuted),
+    );
+    return Material(
+      color: palette.cardBackground.withValues(alpha: 0.85),
+      borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: buildTrackCover(
+                    coverSource: coverUrl,
+                    width: 56,
+                    height: 56,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                    placeholder: placeholder,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: palette.textPrimary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      sub,
+                      style: TextStyle(fontSize: 13, color: palette.textSecondary),
+                    ),
+                    const SizedBox(height: 6),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            ShellMaterialPageRoute<void>(
+                              builder: (_) => ArtistPage(
+                                artistName: nick.isNotEmpty ? nick : authorLabel,
+                                coverImageUrl: authorAvatar,
+                                audioPlayerService: widget.audioPlayerService,
+                              ),
+                            ),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ClipOval(
+                                child: Image.network(
+                                  authorAvatar,
+                                  width: 22,
+                                  height: 22,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Container(
+                                    width: 22,
+                                    height: 22,
+                                    color: palette.primaryDark.withValues(alpha: 0.5),
+                                    alignment: Alignment.center,
+                                    child: Icon(
+                                      Icons.person_rounded,
+                                      size: 14,
+                                      color: palette.textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  authorLabel,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: palette.accent,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_canUseLike)
+                IconButton(
+                  tooltip: isEn ? 'Like' : 'Лайк',
+                  onPressed: _likeBusy ? null : _toggleLike,
+                  icon: _likeBusy
+                      ? SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: palette.accent,
+                          ),
+                        )
+                      : Icon(
+                          _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          color: _liked ? palette.accent : palette.textMuted,
+                        ),
+                )
+              else
+                const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, color: palette.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PeopleSearchAvatar extends StatelessWidget {
+  const _PeopleSearchAvatar({
+    required this.palette,
+    required this.initial,
+    required this.imageUrl,
+  });
+
+  final AppColorPalette palette;
+  final String initial;
+  final String? imageUrl;
+
+  static const double _d = 56;
+
+  Widget _fallback() {
+    return CircleAvatar(
+      radius: 28,
+      backgroundColor: palette.accent.withValues(alpha: 0.25),
+      child: Text(
+        initial,
+        style: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: palette.textPrimary,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = imageUrl?.trim();
+    if (url == null || url.isEmpty) return _fallback();
+    return ClipOval(
+      child: Image.network(
+        url,
+        width: _d,
+        height: _d,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _fallback(),
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return SizedBox(
+            width: _d,
+            height: _d,
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: palette.accent,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _UserResultTile extends StatelessWidget {
   const _UserResultTile({
     required this.friend,
@@ -881,17 +1406,10 @@ class _UserResultTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: palette.accent.withValues(alpha: 0.25),
-                child: Text(
-                  initial,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: palette.textPrimary,
-                  ),
-                ),
+              _PeopleSearchAvatar(
+                palette: palette,
+                initial: initial,
+                imageUrl: friend.avatarUrl,
               ),
               const SizedBox(width: 14),
               Expanded(
