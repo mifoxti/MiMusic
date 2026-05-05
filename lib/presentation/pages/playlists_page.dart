@@ -421,6 +421,18 @@ class _PlaylistCoverPreview extends StatelessWidget {
       ),
     );
     if (coverPath.isEmpty) return placeholder;
+    if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+        child: buildTrackCover(
+          coverSource: coverPath,
+          width: size,
+          height: size,
+          borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+          placeholder: placeholder,
+        ),
+      );
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
       child: SizedBox(

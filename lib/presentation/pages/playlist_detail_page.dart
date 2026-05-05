@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/auth/auth_session_store.dart';
+import '../../core/network/api_config.dart';
+import '../../core/network/playlists_api.dart';
+import '../../core/network/tracks_api.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/platform/cover_pick_save.dart';
@@ -11,9 +15,11 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
 import '../../features/playlists/domain/entities/playlist.dart';
-import '../../features/playlists/domain/repositories/playlists_repository.dart';
 import '../../features/playlists/data/repositories/local_playlists_repository.dart';
+import '../../features/playlists/domain/repositories/playlists_repository.dart';
 import '../../features/player/presentation/widgets/full_player_track_menu.dart';
+import '../../core/player/shell_route_back_guard.dart';
+import 'artist_page.dart';
 
 /// Детальная страница плейлиста: обложка, название, список треков и меню «три точки».
 class PlaylistDetailPage extends StatefulWidget {
@@ -39,6 +45,14 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   Playlist? _playlist;
   List<Track> _tracks = [];
   bool _loading = true;
+  int? _ownerUserId;
+  String? _ownerNickname;
+  bool _detailIsPublic = false;
+  bool _isPlaylistOwner = true;
+  bool _sessionLoggedIn = false;
+  int _playlistLikesCount = 0;
+  bool _playlistLiked = false;
+  bool _likeBusy = false;
 
   @override
   void initState() {
@@ -47,7 +61,15 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _ownerUserId = null;
+      _ownerNickname = null;
+      _detailIsPublic = false;
+      _isPlaylistOwner = true;
+      _playlistLikesCount = 0;
+      _playlistLiked = false;
+    });
     final playlist = await _repo.getPlaylist(widget.playlistId);
     if (playlist == null) {
       if (mounted) {
@@ -58,6 +80,52 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         });
       }
       return;
+    }
+    final sid = parseServerPlaylistId(widget.playlistId);
+    if (sid != null) {
+      try {
+        final d = await PlaylistsApi().fetchPlaylistDetail(sid);
+        final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
+        final serverTracks = d.tracks.map((t) {
+          final id = t.trackId;
+          return Track(
+            assetPath: 'server_track_$id',
+            title: (t.title ?? '').trim().isEmpty ? '—' : t.title!.trim(),
+            artist: t.artist,
+            audioFilePath: '$base/tracks/$id/stream',
+            coverAssetPath: '$base/tracks/$id/cover',
+          );
+        }).toList();
+        final acc = await AuthSessionStore.readAccount();
+        final uid = acc?.userId;
+        final loggedIn = acc != null && acc.sessionToken.trim().isNotEmpty;
+        var liked = false;
+        var likesCount = d.likesCount;
+        if (d.isPublic && loggedIn) {
+          try {
+            final st = await PlaylistsApi().getPlaylistLike(sid);
+            liked = st.liked;
+            likesCount = st.likesCount;
+          } catch (_) {}
+        }
+        if (mounted) {
+          setState(() {
+            _playlist = playlist;
+            _tracks = serverTracks;
+            _loading = false;
+            _ownerUserId = d.ownerUserId;
+            _ownerNickname = d.ownerNickname;
+            _detailIsPublic = d.isPublic;
+            _sessionLoggedIn = loggedIn;
+            _isPlaylistOwner = uid != null && uid == d.ownerUserId;
+            _playlistLiked = liked;
+            _playlistLikesCount = likesCount;
+          });
+        }
+        return;
+      } catch (_) {
+        /* fallback local */
+      }
     }
     final allTracks = await loadLocalTracks();
     final ids = playlist.trackAssetPaths.toSet();
@@ -72,6 +140,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   }
 
   Future<void> _edit() async {
+    if (!_isPlaylistOwner) return;
     final current = _playlist;
     if (current == null) return;
     final updated = await _showEditDialog(context, existing: current);
@@ -81,8 +150,86 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   }
 
   Future<void> _addTracks() async {
+    if (!_isPlaylistOwner) return;
     final current = _playlist;
     if (current == null) return;
+    final acc = await AuthSessionStore.readAccount();
+    final useServer = acc != null &&
+        acc.sessionToken.trim().isNotEmpty &&
+        acc.userId != null &&
+        _repo is! LocalPlaylistsRepository;
+    if (useServer) {
+      List<ServerTrackListItem> catalog;
+      try {
+        catalog = await TracksApi().fetchTracks(limit: 200);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(Localizations.localeOf(context).languageCode == 'en' ? 'Could not load tracks' : 'Не удалось загрузить треки')),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      final currentIds = current.trackAssetPaths.toSet();
+      var selected = <String>{...currentIds};
+      final picked = await showDialog<List<String>>(
+        context: context,
+        useRootNavigator: true,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (context, setSt) {
+              return AlertDialog(
+                title: Text(context.t('playlists.addTracksDialog')),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: catalog.isEmpty
+                      ? Text(context.t('playlists.noLocalTracks'))
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: catalog.length,
+                          itemBuilder: (context, index) {
+                            final e = catalog[index];
+                            final path = 'server_track_${e.id}';
+                            final added = selected.contains(path);
+                            return CheckboxListTile(
+                              title: Text(e.title, style: const TextStyle(fontSize: 13)),
+                              subtitle: (e.artist ?? '').isNotEmpty
+                                  ? Text(e.artist!, style: const TextStyle(fontSize: 12))
+                                  : null,
+                              value: added,
+                              onChanged: (v) {
+                                setSt(() {
+                                  if (v == true) {
+                                    selected.add(path);
+                                  } else {
+                                    selected.remove(path);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.cancel'))),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, selected.toList()),
+                    child: Text(Localizations.localeOf(context).languageCode == 'en' ? 'Done' : 'Готово'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+      if (picked == null) return;
+      final updated = current.copyWith(trackAssetPaths: picked);
+      await _repo.savePlaylist(updated);
+      if (mounted) await _load();
+      return;
+    }
+
     final allTracks = await loadLocalTracks();
     if (!mounted) return;
     final currentIds = Set<String>.from(current.trackAssetPaths);
@@ -161,6 +308,28 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     }
   }
 
+  Future<void> _togglePlaylistLike() async {
+    final id = parseServerPlaylistId(widget.playlistId);
+    if (id == null || !_detailIsPublic || !_sessionLoggedIn || _likeBusy) return;
+    setState(() => _likeBusy = true);
+    try {
+      final st = await PlaylistsApi().postPlaylistLike(id);
+      if (!mounted) return;
+      setState(() {
+        _playlistLiked = st.liked;
+        _playlistLikesCount = st.likesCount;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      final en = Localizations.localeOf(context).languageCode == 'en';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(en ? 'Could not update like' : 'Не удалось обновить лайк')),
+      );
+    } finally {
+      if (mounted) setState(() => _likeBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
@@ -192,7 +361,25 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
           centerTitle: true,
           iconTheme: IconThemeData(color: palette.textPrimary),
           actions: [
-            if (_playlist != null)
+            if (_playlist != null && _detailIsPublic && _sessionLoggedIn)
+              IconButton(
+                tooltip: Localizations.localeOf(context).languageCode == 'en' ? 'Like' : 'Лайк',
+                onPressed: _likeBusy ? null : _togglePlaylistLike,
+                icon: _likeBusy
+                    ? SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: palette.accent,
+                        ),
+                      )
+                    : Icon(
+                        _playlistLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        color: _playlistLiked ? palette.accent : palette.textPrimary,
+                      ),
+              ),
+            if (_playlist != null && _isPlaylistOwner)
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded),
                 onSelected: _onMenuSelected,
@@ -226,7 +413,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                       children: [
                         _buildHeader(palette),
                         const SizedBox(height: 16),
-                        if (_tracks.isNotEmpty) ...[
+                        if (_tracks.isNotEmpty && _isPlaylistOwner) ...[
                           Align(
                             alignment: Alignment.centerLeft,
                             child: _buildAddTracksButton(palette),
@@ -239,8 +426,10 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      _buildAddTracksButton(palette),
-                                      const SizedBox(height: 12),
+                                      if (_isPlaylistOwner) ...[
+                                        _buildAddTracksButton(palette),
+                                        const SizedBox(height: 12),
+                                      ],
                                       Text(
                                         context.t('playlists.emptyInPlaylist'),
                                         style: TextStyle(
@@ -279,6 +468,16 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                   ),
       ),
     );
+  }
+
+  String _trackCountLine(BuildContext context) {
+    if (_tracks.isEmpty) return context.t('playlists.noTracks');
+    final en = Localizations.localeOf(context).languageCode == 'en';
+    final base = en
+        ? '${_tracks.length} tracks'
+        : '${_tracks.length} трек${_tracks.length == 1 ? '' : _tracks.length >= 2 && _tracks.length <= 4 ? 'а' : 'ов'}';
+    if (_detailIsPublic) return '$base · ♥ $_playlistLikesCount';
+    return base;
   }
 
   Widget _buildAddTracksButton(AppColorPalette palette) {
@@ -344,6 +543,71 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (_ownerUserId != null) ...[
+                const SizedBox(height: 8),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      final uid = _ownerUserId!;
+                      final nick = (_ownerNickname ?? '').trim();
+                      final enUi = Localizations.localeOf(context).languageCode == 'en';
+                      final label = nick.isNotEmpty ? '@$nick' : (enUi ? 'Author' : 'Автор');
+                      Navigator.of(context).push(
+                        ShellMaterialPageRoute<void>(
+                          builder: (_) => ArtistPage(
+                            artistName: nick.isNotEmpty ? nick : label,
+                            coverImageUrl: userAvatarUrl(uid),
+                            audioPlayerService: widget.audioPlayerService,
+                          ),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          ClipOval(
+                            child: Image.network(
+                              userAvatarUrl(_ownerUserId!),
+                              width: 26,
+                              height: 26,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => Container(
+                                width: 26,
+                                height: 26,
+                                color: palette.primaryDark.withValues(alpha: 0.5),
+                                alignment: Alignment.center,
+                                child: Icon(Icons.person_rounded, size: 16, color: palette.textMuted),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              () {
+                                final nick = (_ownerNickname ?? '').trim();
+                                if (nick.isNotEmpty) return '@$nick';
+                                return Localizations.localeOf(context).languageCode == 'en'
+                                    ? 'Author'
+                                    : 'Автор';
+                              }(),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: palette.accent,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -381,11 +645,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                _tracks.isEmpty
-                    ? context.t('playlists.noTracks')
-                    : Localizations.localeOf(context).languageCode == 'en'
-                        ? '${_tracks.length} tracks'
-                        : '${_tracks.length} трек${_tracks.length == 1 ? '' : _tracks.length >= 2 && _tracks.length <= 4 ? 'а' : 'ов'}',
+                _trackCountLine(context),
                 style: TextStyle(
                   fontSize: 13,
                   color: palette.textSecondary,
