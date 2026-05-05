@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/audio/audio_player_service.dart';
 import 'core/audio/mimusic_audio_handler.dart';
 import 'core/auth/auth_session_store.dart';
+import 'core/profile/me_profile_cache.dart';
 import 'core/network/api_config.dart';
 import 'core/auth/session_scope.dart';
 import 'core/history/in_memory_listening_history_repository.dart';
@@ -17,6 +18,8 @@ import 'core/notifications/local_notifications_service.dart';
 import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
 import 'core/settings/settings_repository.dart';
+import 'features/playlists/data/repositories/session_aware_playlists_repository.dart';
+import 'features/playlists/domain/repositories/playlists_repository.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'features/home/data/repositories/home_repository_impl.dart';
@@ -182,6 +185,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
   int _shellSettingsDisplayGeneration = 0;
   AudioPlayerService? _audioPlayerService;
   GetHomeSectionUseCase? _getHomeSectionUseCase;
+  final PlaylistsRepository _playlistsRepository = SessionAwarePlaylistsRepository();
 
   @override
   void initState() {
@@ -206,7 +210,15 @@ class _MiMusicAppState extends State<MiMusicApp> {
 
   Future<void> _enterMainFromPrefs() async {
     await AuthSessionStore.refreshIssuedInviteKeysCache();
-    final s = await widget.settingsRepository.getSettings();
+    var s = await widget.settingsRepository.getSettings();
+    final acc = await AuthSessionStore.readAccount();
+    final serverSession = acc != null &&
+        acc.sessionToken.trim().isNotEmpty &&
+        acc.userId != null;
+    if (serverSession && s.password.isNotEmpty) {
+      s = s.copyWith(password: '');
+      await widget.settingsRepository.saveSettings(s);
+    }
     if (!mounted) return;
     setState(() {
       _shellSettings = s;
@@ -241,12 +253,17 @@ class _MiMusicAppState extends State<MiMusicApp> {
   }
 
   Future<void> _onSignOut() async {
+    MeProfileCache.clear();
     await AuthSessionStore.clearSessionToken();
     if (!mounted) return;
-    _audioPlayerService?.dispose();
+    // Сначала убираем MainShell с ListenableBuilder(audio), иначе один кадр с disposed ChangeNotifier — красный FlutterError.
+    final player = _audioPlayerService;
     _audioPlayerService = null;
     _getHomeSectionUseCase = null;
     setState(() => _gate = _AppGate.auth);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      player?.dispose();
+    });
   }
 
   @override
@@ -331,6 +348,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
             initialSettings: _shellSettings,
             settingsDisplayGeneration: _shellSettingsDisplayGeneration,
             listeningHistoryRepository: widget.listeningHistoryRepository,
+            playlistsRepository: _playlistsRepository,
           ),
         );
     }
