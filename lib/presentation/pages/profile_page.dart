@@ -1,8 +1,14 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
+import '../../core/auth/auth_session_store.dart';
+import '../../core/constants/server_avatar_constants.dart';
+import '../../core/network/profile_api.dart';
+import '../../core/profile/me_profile_cache.dart';
+import '../../features/playlists/domain/repositories/playlists_repository.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
@@ -12,6 +18,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/social/friend_request_notifications.dart';
 import '../../core/platform/platform.dart';
 import '../../core/player/shell_route_back_guard.dart';
+import '../widgets/server_me_avatar.dart';
 import '../widgets/user_avatar.dart';
 import 'genre_preferences_page.dart';
 import 'favorites_page.dart';
@@ -24,7 +31,7 @@ import 'thoughts_page.dart';
 import 'open_rooms_page.dart';
 
 /// Страница профиля: коллапсирующий header с обложкой и аватаром + "поднимающийся" bottom-sheet.
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({
     super.key,
     required this.themeMode,
@@ -35,6 +42,7 @@ class ProfilePage extends StatelessWidget {
     required this.initialSettings,
     required this.settingsDisplayGeneration,
     required this.audioPlayerService,
+    required this.playlistsRepository,
   });
 
   final ThemeMode themeMode;
@@ -46,6 +54,7 @@ class ProfilePage extends StatelessWidget {
   /// Синхронизирован с [MiMusicApp] после сохранения настроек; сбрасывает кэш картинок.
   final int settingsDisplayGeneration;
   final AudioPlayerService audioPlayerService;
+  final PlaylistsRepository playlistsRepository;
 
   /// Пропорция фона: высота = ширина * коэффициент (обложка не растягивается).
   static const double _coverAspectRatio = 1.25;
@@ -53,16 +62,73 @@ class ProfilePage extends StatelessWidget {
   static const double _avatarMinSize = 40;
 
   @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  String? _serverNickname;
+  String? _avatarPathOverride;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_primeFromCacheAndSync()));
+  }
+
+  /// Сначала кэш (быстрый UI), затем сеть; [setState] только если данные изменились.
+  Future<void> _primeFromCacheAndSync() async {
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.trim().isEmpty || acc.userId == null) return;
+    final uid = acc.userId!;
+
+    final cached = await MeProfileCache.loadForUser(uid);
+    if (cached != null && mounted) {
+      setState(() {
+        if (cached.nickname.trim().isNotEmpty) {
+          _serverNickname = cached.nickname;
+        }
+        _avatarPathOverride =
+            cached.hasServerAvatar ? kServerMeAvatarMarker : null;
+      });
+    }
+
+    try {
+      final me = await ProfileApi().fetchMe();
+      if (!mounted) return;
+      final unchanged = cached != null && cached.matches(me);
+      await MeProfileCache.save(uid, me);
+      if (unchanged) return;
+      setState(() {
+        if (me.nickname.trim().isNotEmpty) {
+          _serverNickname = me.nickname;
+        }
+        if (me.avatarStorageKey != null && me.avatarStorageKey!.trim().isNotEmpty) {
+          _avatarPathOverride = kServerMeAvatarMarker;
+        } else {
+          _avatarPathOverride = null;
+        }
+      });
+    } catch (_) {}
+  }
+
+  String get _profileNickname =>
+      (_serverNickname != null && _serverNickname!.trim().isNotEmpty)
+          ? _serverNickname!
+          : widget.initialSettings.nickname;
+
+  String? get _profileAvatarPath => _avatarPathOverride ?? widget.initialSettings.avatarPath;
+
+  @override
   Widget build(BuildContext context) {
-    FriendRequestNotifications.instance.seedDemoIfNeeded(initialSettings.nickname);
+    FriendRequestNotifications.instance.seedDemoIfNeeded(_profileNickname);
     final palette = AppPaletteExtension.of(context).palette;
     final size = MediaQuery.sizeOf(context);
     final topPadding = MediaQuery.paddingOf(context).top;
     // Высота обложки по пропорции, но не больше ~58% экрана.
-    final coverHeight = (size.width * _coverAspectRatio).clamp(260.0, size.height * 0.58);
+    final coverHeight = (size.width * ProfilePage._coverAspectRatio).clamp(260.0, size.height * 0.58);
     final expandedHeight = coverHeight + 96;
     final collapsedHeight = kToolbarHeight + topPadding + 12;
-    final hasMiniPlayer = audioPlayerService.currentTrack != null;
+    final hasMiniPlayer = widget.audioPlayerService.currentTrack != null;
     final bottomContentInset = hasMiniPlayer
         ? AppConstants.shellBottomInsetWithMiniPlayer
         : AppConstants.shellBottomInset;
@@ -84,7 +150,7 @@ class ProfilePage extends StatelessWidget {
               final t = ((currentHeight - collapsedHeight) / (expandedHeight - collapsedHeight))
                   .clamp(0.0, 1.0);
               final easedT = Curves.easeInOut.transform(t);
-              final avatarSize = lerpDouble(_avatarMinSize, _avatarMaxSize, t)!;
+              final avatarSize = lerpDouble(ProfilePage._avatarMinSize, ProfilePage._avatarMaxSize, t)!;
               final titleSize = lerpDouble(18, 28, t)!;
               final alignment = Alignment.lerp(
                 const Alignment(-0.9, -0.2),
@@ -131,7 +197,7 @@ class ProfilePage extends StatelessWidget {
                           builder: (context, _) {
                             final notifications =
                                 FriendRequestNotifications.instance.allFor(
-                              initialSettings.nickname,
+                              _profileNickname,
                             );
                             final pending = notifications
                                 .where(
@@ -144,8 +210,8 @@ class ProfilePage extends StatelessWidget {
                                 Navigator.of(context).push(
                                   ShellMaterialPageRoute<void>(
                                     builder: (context) => NotificationsPage(
-                                      currentUsername: initialSettings.nickname,
-                                      audioPlayerService: audioPlayerService,
+                                      currentUsername: _profileNickname,
+                                      audioPlayerService: widget.audioPlayerService,
                                     ),
                                   ),
                                 );
@@ -199,17 +265,17 @@ class ProfilePage extends StatelessWidget {
                             await Navigator.of(context).push<void>(
                               ShellMaterialPageRoute<void>(
                                 builder: (context) => SettingsPage(
-                                  themeMode: themeMode,
-                                  onThemeChanged: onThemeChanged,
-                                  onLanguageChanged: onLanguageChanged,
-                                  settingsRepository: settingsRepository,
-                                  initialSettings: initialSettings,
-                                  audioPlayerService: audioPlayerService,
+                                  themeMode: widget.themeMode,
+                                  onThemeChanged: widget.onThemeChanged,
+                                  onLanguageChanged: widget.onLanguageChanged,
+                                  settingsRepository: widget.settingsRepository,
+                                  initialSettings: widget.initialSettings,
+                                  audioPlayerService: widget.audioPlayerService,
                                 ),
                               ),
                             );
                             if (!context.mounted) return;
-                            await onShellSettingsReload();
+                            await widget.onShellSettingsReload();
                           },
                           icon: const Icon(
                             Icons.settings_rounded,
@@ -235,11 +301,12 @@ class ProfilePage extends StatelessWidget {
                         children: [
                           UserAvatar(
                             key: ValueKey(
-                              'profile-avatar-${initialSettings.avatarPath ?? ''}-$settingsDisplayGeneration',
+                              'profile-avatar-${_profileAvatarPath ?? ''}-${widget.settingsDisplayGeneration}',
                             ),
-                            avatarPath: initialSettings.avatarPath,
+                            avatarPath: _profileAvatarPath,
                             size: avatarSize,
                             palette: palette,
+                            serverAvatarCacheRevision: widget.settingsDisplayGeneration,
                           ),
                           const SizedBox(width: 14),
                           Transform.translate(
@@ -249,7 +316,7 @@ class ProfilePage extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  initialSettings.nickname,
+                                  _profileNickname,
                                   style: TextStyle(
                                     fontSize: titleSize,
                                     fontWeight: FontWeight.bold,
@@ -279,10 +346,8 @@ class ProfilePage extends StatelessWidget {
                                           Navigator.of(context).push(
                                             ShellMaterialPageRoute<void>(
                                               builder: (_) => ThoughtsPage(
-                                                currentUsername:
-                                                    initialSettings.nickname,
-                                                audioPlayerService:
-                                                    audioPlayerService,
+                                                currentUsername: _profileNickname,
+                                                audioPlayerService: widget.audioPlayerService,
                                               ),
                                             ),
                                           );
@@ -356,8 +421,8 @@ class ProfilePage extends StatelessWidget {
                       Navigator.of(context).push(
                         ShellMaterialPageRoute<void>(
                           builder: (_) => OpenRoomsPage(
-                            currentUsername: initialSettings.nickname,
-                            audioPlayerService: audioPlayerService,
+                            currentUsername: _profileNickname,
+                            audioPlayerService: widget.audioPlayerService,
                           ),
                         ),
                       );
@@ -375,8 +440,8 @@ class ProfilePage extends StatelessWidget {
                       Navigator.of(context).push(
                         ShellMaterialPageRoute<void>(
                           builder: (context) => StudioPage(
-                            currentUserNickname: initialSettings.nickname,
-                            audioPlayerService: audioPlayerService,
+                            currentUserNickname: _profileNickname,
+                            audioPlayerService: widget.audioPlayerService,
                           ),
                         ),
                       );
@@ -406,7 +471,7 @@ class ProfilePage extends StatelessWidget {
   }
 
   Widget _buildCoverBackground(BuildContext context, AppColorPalette palette, double width, double height) {
-    final raw = initialSettings.avatarPath?.trim();
+    final raw = _profileAvatarPath?.trim();
     final resolved = (raw != null && raw.isNotEmpty) ? raw : kDefaultUserAvatarAsset;
     final placeholder = Container(
       width: width,
@@ -415,6 +480,24 @@ class ProfilePage extends StatelessWidget {
       alignment: Alignment.center,
       child: const Icon(Icons.person_rounded, color: Colors.white, size: 64),
     );
+
+    if (resolved == kServerMeAvatarMarker) {
+      return ClipRect(
+        key: ValueKey('profile-cover-server-${widget.settingsDisplayGeneration}'),
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: ServerMeAvatar(
+            clipCircle: false,
+            size: width,
+            boxWidth: width,
+            boxHeight: height,
+            palette: palette,
+            cacheRevision: widget.settingsDisplayGeneration,
+          ),
+        ),
+      );
+    }
 
     final Widget image;
     if (resolved.startsWith('assets/')) {
@@ -438,7 +521,7 @@ class ProfilePage extends StatelessWidget {
 
     return ClipRect(
       key: ValueKey(
-        'profile-cover-${resolved.hashCode}-$settingsDisplayGeneration',
+        'profile-cover-${resolved.hashCode}-${widget.settingsDisplayGeneration}',
       ),
       child: SizedBox(width: width, height: height, child: image),
     );
@@ -455,7 +538,8 @@ class ProfilePage extends StatelessWidget {
               Navigator.of(context).push(
                 ShellMaterialPageRoute<void>(
                   builder: (context) => PlaylistsPage(
-                    audioPlayerService: audioPlayerService,
+                    audioPlayerService: widget.audioPlayerService,
+                    repository: widget.playlistsRepository,
                   ),
                 ),
               );
@@ -472,8 +556,8 @@ class ProfilePage extends StatelessWidget {
               Navigator.of(context).push(
                 ShellMaterialPageRoute<void>(
                   builder: (_) => FriendsPage(
-                    currentUsername: initialSettings.nickname,
-                    audioPlayerService: audioPlayerService,
+                    currentUsername: _profileNickname,
+                    audioPlayerService: widget.audioPlayerService,
                   ),
                 ),
               );
@@ -490,7 +574,7 @@ class ProfilePage extends StatelessWidget {
               Navigator.of(context).push(
                 ShellMaterialPageRoute<void>(
                   builder: (context) => FavoritesPage(
-                    audioPlayerService: audioPlayerService,
+                    audioPlayerService: widget.audioPlayerService,
                   ),
                 ),
               );

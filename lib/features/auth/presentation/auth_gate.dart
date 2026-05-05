@@ -7,6 +7,9 @@ import '../../../core/auth/auth_session_store.dart';
 import '../../../core/auth/beta_invite_config.dart';
 import '../../../core/auth/invite_key_format.dart';
 import '../../../core/network/auth_api.dart';
+import '../../../core/network/users_api.dart';
+import '../../../presentation/widgets/glass_snack_bar.dart';
+import '../../../core/profile/me_profile_cache.dart';
 import '../../../core/l10n/app_localization.dart';
 import '../../../core/settings/app_settings.dart';
 import '../../../core/settings/settings_repository.dart';
@@ -233,6 +236,7 @@ class _LoginTabState extends State<_LoginTab> {
       final email = session.email?.trim().isNotEmpty == true
           ? session.email!.trim()
           : (_loginId.text.contains('@') ? _loginId.text.trim() : '');
+      MeProfileCache.clear();
       await AuthSessionStore.writeAccount(
         LocalAccount(
           email: email,
@@ -247,6 +251,8 @@ class _LoginTabState extends State<_LoginTab> {
         current.copyWith(
           email: email.isNotEmpty ? email : current.email,
           nickname: session.nickname,
+          password: '',
+          avatarPath: null,
         ),
       );
       await widget.onSuccess();
@@ -354,21 +360,53 @@ class _RegisterTabState extends State<_RegisterTab> {
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
   String? _error;
+  Timer? _nicknameAvailDebounce;
+  /// Ключ l10n, если ник занят ([auth.error.nicknameTaken]); иначе `null`.
+  String? _nicknameTakenHint;
 
   @override
   void initState() {
     super.initState();
     unawaited(AuthSessionStore.refreshIssuedInviteKeysCache());
+    _nickname.addListener(_onNicknameChanged);
   }
 
   @override
   void dispose() {
+    _nickname.removeListener(_onNicknameChanged);
+    _nicknameAvailDebounce?.cancel();
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
     _nickname.dispose();
     _invite.dispose();
     super.dispose();
+  }
+
+  void _onNicknameChanged() {
+    _nicknameAvailDebounce?.cancel();
+    final t = _nickname.text.trim();
+    if (t.length < 2) {
+      if (_nicknameTakenHint != null) {
+        setState(() => _nicknameTakenHint = null);
+      }
+      return;
+    }
+    _nicknameAvailDebounce = Timer(const Duration(milliseconds: 450), () async {
+      try {
+        final ok = await UsersApi().isNicknameAvailable(t);
+        if (!mounted) return;
+        final was = _nicknameTakenHint;
+        final next = ok ? null : 'auth.error.nicknameTaken';
+        setState(() => _nicknameTakenHint = next);
+        if (was == null && next != null && mounted) {
+          showGlassSnackBar(context, context.t('auth.error.nicknameTaken'));
+        }
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _nicknameTakenHint = null);
+      }
+    });
   }
 
   Future<void> _pasteInvite() async {
@@ -390,6 +428,19 @@ class _RegisterTabState extends State<_RegisterTab> {
     try {
       final email = _email.text.trim();
       final nick = _nickname.text.trim().isEmpty ? email.split('@').first : _nickname.text.trim();
+      if (nick.length >= 2) {
+        final free = await UsersApi().isNicknameAvailable(nick);
+        if (!free) {
+          if (!mounted) return;
+          setState(() {
+            _busy = false;
+            _error = 'auth.error.nicknameTaken';
+            _nicknameTakenHint = 'auth.error.nicknameTaken';
+          });
+          showGlassSnackBar(context, context.t('auth.error.nicknameTaken'));
+          return;
+        }
+      }
       final inviteRaw = _invite.text.trim();
       final inviteNorm =
           inviteRaw.isEmpty ? null : InviteKeyFormat.normalize(inviteRaw);
@@ -400,6 +451,7 @@ class _RegisterTabState extends State<_RegisterTab> {
         password: _password.text,
         inviteCode: inviteNorm,
       );
+      MeProfileCache.clear();
       await AuthSessionStore.writeAccount(
         LocalAccount(
           email: session.email?.trim().isNotEmpty == true ? session.email!.trim() : email,
@@ -411,11 +463,24 @@ class _RegisterTabState extends State<_RegisterTab> {
       );
       final current = await widget.settingsRepository.getSettings();
       await widget.settingsRepository.saveSettings(
-        current.copyWith(email: email, nickname: session.nickname),
+        current.copyWith(
+          email: email,
+          nickname: session.nickname,
+          password: '',
+          avatarPath: null,
+        ),
       );
       await widget.onSuccess();
     } on AuthApiException catch (e) {
-      setState(() => _error = e.messageKey);
+      setState(() {
+        _error = e.messageKey;
+        if (e.messageKey == 'auth.error.nicknameTaken') {
+          _nicknameTakenHint = 'auth.error.nicknameTaken';
+        }
+      });
+      if (e.messageKey == 'auth.error.nicknameTaken' && mounted) {
+        showGlassSnackBar(context, context.t('auth.error.nicknameTaken'));
+      }
     } catch (_) {
       setState(() => _error = 'auth.error.server');
     } finally {
@@ -449,6 +514,17 @@ class _RegisterTabState extends State<_RegisterTab> {
                 context,
                 widget.palette,
                 context.t('auth.nickname'),
+              ).copyWith(
+                errorText: _nicknameTakenHint != null ? context.t(_nicknameTakenHint!) : null,
+                errorStyle: TextStyle(fontSize: 12, height: 1.25, color: Colors.red.shade700),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.red.shade600, width: 1.5),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.red.shade700, width: 1.5),
+                ),
               ),
               validator: (v) {
                 final t = v?.trim() ?? '';

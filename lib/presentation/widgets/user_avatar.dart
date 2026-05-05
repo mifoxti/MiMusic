@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/server_avatar_constants.dart';
 import '../../core/platform/platform.dart';
 import '../../core/theme/app_colors.dart';
+import 'server_me_avatar.dart';
 
 const String kDefaultUserAvatarAsset = 'assets/images/identity.png';
 
@@ -13,12 +15,15 @@ class UserAvatar extends StatelessWidget {
     required this.size,
     required this.palette,
     this.border,
+    this.serverAvatarCacheRevision = 0,
   });
 
   final String? avatarPath;
   final double size;
   final AppColorPalette palette;
   final BoxBorder? border;
+  /// Смена значения перезапрашивает [GET /me/avatar] внутри [ServerMeAvatar].
+  final int serverAvatarCacheRevision;
 
   String get _resolved {
     final p = avatarPath?.trim();
@@ -29,6 +34,14 @@ class UserAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolved = _resolved;
+    if (resolved == kServerMeAvatarMarker) {
+      return ServerMeAvatar(
+        size: size,
+        palette: palette,
+        border: border,
+        cacheRevision: serverAvatarCacheRevision,
+      );
+    }
     final placeholder = Container(
       width: size,
       height: size,

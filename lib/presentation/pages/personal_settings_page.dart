@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
@@ -8,16 +9,38 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../fragments/personal_settings_fragment.dart';
 
-/// Отдельный экран персональных настроек: только профиль. Тема в общих настройках. Открывается по нажатию, как эквалайзер.
-class PersonalSettingsPage extends StatelessWidget {
+/// Отдельный экран персональных настроек: только профиль. Тема в общих настройках.
+class PersonalSettingsPage extends StatefulWidget {
   const PersonalSettingsPage({
     super.key,
     required this.settingsRepository,
     required this.initialSettings,
+    required this.audioPlayerService,
   });
 
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+  final AudioPlayerService audioPlayerService;
+
+  @override
+  State<PersonalSettingsPage> createState() => _PersonalSettingsPageState();
+}
+
+class _PersonalSettingsPageState extends State<PersonalSettingsPage> {
+  late AppSettings _settings;
+
+  @override
+  void initState() {
+    super.initState();
+    _settings = widget.initialSettings;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadFromRepository());
+  }
+
+  Future<void> _reloadFromRepository() async {
+    final s = await widget.settingsRepository.getSettings();
+    if (!mounted) return;
+    setState(() => _settings = s);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,25 +65,31 @@ class PersonalSettingsPage extends StatelessWidget {
             children: [
               _buildAppBar(context, palette),
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(
-                    20,
-                    8,
-                    20,
-                    AppConstants.shellBottomInsetWithMiniPlayer,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildContentCard(
-                        palette,
-                        child: PersonalSettingsFragment(
-                          settingsRepository: settingsRepository,
-                          initialSettings: initialSettings,
-                        ),
+                child: ListenableBuilder(
+                  listenable: widget.audioPlayerService,
+                  builder: (context, _) {
+                    final hasMini = widget.audioPlayerService.currentTrack != null;
+                    // Те же отступы, что у [SettingsPage]: только нижняя навигация или навигация + мини-плеер.
+                    final bottomPad = hasMini
+                        ? AppConstants.shellBottomInsetWithMiniPlayer
+                        : AppConstants.shellBottomInset;
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(20, 8, 20, bottomPad),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildContentCard(
+                            palette,
+                            child: PersonalSettingsFragment(
+                              settingsRepository: widget.settingsRepository,
+                              initialSettings: _settings,
+                              onProfileSaved: _reloadFromRepository,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
             ],

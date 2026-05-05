@@ -116,6 +116,9 @@ class AuthApi {
       if (body.contains('Email')) {
         return AuthApiException('auth.error.emailTaken', statusCode: code);
       }
+      if (body.contains('User already exists')) {
+        return AuthApiException('auth.error.nicknameTaken', statusCode: code);
+      }
       return AuthApiException('auth.error.accountExists', statusCode: code);
     }
     if (code == 400) {
