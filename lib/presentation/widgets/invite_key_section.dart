@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/auth/auth_session_store.dart' show AuthSessionStore, LocalAccount;
 import '../../core/l10n/app_localization.dart';
+import '../../core/network/profile_api.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/auth/presentation/invite_key_generation_page.dart';
 
@@ -28,7 +29,18 @@ class _InviteKeySectionState extends State<InviteKeySection> {
   }
 
   Future<void> _reload() async {
-    final acc = await AuthSessionStore.readAccount();
+    var acc = await AuthSessionStore.readAccount();
+    if (acc != null &&
+        acc.sessionToken.trim().isNotEmpty &&
+        acc.userId != null) {
+      try {
+        final k = await ProfileApi().fetchMyInviteKey();
+        if (k != null && k.trim().isNotEmpty) {
+          await AuthSessionStore.writeAccount(acc.copyWith(myInviteKey: k.trim()));
+          acc = await AuthSessionStore.readAccount();
+        }
+      } catch (_) {}
+    }
     if (!mounted) return;
     setState(() {
       _account = acc;

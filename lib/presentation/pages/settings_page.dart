@@ -254,6 +254,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 builder: (context) => PersonalSettingsPage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: widget.initialSettings,
+                  audioPlayerService: widget.audioPlayerService,
                 ),
               ),
             );

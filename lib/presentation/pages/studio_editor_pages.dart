@@ -416,11 +416,17 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
       return;
     }
     try {
-      await TracksUploadApi().uploadTrackMp3(
+      final trackId = await TracksUploadApi().uploadTrackMp3(
         file: file,
         title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
         genreSlugs: _genres,
       );
+      if (_coverPath.isNotEmpty) {
+        final coverFile = File(_coverPath);
+        if (await coverFile.exists()) {
+          await TracksUploadApi().uploadTrackCover(trackId: trackId, imageFile: coverFile);
+        }
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.t('studio.serverUploadOk'))),

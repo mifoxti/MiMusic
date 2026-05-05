@@ -16,6 +16,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cover_image.dart';
 import '../../../../presentation/pages/artist_page.dart';
 import '../../../../presentation/pages/listening_history_page.dart';
+import '../../../../features/playlists/domain/repositories/playlists_repository.dart';
 import '../../../../presentation/pages/playlists_page.dart';
 import '../../../../presentation/pages/release_page.dart';
 import '../../../../presentation/pages/charts_page.dart';
@@ -35,11 +36,13 @@ class HomePage extends StatefulWidget {
     required this.getHomeSectionUseCase,
     required this.audioPlayerService,
     required this.listeningHistoryRepository,
+    required this.playlistsRepository,
   });
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
   final ListeningHistoryRepository listeningHistoryRepository;
+  final PlaylistsRepository playlistsRepository;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -190,6 +193,7 @@ class _HomePageState extends State<HomePage> {
       ShellMaterialPageRoute<void>(
         builder: (_) => PlaylistsPage(
           audioPlayerService: widget.audioPlayerService,
+          repository: widget.playlistsRepository,
         ),
       ),
     );

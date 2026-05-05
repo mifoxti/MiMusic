@@ -14,6 +14,7 @@ import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/player/shell_navigator_host.dart';
 import '../../../../core/widgets/track_cover.dart';
+import '../../../playlists/domain/repositories/playlists_repository.dart';
 import '../../../../presentation/pages/artist_page.dart';
 import '../../../../presentation/pages/listening_room_page.dart';
 import '../widgets/full_player_track_menu.dart';
@@ -24,10 +25,12 @@ class FullPlayerDockPanel extends StatelessWidget {
     super.key,
     required this.audioPlayerService,
     required this.onCollapse,
+    required this.playlistsRepository,
   });
 
   final AudioPlayerService audioPlayerService;
   final VoidCallback onCollapse;
+  final PlaylistsRepository playlistsRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -171,6 +174,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                               onPressed: () => showFullPlayerTrackMenu(
                                 context,
                                 audioPlayerService: audioPlayerService,
+                                playlistsRepository: playlistsRepository,
                               ),
                             ),
                           ],

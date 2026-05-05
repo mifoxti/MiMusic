@@ -6,7 +6,8 @@ import 'package:dio/dio.dart';
 import 'authenticated_dio.dart';
 
 class TracksUploadApi {
-  Future<void> uploadTrackMp3({
+  /// Ответ [POST /upload/track]: id нового трека для загрузки обложки.
+  Future<int> uploadTrackMp3({
     required File file,
     String? title,
     required List<String> genreSlugs,
@@ -19,6 +20,25 @@ class TracksUploadApi {
       'genreSlugs': jsonEncode(genreSlugs),
       'genreNormalizeWeights': normalizeGenreWeights ? 'true' : 'false',
     });
-    await dio.post<void>('/upload/track', data: form);
+    final res = await dio.post<Map<String, dynamic>>('/upload/track', data: form);
+    final id = (res.data?['trackId'] as num?)?.toInt();
+    if (id == null) {
+      throw StateError('No trackId in upload response');
+    }
+    return id;
+  }
+
+  Future<void> uploadTrackCover({
+    required int trackId,
+    required File imageFile,
+  }) async {
+    final dio = await createAuthenticatedDio();
+    final form = FormData.fromMap({
+      'file': await MultipartFile.fromFile(
+        imageFile.path,
+        filename: imageFile.uri.pathSegments.isNotEmpty ? imageFile.uri.pathSegments.last : 'cover.png',
+      ),
+    });
+    await dio.post<void>('/upload/tracks/$trackId/cover', data: form);
   }
 }

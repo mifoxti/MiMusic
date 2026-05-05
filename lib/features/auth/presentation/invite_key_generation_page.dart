@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../core/auth/auth_session_store.dart';
 import '../../../core/auth/invite_key_format.dart';
 import '../../../core/l10n/app_localization.dart';
+import '../../../core/network/profile_api.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// Полноэкранная анимация формирования ключа; по завершении сохраняет ключ и возвращает его через [Navigator.pop].
@@ -57,7 +58,22 @@ class _InviteKeyGenerationPageState extends State<InviteKeyGenerationPage>
   Future<void> _bootstrap() async {
     final acc = await AuthSessionStore.readAccount();
     if (!mounted) return;
+    if (acc != null &&
+        acc.sessionToken.trim().isNotEmpty &&
+        acc.userId != null) {
+      try {
+        final existing = await ProfileApi().fetchMyInviteKey();
+        if (existing != null && existing.trim().isNotEmpty) {
+          await AuthSessionStore.writeAccount(
+            acc.copyWith(myInviteKey: InviteKeyFormat.normalize(existing)),
+          );
+          if (mounted) Navigator.of(context).pop<String?>(null);
+          return;
+        }
+      } catch (_) {}
+    }
     if (acc?.hasMyInviteKey ?? false) {
+      if (!mounted) return;
       Navigator.of(context).pop<String?>(null);
       return;
     }
@@ -71,7 +87,33 @@ class _InviteKeyGenerationPageState extends State<InviteKeyGenerationPage>
   }
 
   Future<void> _complete() async {
-    await AuthSessionStore.saveGeneratedInviteKey(_key);
+    final acc = await AuthSessionStore.readAccount();
+    final norm = InviteKeyFormat.normalize(_key);
+    if (acc != null &&
+        acc.sessionToken.trim().isNotEmpty &&
+        acc.userId != null) {
+      try {
+        final saved = await ProfileApi().postMyInviteKey(keyCode: norm);
+        final k = InviteKeyFormat.normalize(saved);
+        await AuthSessionStore.registerIssuedInviteKey(k);
+        await AuthSessionStore.writeAccount(acc.copyWith(myInviteKey: k));
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Localizations.localeOf(context).languageCode == 'en'
+                  ? 'Could not save invite key on server'
+                  : 'Не удалось сохранить ключ на сервере',
+            ),
+          ),
+        );
+        Navigator.of(context).pop<String?>(null);
+        return;
+      }
+    } else {
+      await AuthSessionStore.saveGeneratedInviteKey(_key);
+    }
     if (!mounted) return;
     Navigator.of(context).pop<String>(_key);
   }

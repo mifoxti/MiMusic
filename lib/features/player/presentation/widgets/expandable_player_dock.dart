@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/audio/audio_player_service.dart';
+import '../../../playlists/domain/repositories/playlists_repository.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_glass.dart';
@@ -30,11 +31,13 @@ class ExpandablePlayerDock extends StatelessWidget {
     required this.expandController,
     required this.audioPlayerService,
     required this.onCollapse,
+    required this.playlistsRepository,
   });
 
   final AnimationController expandController;
   final AudioPlayerService audioPlayerService;
   final VoidCallback onCollapse;
+  final PlaylistsRepository playlistsRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +128,7 @@ class ExpandablePlayerDock extends StatelessWidget {
                                       child: FullPlayerDockPanel(
                                         audioPlayerService: audioPlayerService,
                                         onCollapse: onCollapse,
+                                        playlistsRepository: playlistsRepository,
                                       ),
                                     ),
                                   ),

@@ -21,6 +21,7 @@ import '../core/theme/app_glass.dart';
 import '../core/theme/app_theme.dart';
 import '../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../features/home/presentation/pages/home_page.dart';
+import '../features/playlists/domain/repositories/playlists_repository.dart';
 import '../features/home/presentation/widgets/floating_mini_player.dart';
 import '../features/player/presentation/widgets/expandable_player_dock.dart';
 import 'pages/favorites_page.dart';
@@ -44,11 +45,13 @@ class MainShell extends StatefulWidget {
     required this.initialSettings,
     required this.settingsDisplayGeneration,
     required this.listeningHistoryRepository,
+    required this.playlistsRepository,
   });
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
   final ListeningHistoryRepository listeningHistoryRepository;
+  final PlaylistsRepository playlistsRepository;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final ValueChanged<String> onLanguageChanged;
@@ -337,6 +340,7 @@ class _MainShellState extends State<MainShell>
                                   audioPlayerService: widget.audioPlayerService,
                                   listeningHistoryRepository:
                                       widget.listeningHistoryRepository,
+                                  playlistsRepository: widget.playlistsRepository,
                                   themeMode: widget.themeMode,
                                   onThemeChanged: widget.onThemeChanged,
                                   onLanguageChanged: widget.onLanguageChanged,
@@ -422,6 +426,7 @@ class _MainShellState extends State<MainShell>
                                   expandController: _playerDockController,
                                   audioPlayerService: widget.audioPlayerService,
                                   onCollapse: _collapsePlayerDock,
+                                  playlistsRepository: widget.playlistsRepository,
                                 ),
                               ),
                             Positioned(
@@ -523,6 +528,7 @@ class _TabsView extends StatelessWidget {
     required this.getHomeSectionUseCase,
     required this.audioPlayerService,
     required this.listeningHistoryRepository,
+    required this.playlistsRepository,
     required this.themeMode,
     required this.onThemeChanged,
     required this.onLanguageChanged,
@@ -537,6 +543,7 @@ class _TabsView extends StatelessWidget {
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
   final ListeningHistoryRepository listeningHistoryRepository;
+  final PlaylistsRepository playlistsRepository;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final ValueChanged<String> onLanguageChanged;
@@ -554,10 +561,12 @@ class _TabsView extends StatelessWidget {
           getHomeSectionUseCase: getHomeSectionUseCase,
           audioPlayerService: audioPlayerService,
           listeningHistoryRepository: listeningHistoryRepository,
+          playlistsRepository: playlistsRepository,
         ),
         SearchPage(
           audioPlayerService: audioPlayerService,
           getHomeSectionUseCase: getHomeSectionUseCase,
+          playlistsRepository: playlistsRepository,
         ),
         ProfilePage(
           themeMode: themeMode,
@@ -568,6 +577,7 @@ class _TabsView extends StatelessWidget {
           initialSettings: initialSettings,
           settingsDisplayGeneration: settingsDisplayGeneration,
           audioPlayerService: audioPlayerService,
+          playlistsRepository: playlistsRepository,
         ),
       ],
     );

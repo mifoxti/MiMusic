@@ -141,7 +141,8 @@ Future<void> showTrackPlaylistPicker(
       ? Colors.white.withValues(alpha: 0.12)
       : Colors.white.withValues(alpha: 0.34);
   final borderGlass = Colors.white.withValues(alpha: isDark ? 0.22 : 0.45);
-  final path = AudioPlayerService.playablePath(track);
+  /// Для плейлистов на сервере в списке хранится `server_track_<id>`, а не URL стрима.
+  final playlistKey = track.assetPath;
 
   await showModalBottomSheet<void>(
     context: context,
@@ -215,14 +216,14 @@ Future<void> showTrackPlaylistPicker(
                                       ),
                                     ),
                                     onTap: () async {
-                                      if (p.trackAssetPaths.contains(path)) {
+                                      if (p.trackAssetPaths.contains(playlistKey)) {
                                         Navigator.pop(ctx);
                                         return;
                                       }
                                       final next = p.copyWith(
                                         trackAssetPaths: [
                                           ...p.trackAssetPaths,
-                                          path,
+                                          playlistKey,
                                         ],
                                       );
                                       await repository.savePlaylist(next);
