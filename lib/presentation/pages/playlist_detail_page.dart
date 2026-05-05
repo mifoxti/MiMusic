@@ -305,7 +305,55 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   Future<void> _onMenuSelected(String value) async {
     if (value == 'edit') {
       await _edit();
+    } else if (value == 'delete') {
+      await _deletePlaylist();
     }
+  }
+
+  Future<void> _deletePlaylist() async {
+    final current = _playlist;
+    if (current == null || !_isPlaylistOwner) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.t('playlists.deletePlaylist')),
+        content: Text(context.t('playlists.deletePlaylistConfirm')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(context.t('common.cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(context.t('playlists.deletePlaylist')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _repo.deletePlaylist(widget.playlistId);
+      if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      final en = Localizations.localeOf(context).languageCode == 'en';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(en ? 'Could not delete playlist' : 'Не удалось удалить плейлист')),
+      );
+    }
+  }
+
+  Future<void> _removeTrackFromPlaylist(Track track) async {
+    final current = _playlist;
+    if (current == null || !_isPlaylistOwner) return;
+    final nextPaths = _tracks
+        .where((x) => x.assetPath != track.assetPath)
+        .map((x) => x.assetPath)
+        .toList();
+    await _repo.savePlaylist(current.copyWith(trackAssetPaths: nextPaths));
+    if (mounted) await _load();
   }
 
   Future<void> _togglePlaylistLike() async {
@@ -388,6 +436,13 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                     value: 'edit',
                     child: Text(context.t('studio.edit')),
                   ),
+                  PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Text(
+                      context.t('playlists.deletePlaylist'),
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  ),
                 ],
               ),
           ],
@@ -452,6 +507,8 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                                       audioPlayerService: widget.audioPlayerService,
                                       playlistsRepository: _repo,
                                       currentPlaylistId: widget.playlistId,
+                                      showRemoveFromPlaylist: _isPlaylistOwner,
+                                      onRemoveFromPlaylist: _removeTrackFromPlaylist,
                                       onTap: () {
                                         final queue = List<Track>.from(_tracks);
                                         widget.audioPlayerService.playTrack(
@@ -769,6 +826,8 @@ class _PlaylistTrackTile extends StatelessWidget {
     required this.audioPlayerService,
     required this.playlistsRepository,
     required this.currentPlaylistId,
+    this.showRemoveFromPlaylist = false,
+    this.onRemoveFromPlaylist,
   });
 
   final Track track;
@@ -776,6 +835,8 @@ class _PlaylistTrackTile extends StatelessWidget {
   final AudioPlayerService audioPlayerService;
   final PlaylistsRepository playlistsRepository;
   final String currentPlaylistId;
+  final bool showRemoveFromPlaylist;
+  final Future<void> Function(Track track)? onRemoveFromPlaylist;
 
   @override
   Widget build(BuildContext context) {
@@ -893,6 +954,9 @@ class _PlaylistTrackTile extends StatelessWidget {
                         omitPlaylistId: currentPlaylistId,
                       );
                     }
+                    if (value == 'removePl') {
+                      await onRemoveFromPlaylist?.call(track);
+                    }
                   },
                   itemBuilder: (ctx) => [
                     PopupMenuItem<String>(
@@ -914,6 +978,11 @@ class _PlaylistTrackTile extends StatelessWidget {
                       value: 'pl',
                       child: Text(context.t('player.menu.addToPlaylist')),
                     ),
+                    if (showRemoveFromPlaylist && onRemoveFromPlaylist != null)
+                      PopupMenuItem<String>(
+                        value: 'removePl',
+                        child: Text(context.t('playlists.track.removeFromPlaylist')),
+                      ),
                   ],
                 ),
               ],

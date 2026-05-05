@@ -7,6 +7,8 @@ class Playlist {
     this.coverPath,
     this.trackAssetPaths = const [],
     this.isLiked = false,
+    /// С [GET /me/playlists] приходит `trackCount`, а `trackAssetPaths` пустой — для подписи в списке.
+    this.remoteTrackCount,
   });
 
   /// Уникальный идентификатор (локальный или серверный).
@@ -27,6 +29,11 @@ class Playlist {
   /// Пользователь отметил плейлист «лайком» (избранные чужие / свои в отдельном списке).
   final bool isLiked;
 
+  final int? remoteTrackCount;
+
+  int get displayTrackCount =>
+      trackAssetPaths.isNotEmpty ? trackAssetPaths.length : (remoteTrackCount ?? 0);
+
   Playlist copyWith({
     String? id,
     String? title,
@@ -34,6 +41,7 @@ class Playlist {
     String? coverPath,
     List<String>? trackAssetPaths,
     bool? isLiked,
+    int? remoteTrackCount,
   }) {
     return Playlist(
       id: id ?? this.id,
@@ -42,6 +50,7 @@ class Playlist {
       coverPath: coverPath ?? this.coverPath,
       trackAssetPaths: trackAssetPaths ?? List<String>.from(this.trackAssetPaths),
       isLiked: isLiked ?? this.isLiked,
+      remoteTrackCount: remoteTrackCount ?? this.remoteTrackCount,
     );
   }
 
@@ -53,6 +62,7 @@ class Playlist {
       'coverPath': coverPath,
       'trackAssetPaths': trackAssetPaths,
       'isLiked': isLiked,
+      if (remoteTrackCount != null) 'remoteTrackCount': remoteTrackCount,
     };
   }
 
@@ -65,6 +75,7 @@ class Playlist {
       coverPath: json['coverPath'] as String?,
       trackAssetPaths: paths is List ? List<String>.from(paths.map((e) => e.toString())) : const [],
       isLiked: (json['isLiked'] as bool?) ?? false,
+      remoteTrackCount: (json['remoteTrackCount'] as num?)?.toInt(),
     );
   }
 }

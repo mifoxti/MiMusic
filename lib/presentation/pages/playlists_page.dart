@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
@@ -6,11 +8,15 @@ import '../../core/player/shell_route_back_guard.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/platform/cover_pick_save.dart';
 import '../../core/platform/platform.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
+import '../../core/network/playlists_api.dart';
+import '../../features/playlists/data/repositories/local_playlists_repository.dart';
+import '../../features/playlists/data/repositories/remote_playlists_repository.dart';
+import '../../features/playlists/data/repositories/session_aware_playlists_repository.dart';
 import '../../features/playlists/domain/entities/playlist.dart';
 import '../../features/playlists/domain/repositories/playlists_repository.dart';
-import '../../features/playlists/data/repositories/local_playlists_repository.dart';
 import 'playlist_detail_page.dart';
 
 /// Страница «Плейлисты»: список плейлистов и кнопка «Создать плейлист».
@@ -39,6 +45,17 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<bool> _canLoadPublicCatalog() async {
+    final r = widget._repository;
+    if (r is SessionAwarePlaylistsRepository) {
+      return r.hasRemoteSession;
+    }
+    if (r is RemotePlaylistsRepository) {
+      return true;
+    }
+    return false;
   }
 
   Future<void> _load() async {
@@ -77,6 +94,72 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     if (mounted) await _load();
   }
 
+  Widget _buildMineTab(AppColorPalette palette) {
+    if (_loading) {
+      return Center(child: CircularProgressIndicator(color: palette.accent));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              context.t('playlists.yours'),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: palette.textPrimary,
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: _createPlaylist,
+              style: FilledButton.styleFrom(
+                backgroundColor: palette.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+              ),
+              icon: const Icon(Icons.add_rounded, size: 20),
+              label: Text(context.t('playlists.create')),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_playlists.isEmpty)
+          Expanded(
+            child: Center(
+              child: Text(
+                context.t('playlists.empty'),
+                style: TextStyle(
+                  fontSize: 15,
+                  color: palette.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.separated(
+              itemCount: _playlists.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final p = _playlists[index];
+                return _PlaylistTile(
+                  playlist: p,
+                  onTap: () => _openPlaylist(p),
+                  onToggleLike: () => _togglePlaylistLike(p),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
@@ -110,70 +193,38 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         ),
         body: Padding(
           padding: EdgeInsets.fromLTRB(20, 8 + topPadding, 20, 20),
-          child: _loading
-              ? Center(
-                  child: CircularProgressIndicator(color: palette.accent),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          context.t('playlists.yours'),
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: palette.textPrimary,
-                          ),
-                        ),
-                        FilledButton.icon(
-                          onPressed: _createPlaylist,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: palette.accent,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 10,
-                            ),
-                          ),
-                          icon: const Icon(Icons.add_rounded, size: 20),
-                          label: Text(context.t('playlists.create')),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    if (_playlists.isEmpty)
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            context.t('playlists.empty'),
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: palette.textSecondary,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: ListView.separated(
-                          itemCount: _playlists.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 10),
-                          itemBuilder: (context, index) {
-                            final p = _playlists[index];
-                            return _PlaylistTile(
-                              playlist: p,
-                              onTap: () => _openPlaylist(p),
-                              onToggleLike: () => _togglePlaylistLike(p),
-                            );
-                          },
-                        ),
-                      ),
+          child: DefaultTabController(
+            length: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TabBar(
+                  labelColor: palette.accent,
+                  unselectedLabelColor: palette.textSecondary,
+                  indicatorColor: palette.accent,
+                  tabs: [
+                    Tab(text: context.t('playlists.tabMine')),
+                    Tab(text: context.t('playlists.tabDiscover')),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildMineTab(palette),
+                      _PlaylistsDiscoverTab(
+                        palette: palette,
+                        audioPlayerService: widget.audioPlayerService,
+                        repository: _repo,
+                        canUseRemote: _canLoadPublicCatalog,
+                        onOpenPlaylist: _openPlaylist,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -325,7 +376,7 @@ class _PlaylistTile extends StatelessWidget {
       cover = placeholder;
     }
 
-    final trackCount = playlist.trackAssetPaths.length;
+    final trackCount = playlist.displayTrackCount;
     final isEn = Localizations.localeOf(context).languageCode == 'en';
     final subtitle = trackCount == 0
         ? context.t('playlists.emptyPlaylist')
@@ -371,16 +422,17 @@ class _PlaylistTile extends StatelessWidget {
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: context.t('playlists.likePlaylist'),
-                onPressed: onToggleLike,
-                icon: Icon(
-                  playlist.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                  color: playlist.isLiked ? palette.accent : palette.textMuted,
-                  size: 22,
+              if (!playlist.isPrivate)
+                IconButton(
+                  tooltip: context.t('playlists.likePlaylist'),
+                  onPressed: onToggleLike,
+                  icon: Icon(
+                    playlist.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: playlist.isLiked ? palette.accent : palette.textMuted,
+                    size: 22,
+                  ),
+                  visualDensity: VisualDensity.compact,
                 ),
-                visualDensity: VisualDensity.compact,
-              ),
               if (playlist.isPrivate)
                 Icon(
                   Icons.lock_rounded,
@@ -450,6 +502,242 @@ class _PlaylistCoverPreview extends StatelessWidget {
                 placeholder,
               ),
       ),
+    );
+  }
+}
+
+class _PlaylistsDiscoverTab extends StatefulWidget {
+  const _PlaylistsDiscoverTab({
+    required this.palette,
+    required this.audioPlayerService,
+    required this.repository,
+    required this.canUseRemote,
+    required this.onOpenPlaylist,
+  });
+
+  final AppColorPalette palette;
+  final AudioPlayerService audioPlayerService;
+  final PlaylistsRepository repository;
+  final Future<bool> Function() canUseRemote;
+  final void Function(Playlist playlist) onOpenPlaylist;
+
+  @override
+  State<_PlaylistsDiscoverTab> createState() => _PlaylistsDiscoverTabState();
+}
+
+class _PlaylistsDiscoverTabState extends State<_PlaylistsDiscoverTab> {
+  final TextEditingController _query = TextEditingController();
+  Timer? _debounce;
+  List<PublicPlaylistItemRemote> _items = [];
+  bool _loading = false;
+  String? _error;
+  bool? _remoteOk;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_bootstrap());
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _query.dispose();
+    super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
+    final ok = await widget.canUseRemote();
+    if (!mounted) return;
+    setState(() => _remoteOk = ok);
+    if (ok) {
+      await _load();
+    }
+  }
+
+  Future<void> _load() async {
+    if (_remoteOk != true) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final rows = await PlaylistsApi().fetchPublicPlaylists(
+        query: _query.text,
+        limit: 50,
+      );
+      if (!mounted) return;
+      setState(() {
+        _items = rows;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  void _scheduleLoad() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) unawaited(_load());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    if (_remoteOk == false) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            context.t('playlists.discoverLoginRequired'),
+            textAlign: TextAlign.center,
+            style: TextStyle(color: palette.textSecondary, fontSize: 15),
+          ),
+        ),
+      );
+    }
+    if (_remoteOk == null) {
+      return Center(child: CircularProgressIndicator(color: palette.accent));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _query,
+          onChanged: (_) => _scheduleLoad(),
+          style: TextStyle(color: palette.textPrimary),
+          decoration: InputDecoration(
+            hintText: context.t('playlists.publicSearchHint'),
+            hintStyle: TextStyle(color: palette.textMuted),
+            filled: true,
+            fillColor: palette.cardBackground.withValues(alpha: 0.85),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+              borderSide: BorderSide.none,
+            ),
+            prefixIcon: Icon(Icons.search_rounded, color: palette.textMuted),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_loading)
+          Expanded(
+            child: Center(
+              child: CircularProgressIndicator(color: palette.accent),
+            ),
+          )
+        else if (_error != null)
+          Expanded(
+            child: Center(
+              child: Text(
+                context.t('playlists.publicLoadError'),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: palette.textSecondary, fontSize: 14),
+              ),
+            ),
+          )
+        else if (_items.isEmpty)
+          Expanded(
+            child: Center(
+              child: Text(
+                context.t('playlists.publicEmpty'),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: palette.textSecondary, fontSize: 15),
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.separated(
+              itemCount: _items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, i) {
+                final e = _items[i];
+                final nick = (e.ownerNickname ?? '').trim();
+                final ownerLabel = nick.isNotEmpty ? '@$nick' : 'id:${e.ownerUserId}';
+                final en = Localizations.localeOf(context).languageCode == 'en';
+                final sub = en
+                    ? '${e.trackCount} tracks · ♥ ${e.likesCount} · $ownerLabel'
+                    : '${e.trackCount} трек${e.trackCount == 1 ? '' : e.trackCount >= 2 && e.trackCount <= 4 ? 'а' : 'ов'} · ♥ ${e.likesCount} · $ownerLabel';
+                return Material(
+                  color: palette.cardBackground.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                    onTap: () {
+                      final pl = Playlist(
+                        id: RemotePlaylistsRepository.idForServer(e.id),
+                        title: (e.title ?? '').trim().isEmpty ? '—' : e.title!.trim(),
+                        isPrivate: false,
+                        coverPath: playlistCoverUrl(e.id),
+                        trackAssetPaths: const [],
+                        isLiked: false,
+                        remoteTrackCount: e.trackCount,
+                      );
+                      widget.onOpenPlaylist(pl);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Row(
+                        children: [
+                          buildTrackCover(
+                            coverSource: playlistCoverUrl(e.id),
+                            width: 56,
+                            height: 56,
+                            borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                            placeholder: Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: palette.primaryDark.withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                              ),
+                              child: Icon(Icons.queue_music_rounded, color: palette.textMuted),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  (e.title ?? '').trim().isEmpty ? '—' : e.title!.trim(),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: palette.textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  sub,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: palette.textSecondary,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right_rounded, color: palette.textMuted),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 }

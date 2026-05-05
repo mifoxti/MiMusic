@@ -21,6 +21,7 @@ class RemotePlaylistsRepository implements PlaylistsRepository {
       coverPath: playlistCoverUrl(sid),
       trackAssetPaths: const [],
       isLiked: liked,
+      remoteTrackCount: e.trackCount,
     );
   }
 
@@ -59,6 +60,7 @@ class RemotePlaylistsRepository implements PlaylistsRepository {
         coverPath: playlistCoverUrl(sid),
         trackAssetPaths: paths,
         isLiked: liked,
+        remoteTrackCount: paths.length,
       );
     } catch (_) {
       return null;
@@ -97,6 +99,7 @@ class RemotePlaylistsRepository implements PlaylistsRepository {
         coverPath: playlistCoverUrl(createdId),
         trackAssetPaths: playlist.trackAssetPaths,
         isLiked: liked,
+        remoteTrackCount: playlist.trackAssetPaths.length,
       );
     }
 
@@ -111,7 +114,10 @@ class RemotePlaylistsRepository implements PlaylistsRepository {
         await _api.uploadPlaylistCover(sid, f);
       }
     }
-    await _api.setPlaylistTracks(sid, _parseServerTrackIds(playlist.trackAssetPaths));
+    final incomingTrackIds = _parseServerTrackIds(playlist.trackAssetPaths);
+    if (incomingTrackIds.isNotEmpty) {
+      await _api.setPlaylistTracks(sid, incomingTrackIds);
+    }
 
     if (!playlist.isPrivate) {
       try {

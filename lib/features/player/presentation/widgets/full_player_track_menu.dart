@@ -216,13 +216,15 @@ Future<void> showTrackPlaylistPicker(
                                       ),
                                     ),
                                     onTap: () async {
-                                      if (p.trackAssetPaths.contains(playlistKey)) {
+                                      final fresh = await repository.getPlaylist(p.id);
+                                      final base = fresh ?? p;
+                                      if (base.trackAssetPaths.contains(playlistKey)) {
                                         Navigator.pop(ctx);
                                         return;
                                       }
-                                      final next = p.copyWith(
+                                      final next = base.copyWith(
                                         trackAssetPaths: [
-                                          ...p.trackAssetPaths,
+                                          ...base.trackAssetPaths,
                                           playlistKey,
                                         ],
                                       );
