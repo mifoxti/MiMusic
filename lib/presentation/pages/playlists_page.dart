@@ -37,6 +37,7 @@ class PlaylistsPage extends StatefulWidget {
 class _PlaylistsPageState extends State<PlaylistsPage> {
   late final PlaylistsRepository _repo =
       widget._repository ?? LocalPlaylistsRepository();
+  _PlaylistsTab _tab = _PlaylistsTab.mine;
 
   List<Playlist> _playlists = [];
   bool _loading = true;
@@ -115,12 +116,16 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             FilledButton.icon(
               onPressed: _createPlaylist,
               style: FilledButton.styleFrom(
-                backgroundColor: palette.accent,
-                foregroundColor: Colors.white,
+                backgroundColor: palette.accent.withValues(alpha: 0.2),
+                foregroundColor: palette.textPrimary,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 10,
                 ),
+                side: BorderSide(
+                  color: palette.accent.withValues(alpha: 0.55),
+                ),
+                elevation: 0,
               ),
               icon: const Icon(Icons.add_rounded, size: 20),
               label: Text(context.t('playlists.create')),
@@ -164,6 +169,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     final topPadding = MediaQuery.paddingOf(context).top;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       decoration: BoxDecoration(
@@ -193,39 +199,63 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         ),
         body: Padding(
           padding: EdgeInsets.fromLTRB(20, 8 + topPadding, 20, 20),
-          child: DefaultTabController(
-            length: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TabBar(
-                  labelColor: palette.accent,
-                  unselectedLabelColor: palette.textSecondary,
-                  indicatorColor: palette.accent,
-                  tabs: [
-                    Tab(text: context.t('playlists.tabMine')),
-                    Tab(text: context.t('playlists.tabDiscover')),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _buildMineTab(palette),
-                      _PlaylistsDiscoverTab(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildTabToggle(palette, isDark),
+              const SizedBox(height: 8),
+              Expanded(
+                child: _tab == _PlaylistsTab.mine
+                    ? _buildMineTab(palette)
+                    : _PlaylistsDiscoverTab(
                         palette: palette,
                         audioPlayerService: widget.audioPlayerService,
                         repository: _repo,
                         canUseRemote: _canLoadPublicCatalog,
                         onOpenPlaylist: _openPlaylist,
                       ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTabToggle(AppColorPalette palette, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: palette.cardBackground.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+        border: Border.all(
+          color: palette.primaryLight.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _PlaylistTabChip(
+              label: context.t('playlists.tabMine'),
+              icon: Icons.library_music_rounded,
+              selected: _tab == _PlaylistsTab.mine,
+              palette: palette,
+              isDark: isDark,
+              onTap: () => setState(() => _tab = _PlaylistsTab.mine),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _PlaylistTabChip(
+              label: context.t('playlists.tabDiscover'),
+              icon: Icons.travel_explore_rounded,
+              selected: _tab == _PlaylistsTab.discover,
+              palette: palette,
+              isDark: isDark,
+              onTap: () => setState(() => _tab = _PlaylistsTab.discover),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -385,7 +415,7 @@ class _PlaylistTile extends StatelessWidget {
             : '$trackCount трек${trackCount == 1 ? '' : trackCount >= 2 && trackCount <= 4 ? 'а' : 'ов'}';
 
     return Material(
-      color: palette.cardBackground.withValues(alpha: 0.9),
+      color: palette.cardBackground.withValues(alpha: 0.7),
       borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
       elevation: 0,
       child: InkWell(
@@ -393,6 +423,12 @@ class _PlaylistTile extends StatelessWidget {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+            border: Border.all(
+              color: palette.primaryLight.withValues(alpha: 0.35),
+            ),
+          ),
           child: Row(
             children: [
               cover,
@@ -665,7 +701,7 @@ class _PlaylistsDiscoverTabState extends State<_PlaylistsDiscoverTab> {
                     ? '${e.trackCount} tracks · ♥ ${e.likesCount} · $ownerLabel'
                     : '${e.trackCount} трек${e.trackCount == 1 ? '' : e.trackCount >= 2 && e.trackCount <= 4 ? 'а' : 'ов'} · ♥ ${e.likesCount} · $ownerLabel';
                 return Material(
-                  color: palette.cardBackground.withValues(alpha: 0.9),
+                  color: palette.cardBackground.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
@@ -683,7 +719,15 @@ class _PlaylistsDiscoverTabState extends State<_PlaylistsDiscoverTab> {
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      child: Row(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                          border: Border.all(
+                            color: palette.primaryLight.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Row(
                         children: [
                           buildTrackCover(
                             coverSource: playlistCoverUrl(e.id),
@@ -731,6 +775,7 @@ class _PlaylistsDiscoverTabState extends State<_PlaylistsDiscoverTab> {
                           Icon(Icons.chevron_right_rounded, color: palette.textMuted),
                         ],
                       ),
+                      ),
                     ),
                   ),
                 );
@@ -738,6 +783,73 @@ class _PlaylistsDiscoverTabState extends State<_PlaylistsDiscoverTab> {
             ),
           ),
       ],
+    );
+  }
+}
+
+enum _PlaylistsTab { mine, discover }
+
+class _PlaylistTabChip extends StatelessWidget {
+  const _PlaylistTabChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.palette,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final AppColorPalette palette;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppConstants.radiusLarge - 2),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppConstants.radiusLarge - 2),
+            color: selected
+                ? palette.accent.withValues(alpha: isDark ? 0.28 : 0.22)
+                : Colors.transparent,
+            border: Border.all(
+              color: selected
+                  ? palette.accent.withValues(alpha: 0.55)
+                  : Colors.transparent,
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: selected ? palette.accent : palette.textMuted,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected ? palette.textPrimary : palette.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

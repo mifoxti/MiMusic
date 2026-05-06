@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
@@ -172,56 +174,31 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       }
       if (!mounted) return;
       final currentIds = current.trackAssetPaths.toSet();
-      var selected = <String>{...currentIds};
-      final picked = await showDialog<List<String>>(
+      final searchEntries = catalog
+          .map(
+            (e) => _TrackPickerEntry(
+              key: 'server_track_${e.id}',
+              title: e.title,
+              subtitle: (e.artist ?? '').trim().isEmpty ? null : e.artist!.trim(),
+              coverSource: e.coverUrl(),
+            ),
+          )
+          .toList(growable: false);
+      final liked = widget.audioPlayerService.likedPaths;
+      final mineEntries = searchEntries
+          .where((e) => liked.contains(e.key))
+          .toList(growable: false);
+      final picked = await showModalBottomSheet<List<String>>(
         context: context,
         useRootNavigator: true,
-        builder: (ctx) {
-          return StatefulBuilder(
-            builder: (context, setSt) {
-              return AlertDialog(
-                title: Text(context.t('playlists.addTracksDialog')),
-                content: SizedBox(
-                  width: double.maxFinite,
-                  child: catalog.isEmpty
-                      ? Text(context.t('playlists.noLocalTracks'))
-                      : ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: catalog.length,
-                          itemBuilder: (context, index) {
-                            final e = catalog[index];
-                            final path = 'server_track_${e.id}';
-                            final added = selected.contains(path);
-                            return CheckboxListTile(
-                              title: Text(e.title, style: const TextStyle(fontSize: 13)),
-                              subtitle: (e.artist ?? '').isNotEmpty
-                                  ? Text(e.artist!, style: const TextStyle(fontSize: 12))
-                                  : null,
-                              value: added,
-                              onChanged: (v) {
-                                setSt(() {
-                                  if (v == true) {
-                                    selected.add(path);
-                                  } else {
-                                    selected.remove(path);
-                                  }
-                                });
-                              },
-                            );
-                          },
-                        ),
-                ),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.t('common.cancel'))),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx, selected.toList()),
-                    child: Text(Localizations.localeOf(context).languageCode == 'en' ? 'Done' : 'Готово'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _GlassTrackPickerSheet(
+          title: context.t('playlists.addTracksDialog'),
+          mineEntries: mineEntries,
+          searchEntries: searchEntries,
+          initialSelected: currentIds,
+        ),
       );
       if (picked == null) return;
       final updated = current.copyWith(trackAssetPaths: picked);
@@ -233,68 +210,29 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     final allTracks = await loadLocalTracks();
     if (!mounted) return;
     final currentIds = Set<String>.from(current.trackAssetPaths);
-    final selected = await showDialog<List<String>>(
+    final searchEntries = allTracks
+        .map(
+          (t) => _TrackPickerEntry(
+            key: t.assetPath,
+            title: t.title,
+            subtitle: t.artistDisplay.isEmpty ? null : t.artistDisplay,
+            coverSource: t.coverBytes ?? t.coverFallbackPath,
+          ),
+        )
+        .toList(growable: false);
+    final liked = widget.audioPlayerService.likedPaths;
+    final mineEntries = searchEntries.where((e) => liked.contains(e.key)).toList(growable: false);
+    final selected = await showModalBottomSheet<List<String>>(
       context: context,
       useRootNavigator: true,
-      builder: (ctx) {
-        var localSelected = Set<String>.from(currentIds);
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text(context.t('playlists.addTracksDialog')),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: allTracks.isEmpty
-                    ? Text(
-                        context.t('playlists.noLocalTracks'),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: allTracks.length,
-                        itemBuilder: (context, index) {
-                          final t = allTracks[index];
-                          final added = localSelected.contains(t.assetPath);
-                          return CheckboxListTile(
-                            title: Text(
-                              t.title,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                            subtitle: t.artistDisplay.isNotEmpty
-                                ? Text(
-                                    t.artistDisplay,
-                                    style: const TextStyle(fontSize: 12),
-                                  )
-                                : null,
-                            value: added,
-                            onChanged: (v) {
-                              if (v == true) {
-                                localSelected.add(t.assetPath);
-                              } else {
-                                localSelected.remove(t.assetPath);
-                              }
-                              setState(() {});
-                            },
-                          );
-                        },
-                      ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(context.t('common.cancel')),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(
-                    ctx,
-                    localSelected.toList(growable: false),
-                  ),
-                  child: Text(Localizations.localeOf(context).languageCode == 'en' ? 'Done' : 'Готово'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _GlassTrackPickerSheet(
+        title: context.t('playlists.addTracksDialog'),
+        mineEntries: mineEntries,
+        searchEntries: searchEntries,
+        initialSelected: currentIds,
+      ),
     );
     if (selected == null) return;
     final updated = current.copyWith(trackAssetPaths: selected);
@@ -1036,6 +974,373 @@ class _PlaylistCoverPreview extends StatelessWidget {
                 size,
                 placeholder,
               ),
+      ),
+    );
+  }
+}
+
+enum _TrackPickerTab { mine, search }
+
+class _TrackPickerEntry {
+  const _TrackPickerEntry({
+    required this.key,
+    required this.title,
+    this.subtitle,
+    this.coverSource,
+  });
+
+  final String key;
+  final String title;
+  final String? subtitle;
+  final Object? coverSource;
+}
+
+class _GlassTrackPickerSheet extends StatefulWidget {
+  const _GlassTrackPickerSheet({
+    required this.title,
+    required this.mineEntries,
+    required this.searchEntries,
+    required this.initialSelected,
+  });
+
+  final String title;
+  final List<_TrackPickerEntry> mineEntries;
+  final List<_TrackPickerEntry> searchEntries;
+  final Set<String> initialSelected;
+
+  @override
+  State<_GlassTrackPickerSheet> createState() => _GlassTrackPickerSheetState();
+}
+
+class _GlassTrackPickerSheetState extends State<_GlassTrackPickerSheet> {
+  final TextEditingController _queryController = TextEditingController();
+  late final Set<String> _selected = Set<String>.from(widget.initialSelected);
+  _TrackPickerTab _tab = _TrackPickerTab.mine;
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  List<_TrackPickerEntry> get _filtered {
+    if (_tab == _TrackPickerTab.mine) return widget.mineEntries;
+    final q = _queryController.text.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return widget.searchEntries.where((e) {
+      if (e.title.toLowerCase().contains(q)) return true;
+      final s = (e.subtitle ?? '').toLowerCase();
+      return s.isNotEmpty && s.contains(q);
+    }).toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final en = Localizations.localeOf(context).languageCode == 'en';
+    final list = _filtered;
+    final searchIdle = _tab == _TrackPickerTab.search && _queryController.text.trim().isEmpty;
+    final mineLabel = en ? 'My tracks' : 'Мои треки';
+    final searchLabel = en ? 'Search tracks' : 'Поиск треков';
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.all(Radius.circular(20)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.all(Radius.circular(20)),
+                border: Border.all(color: Colors.white.withValues(alpha: isDark ? 0.24 : 0.45)),
+                color: (isDark ? Colors.white : const Color(0xFFF7FAFF))
+                    .withValues(alpha: isDark ? 0.12 : 0.36),
+              ),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(context).height * 0.78,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 10),
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: palette.textMuted.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                      child: Text(
+                        widget.title,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: palette.cardBackground.withValues(alpha: 0.62),
+                          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                          border: Border.all(color: palette.primaryLight.withValues(alpha: 0.38)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _PickerTabChip(
+                                label: mineLabel,
+                                icon: Icons.library_music_rounded,
+                                selected: _tab == _TrackPickerTab.mine,
+                                palette: palette,
+                                isDark: isDark,
+                                onTap: () => setState(() => _tab = _TrackPickerTab.mine),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: _PickerTabChip(
+                                label: searchLabel,
+                                icon: Icons.search_rounded,
+                                selected: _tab == _TrackPickerTab.search,
+                                palette: palette,
+                                isDark: isDark,
+                                onTap: () => setState(() => _tab = _TrackPickerTab.search),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_tab == _TrackPickerTab.search)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                        child: TextField(
+                          controller: _queryController,
+                          onChanged: (_) => setState(() {}),
+                          style: TextStyle(color: palette.textPrimary),
+                          decoration: InputDecoration(
+                            hintText: en ? 'Title or artist…' : 'Название или исполнитель…',
+                            hintStyle: TextStyle(color: palette.textMuted),
+                            filled: true,
+                            fillColor: palette.cardBackground.withValues(alpha: 0.84),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: Icon(Icons.search_rounded, color: palette.textMuted),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: searchIdle
+                          ? Center(
+                              child: Text(
+                                en
+                                    ? 'Start typing to search tracks'
+                                    : 'Начните вводить запрос для поиска треков',
+                                style: TextStyle(color: palette.textSecondary),
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : list.isEmpty
+                          ? Center(
+                              child: Text(
+                                context.t('playlists.noLocalTracks'),
+                                style: TextStyle(color: palette.textSecondary),
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                              itemCount: list.length,
+                              separatorBuilder: (_, _) => const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final e = list[index];
+                                final added = _selected.contains(e.key);
+                                return Material(
+                                  color: palette.cardBackground.withValues(alpha: 0.72),
+                                  borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                                    onTap: () {
+                                      setState(() {
+                                        if (added) {
+                                          _selected.remove(e.key);
+                                        } else {
+                                          _selected.add(e.key);
+                                        }
+                                      });
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                                        border: Border.all(color: palette.primaryLight.withValues(alpha: 0.33)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          buildTrackCover(
+                                            coverSource: e.coverSource,
+                                            width: 44,
+                                            height: 44,
+                                            borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                                            placeholder: Container(
+                                              width: 44,
+                                              height: 44,
+                                              decoration: BoxDecoration(
+                                                color: palette.primaryDark.withValues(alpha: 0.46),
+                                                borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                                              ),
+                                              child: Icon(Icons.music_note_rounded, color: palette.textMuted),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  e.title,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: palette.textPrimary,
+                                                  ),
+                                                ),
+                                                if ((e.subtitle ?? '').isNotEmpty)
+                                                  Text(
+                                                    e.subtitle!,
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: palette.textSecondary,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          Icon(
+                                            added ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded,
+                                            color: added ? palette.accent : palette.textMuted,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: Text(context.t('common.cancel')),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: palette.accent.withValues(alpha: 0.22),
+                                foregroundColor: palette.textPrimary,
+                                elevation: 0,
+                                side: BorderSide(color: palette.accent.withValues(alpha: 0.56)),
+                              ),
+                              onPressed: () => Navigator.pop(context, _selected.toList(growable: false)),
+                              child: Text(en ? 'Done' : 'Готово'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PickerTabChip extends StatelessWidget {
+  const _PickerTabChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.palette,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final AppColorPalette palette;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppConstants.radiusLarge - 2),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppConstants.radiusLarge - 2),
+            color: selected ? palette.accent.withValues(alpha: isDark ? 0.3 : 0.22) : Colors.transparent,
+            border: Border.all(
+              color: selected ? palette.accent.withValues(alpha: 0.55) : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? palette.accent : palette.textMuted,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected ? palette.textPrimary : palette.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
