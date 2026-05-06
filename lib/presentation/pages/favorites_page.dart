@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/network/tracks_api.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
@@ -27,7 +28,7 @@ class FavoritesPage extends StatefulWidget {
 class _FavoritesPageState extends State<FavoritesPage> {
   List<Track> _favoriteTracks = [];
   bool _isLoading = true;
-  int? _lastLikedCount;
+  String? _lastLikedFingerprint;
 
   @override
   void initState() {
@@ -43,27 +44,64 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   void _onServiceChanged() {
-    final count = widget.audioPlayerService.likedPaths.length;
-    if (_lastLikedCount != null && _lastLikedCount != count && mounted) {
+    final fp = _likesFingerprint(widget.audioPlayerService.likedPaths);
+    if (_lastLikedFingerprint != null &&
+        _lastLikedFingerprint != fp &&
+        mounted) {
       _loadFavorites();
     }
-    _lastLikedCount = count;
+    _lastLikedFingerprint = fp;
+  }
+
+  String _likesFingerprint(Set<String> set) {
+    final sorted = set.toList()..sort();
+    return sorted.join('|');
   }
 
   Future<void> _loadFavorites() async {
     setState(() => _isLoading = true);
     final allTracks = await loadLocalTracks();
+    await widget.audioPlayerService.syncTrackLikesFromServer();
     if (mounted) {
       final liked = widget.audioPlayerService.likedPaths;
+      final out = <Track>[];
+      final seen = <String>{};
+
+      for (final t in allTracks) {
+        final p = AudioPlayerService.playablePath(t);
+        if (liked.contains(p) || liked.contains(t.assetPath)) {
+          if (seen.add(t.assetPath)) out.add(t);
+        }
+      }
+
+      final serverIds = liked
+          .where((p) => p.startsWith('server_track_'))
+          .map((p) => int.tryParse(p.replaceFirst('server_track_', '')))
+          .whereType<int>()
+          .toSet();
+      if (serverIds.isNotEmpty) {
+        try {
+          final remote = await TracksApi().fetchTracks(limit: 200);
+          for (final r in remote) {
+            if (!serverIds.contains(r.id)) continue;
+            final key = 'server_track_${r.id}';
+            if (!seen.add(key)) continue;
+            out.add(
+              Track(
+                assetPath: key,
+                title: r.title,
+                artist: r.artist,
+                audioFilePath: r.streamUrl(),
+                coverAssetPath: r.coverUrl(),
+              ),
+            );
+          }
+        } catch (_) {}
+      }
       setState(() {
-        _favoriteTracks = allTracks
-            .where((t) {
-              final p = AudioPlayerService.playablePath(t);
-              return liked.contains(p) || liked.contains(t.assetPath);
-            })
-            .toList();
+        _favoriteTracks = out;
         _isLoading = false;
-        _lastLikedCount = liked.length;
+        _lastLikedFingerprint = _likesFingerprint(liked);
       });
     }
   }
