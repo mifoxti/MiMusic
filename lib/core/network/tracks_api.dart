@@ -65,4 +65,32 @@ class TracksApi {
         .map((e) => ServerTrackListItem.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
   }
+
+  int? parseServerTrackId(String path) {
+    const p = 'server_track_';
+    if (!path.startsWith(p)) return null;
+    return int.tryParse(path.substring(p.length));
+  }
+
+  Future<bool> getTrackLikeStatus({
+    required int trackId,
+    required int userId,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/tracks/$trackId/like',
+      queryParameters: {'userId': userId},
+    );
+    return res.data?['status'] as bool? ?? false;
+  }
+
+  Future<bool> toggleTrackLike({
+    required int trackId,
+    required int userId,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/tracks/$trackId/like',
+      data: {'userId': userId},
+    );
+    return res.data?['status'] as bool? ?? false;
+  }
 }

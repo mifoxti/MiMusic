@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../auth/auth_session_store.dart';
+import '../network/tracks_api.dart';
 import '../settings/settings_repository.dart';
 import '../social/listening_room_session.dart';
 import 'mimusic_audio_handler.dart';
@@ -20,6 +22,7 @@ class AudioPlayerService extends ChangeNotifier {
   })  : _handler = audioHandler as MiMusicAudioHandler,
         _settingsRepository = settingsRepository {
     _listenToHandler();
+    unawaited(syncTrackLikesFromServer());
   }
 
   final MiMusicAudioHandler _handler;
@@ -318,12 +321,32 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> toggleLike() async {
-    await _handler.customAction('like');
+    final path = currentPlayablePath;
+    if (path == null || path.isEmpty) return;
+    await toggleLikePath(path);
   }
 
   /// Лайк/снятие лайка по пути воспроизведения (для строк списков, не только текущий трек).
   Future<void> toggleLikePath(String path) async {
     if (path.isEmpty) return;
+    final trackId = TracksApi().parseServerTrackId(path);
+    final acc = await AuthSessionStore.readAccount();
+    final userId = acc?.userId;
+    if (trackId != null && userId != null) {
+      try {
+        final liked = await TracksApi().toggleTrackLike(
+          trackId: trackId,
+          userId: userId,
+        );
+        await _handler.customAction('setLikePath', {
+          'path': path,
+          'liked': liked,
+        });
+        return;
+      } catch (_) {
+        // fallback локального переключения
+      }
+    }
     await _handler.customAction('toggleLikePath', {'path': path});
   }
 
@@ -347,7 +370,48 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// Удаляет трек из избранного по assetPath (для страницы «Любимые»).
   Future<void> removeFromFavorites(String assetPath) async {
+    final trackId = TracksApi().parseServerTrackId(assetPath);
+    final acc = await AuthSessionStore.readAccount();
+    final userId = acc?.userId;
+    if (trackId != null && userId != null) {
+      try {
+        final liked = await TracksApi().getTrackLikeStatus(
+          trackId: trackId,
+          userId: userId,
+        );
+        if (liked) {
+          await TracksApi().toggleTrackLike(trackId: trackId, userId: userId);
+        }
+        await _handler.customAction('setLikePath', {
+          'path': assetPath,
+          'liked': false,
+        });
+        return;
+      } catch (_) {
+        // fallback ниже
+      }
+    }
     await _handler.customAction('dislike', {'path': assetPath});
+  }
+
+  Future<void> syncTrackLikesFromServer() async {
+    final acc = await AuthSessionStore.readAccount();
+    final userId = acc?.userId;
+    if (userId == null) return;
+    try {
+      final tracks = await TracksApi().fetchTracks(limit: 200);
+      final liked = <String>{};
+      for (final t in tracks) {
+        final s = await TracksApi().getTrackLikeStatus(
+          trackId: t.id,
+          userId: userId,
+        );
+        if (s) liked.add('server_track_${t.id}');
+      }
+      await _handler.customAction('replaceLikedPaths', {'paths': liked.toList()});
+    } catch (_) {
+      // сеть недоступна — оставляем локальное состояние
+    }
   }
 
   /// Применяет настройки эквалайзера из настроек приложения.

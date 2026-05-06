@@ -8,7 +8,6 @@ import '../history/listening_history_repository.dart';
 import '../platform/platform.dart';
 import '../settings/settings_repository.dart';
 import '../social/listening_room_session.dart';
-import 'local_tracks.dart';
 
 /// Конфигурация для [MiMusicAudioHandler]. Задаётся до [AudioService.init].
 SettingsRepository? _handlerSettingsRepository;
@@ -30,7 +29,6 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   MiMusicAudioHandler() {
     _initPlayer();
     _listenToPlayer();
-    _likedPaths.addAll(localTrackAssets);
     likedPathsNotifier.value = Set.from(_likedPaths);
   }
 
@@ -419,6 +417,40 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     ));
   }
 
+  void _setLikePath({
+    required String path,
+    required bool liked,
+  }) {
+    if (path.isEmpty) return;
+    if (liked) {
+      _likedPaths.add(path);
+      _dislikedPaths.remove(path);
+    } else {
+      _likedPaths.remove(path);
+    }
+    likedPathsNotifier.value = Set.from(_likedPaths);
+    dislikedPathsNotifier.value = Set.from(_dislikedPaths);
+    playbackState.add(playbackState.value.copyWith(
+      controls: _currentControls(),
+      systemActions: _systemActions,
+      androidCompactActionIndices: _compactIndices,
+    ));
+  }
+
+  void _replaceLikedPaths(Set<String> next) {
+    _likedPaths
+      ..clear()
+      ..addAll(next.where((e) => e.trim().isNotEmpty));
+    _dislikedPaths.removeWhere(_likedPaths.contains);
+    likedPathsNotifier.value = Set.from(_likedPaths);
+    dislikedPathsNotifier.value = Set.from(_dislikedPaths);
+    playbackState.add(playbackState.value.copyWith(
+      controls: _currentControls(),
+      systemActions: _systemActions,
+      androidCompactActionIndices: _compactIndices,
+    ));
+  }
+
   void _toggleDislikeCurrent() {
     final path = currentPlayablePath;
     if (path == null) return;
@@ -681,6 +713,19 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         break;
       case 'toggleLikePath':
         _toggleLikePath(extras?['path'] as String? ?? '');
+        break;
+      case 'setLikePath':
+        _setLikePath(
+          path: extras?['path'] as String? ?? '',
+          liked: extras?['liked'] as bool? ?? false,
+        );
+        break;
+      case 'replaceLikedPaths':
+        final raw = extras?['paths'];
+        final next = raw is List
+            ? raw.map((e) => e.toString()).toSet()
+            : <String>{};
+        _replaceLikedPaths(next);
         break;
       case 'toggleDislikeCurrent':
         _toggleDislikeCurrent();
