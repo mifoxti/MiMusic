@@ -71,6 +71,9 @@ class _MainShellState extends State<MainShell>
   int _selectedIndex = 0;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
+  /// Увеличивается при переходе на вкладку «Главная», чтобы перечитать [GET /tracks].
+  final ValueNotifier<int> _homeCatalogReloadToken = ValueNotifier<int>(0);
+
   late final AnimationController _playerDockController;
   StreamSubscription<NotificationIntent>? _notificationIntentSub;
 
@@ -166,6 +169,7 @@ class _MainShellState extends State<MainShell>
     _playerDockController.removeStatusListener(_onPlayerDockStatus);
     _playerDockController.dispose();
     _notificationIntentSub?.cancel();
+    _homeCatalogReloadToken.dispose();
     PlayerDockHost.unregister();
     ShellNavigatorHost.unregister();
     super.dispose();
@@ -285,6 +289,9 @@ class _MainShellState extends State<MainShell>
         (route) => route.settings.name == _ShellRoutes.tabs || route.isFirst,
       );
     }
+    if (index == 0) {
+      _homeCatalogReloadToken.value++;
+    }
     if (index != _selectedIndex) {
       setState(() => _selectedIndex = index);
     }
@@ -335,6 +342,8 @@ class _MainShellState extends State<MainShell>
                                   selectedIndex: _selectedIndex,
                                   onTabTap: (i) =>
                                       setState(() => _selectedIndex = i),
+                                  homeCatalogReloadToken:
+                                      _homeCatalogReloadToken,
                                   getHomeSectionUseCase:
                                       widget.getHomeSectionUseCase,
                                   audioPlayerService: widget.audioPlayerService,
@@ -525,6 +534,7 @@ class _TabsView extends StatelessWidget {
   const _TabsView({
     required this.selectedIndex,
     required this.onTabTap,
+    required this.homeCatalogReloadToken,
     required this.getHomeSectionUseCase,
     required this.audioPlayerService,
     required this.listeningHistoryRepository,
@@ -540,6 +550,7 @@ class _TabsView extends StatelessWidget {
 
   final int selectedIndex;
   final ValueChanged<int> onTabTap;
+  final ValueNotifier<int> homeCatalogReloadToken;
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
   final ListeningHistoryRepository listeningHistoryRepository;
@@ -562,6 +573,7 @@ class _TabsView extends StatelessWidget {
           audioPlayerService: audioPlayerService,
           listeningHistoryRepository: listeningHistoryRepository,
           playlistsRepository: playlistsRepository,
+          catalogReloadToken: homeCatalogReloadToken,
         ),
         SearchPage(
           audioPlayerService: audioPlayerService,

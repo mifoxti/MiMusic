@@ -1,3 +1,6 @@
+import 'dart:async' show unawaited;
+
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/audio/audio_player_service.dart';
@@ -14,6 +17,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cover_image.dart';
+import '../../../../core/widgets/track_cover.dart';
 import '../../../../presentation/pages/artist_page.dart';
 import '../../../../presentation/pages/listening_history_page.dart';
 import '../../../../features/playlists/domain/repositories/playlists_repository.dart';
@@ -37,12 +41,16 @@ class HomePage extends StatefulWidget {
     required this.audioPlayerService,
     required this.listeningHistoryRepository,
     required this.playlistsRepository,
+    this.catalogReloadToken,
   });
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
   final ListeningHistoryRepository listeningHistoryRepository;
   final PlaylistsRepository playlistsRepository;
+
+  /// Счётчик из [MainShell]: при переходе на вкладку «Главная» перечитываем каталог с сервера.
+  final ValueNotifier<int>? catalogReloadToken;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -59,6 +67,40 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _load();
+    widget.catalogReloadToken?.addListener(_onCatalogReloadToken);
+  }
+
+  @override
+  void dispose() {
+    widget.catalogReloadToken?.removeListener(_onCatalogReloadToken);
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.catalogReloadToken != widget.catalogReloadToken) {
+      oldWidget.catalogReloadToken?.removeListener(_onCatalogReloadToken);
+      widget.catalogReloadToken?.addListener(_onCatalogReloadToken);
+    }
+  }
+
+  void _onCatalogReloadToken() {
+    unawaited(_reloadServerTracks());
+  }
+
+  Future<void> _reloadServerTracks() async {
+    try {
+      final remote = await TracksApi().fetchTracks(limit: 50);
+      if (!mounted) return;
+      setState(() {
+        _serverTracks = remote;
+        _serverTracksError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _serverTracksError = e.toString());
+    }
   }
 
   Future<void> _load() async {
@@ -74,7 +116,7 @@ class _HomePageState extends State<HomePage> {
       List<ServerTrackListItem> remote = [];
       String? remoteErr;
       try {
-        remote = await TracksApi().fetchTracks(limit: 25);
+        remote = await TracksApi().fetchTracks(limit: 50);
       } catch (e) {
         remoteErr = e.toString();
       }
@@ -165,6 +207,7 @@ class _HomePageState extends State<HomePage> {
       title: e.title,
       artist: e.artist,
       audioFilePath: e.streamUrl(),
+      coverBytes: e.coverBytes,
       coverAssetPath: e.coverUrl(),
     );
   }
@@ -333,7 +376,13 @@ class _HomePageState extends State<HomePage> {
         gradient: _homeGradient(palette),
       ),
       child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
         slivers: [
+          CupertinoSliverRefreshControl(
+            onRefresh: _load,
+          ),
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(0, 16 + topPadding, 0, 0),
@@ -702,8 +751,8 @@ class _ServerTracksDevSection extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Row(
                   children: [
-                    buildCoverImage(
-                      imageUrl: tracks[i].coverUrl(),
+                    buildTrackCover(
+                      coverSource: tracks[i].coverBytes ?? tracks[i].coverUrl(),
                       width: 44,
                       height: 44,
                       borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
