@@ -4,15 +4,19 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
-import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/auth/auth_session_store.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
+import '../../core/network/colisten_api.dart';
+import '../../core/network/friends_api.dart';
+import '../../core/network/tracks_api.dart';
 import '../../core/player/player_dock_host.dart';
+import '../../core/social/colisten_controller.dart';
 import '../../core/social/listening_room_session.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../features/playlists/data/repositories/local_playlists_repository.dart';
+import '../../features/playlists/data/repositories/session_aware_playlists_repository.dart';
 import '../../features/playlists/domain/entities/playlist.dart';
 import '../../features/playlists/domain/repositories/playlists_repository.dart';
 
@@ -40,13 +44,13 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
   _PermissionMode _skipControl = _PermissionMode.hostOnly;
   _PermissionMode _playlistControl = _PermissionMode.hostOnly;
 
-  final Set<String> _selectedFriends = {'alexwave'};
+  final Set<int> _selectedFriendIds = {};
   final Set<String> _selectedPlaylistIds = {};
   final Set<String> _selectedTrackPaths = {};
   List<Track> _allTracks = const [];
   List<Playlist> _playlists = const [];
 
-  final PlaylistsRepository _playlistRepo = LocalPlaylistsRepository();
+  final PlaylistsRepository _playlistRepo = SessionAwarePlaylistsRepository();
 
   late final TabController _playlistTabController;
   late final TabController _trackTabController;
@@ -57,13 +61,7 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
 
   String _trackSearchQuery = '';
 
-  final List<String> _friends = const [
-    'alexwave',
-    'lofi_nora',
-    'nightcore_anna',
-    'dockfr10',
-    'AzukiNHG',
-  ];
+  List<FriendRemoteDto> _serverFriends = const [];
 
   @override
   void initState() {
@@ -75,6 +73,17 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
     widget.audioPlayerService?.addListener(_onAudioServiceChanged);
     unawaited(_loadPlaylists());
     unawaited(_loadTracks());
+    unawaited(_loadServerFriends());
+  }
+
+  Future<void> _loadServerFriends() async {
+    try {
+      final acc = await AuthSessionStore.readAccount();
+      if (acc == null || acc.sessionToken.trim().isEmpty) return;
+      final rows = await FriendsApi().fetchFriends();
+      if (!mounted) return;
+      setState(() => _serverFriends = rows);
+    } catch (_) {}
   }
 
   @override
@@ -101,7 +110,24 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
   }
 
   Future<void> _loadTracks() async {
-    final tracks = await loadLocalTracks();
+    List<Track> tracks;
+    try {
+      final remote = await TracksApi().fetchTracks(limit: 200);
+      tracks = remote
+          .map(
+            (e) => Track(
+              assetPath: 'server_track_${e.id}',
+              title: e.title.trim().isEmpty ? '—' : e.title.trim(),
+              artist: e.artist,
+              audioFilePath: e.streamUrl(),
+              coverAssetPath: e.coverUrl(),
+              coverBytes: e.coverBytes,
+            ),
+          )
+          .toList();
+    } catch (_) {
+      tracks = const [];
+    }
     if (!mounted) return;
     setState(() {
       _allTracks = tracks;
@@ -170,32 +196,97 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
     });
   }
 
-  /// Очередь: сначала текущий трек из плеера, затем выбранные локальные без дубликата.
+  /// Очередь комнаты: выбранные треки + текущий трек хоста (если его не выбрали вручную).
   List<Track> _queueTracksFromSelection() {
     final selected =
         _allTracks.where((e) => _selectedTrackPaths.contains(e.assetPath)).toList();
-    final cur = widget.audioPlayerService?.currentTrack;
-    if (cur == null) return selected;
-    final curPlayable = AudioPlayerService.playablePath(cur);
-    final rest = selected.where((t) {
-      final p = AudioPlayerService.playablePath(t);
-      return p != curPlayable && t.assetPath != cur.assetPath;
-    }).toList();
-    return [cur, ...rest];
+    final current = widget.audioPlayerService?.currentTrack;
+    if (current == null) return selected;
+    final exists = selected.any((t) => t.assetPath == current.assetPath);
+    if (exists) return selected;
+    return [current, ...selected];
   }
 
   Future<void> _createRoom() async {
     final queue = _queueTracksFromSelection();
     final service = widget.audioPlayerService;
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('friends.loginToFriend'))),
+      );
+      return;
+    }
+    final nick = acc.nickname.trim().isEmpty ? 'user' : acc.nickname;
+    final queueTrackKeys = queue
+        .map((t) => TracksApi().trackKeyForPaths(
+              assetPath: t.assetPath,
+              audioFilePath: t.audioFilePath,
+            ))
+        .toList();
+    if (service != null && queue.isNotEmpty) {
+      final current = service.currentTrack;
+      final currentInQueue = current != null &&
+          queue.any((t) => t.assetPath == current.assetPath);
+      if (!currentInQueue) {
+        await service.playTrack(
+          queue.first,
+          queue: queue,
+          leaveListeningRoomSession: false,
+        );
+      } else {
+        await service.replaceQueueFromRoomSync(queue);
+      }
+    }
+    final current = service?.currentTrack;
+    final tid = current == null
+        ? null
+        : TracksApi().resolveServerTrackId(
+            assetPath: current.assetPath,
+            audioFilePath: current.audioFilePath,
+          );
+    final trackKey = current == null
+        ? null
+        : TracksApi().trackKeyForPaths(
+            assetPath: current.assetPath,
+            audioFilePath: current.audioFilePath,
+          );
+    final pos = service == null ? 0.0 : service.position.inMilliseconds / 1000.0;
+    final playing = service?.isPlaying ?? false;
+    String roomId;
+    try {
+      roomId = await ColistenApi().createRoom(
+        isOpen: _roomType == _RoomType.open,
+        trackId: tid,
+        trackKey: trackKey,
+        queueTrackKeys: queueTrackKeys,
+        positionSeconds: pos,
+        playing: playing,
+        controlPauseHostOnly: _pauseControl == _PermissionMode.hostOnly,
+        controlSeekHostOnly: _seekControl == _PermissionMode.hostOnly,
+        controlShuffleHostOnly: _shuffleControl == _PermissionMode.hostOnly,
+        controlRepeatHostOnly: _repeatControl == _PermissionMode.hostOnly,
+        controlSkipHostOnly: _skipControl == _PermissionMode.hostOnly,
+        controlPlaylistHostOnly: _playlistControl == _PermissionMode.hostOnly,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('common.errorLoading'))),
+      );
+      return;
+    }
     final playlistTitles = _playlists
         .where((p) => _selectedPlaylistIds.contains(p.id))
         .map((p) => p.title)
         .toList();
+    final listeners = <String>[nick];
     ListeningRoomSession.instance.start(
       roomTitle: _roomType == _RoomType.private ? 'Private room' : 'Open room',
-      listeners: ['mifoxti', ..._selectedFriends],
-      hostUsername: 'mifoxti',
-      currentUsername: 'mifoxti',
+      listeners: listeners,
+      hostUsername: nick,
+      currentUsername: nick,
       privateRoom: _roomType == _RoomType.private,
       pauseHostOnly: _pauseControl == _PermissionMode.hostOnly,
       seekHostOnly: _seekControl == _PermissionMode.hostOnly,
@@ -206,18 +297,27 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
       selectedPlaylists: playlistTitles,
       queue: queue,
     );
+    if (service != null) {
+      try {
+        await ColistenController.instance.connectHost(roomId: roomId, audio: service);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.t('common.errorLoading'))),
+        );
+      }
+    }
+    if (_selectedFriendIds.isNotEmpty) {
+      try {
+        await ColistenApi().inviteUsers(
+          roomId: roomId,
+          userIds: _selectedFriendIds.toList(),
+        );
+      } catch (_) {}
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
     PlayerDockHost.expand();
-    if (service != null && queue.isNotEmpty) {
-      unawaited(
-        service.playTrack(
-          queue.first,
-          queue: queue,
-          leaveListeningRoomSession: false,
-        ),
-      );
-    }
   }
 
   @override
@@ -336,26 +436,31 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
                 children: [
                   _sectionTitle(context, isEn ? '3. Invite friends' : '3. Приглашение друзей'),
                   const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _friends.map((friend) {
-                      final selected = _selectedFriends.contains(friend);
-                      return FilterChip(
-                        label: Text('@$friend'),
-                        selected: selected,
-                        onSelected: (value) {
-                          setState(() {
-                            if (value) {
-                              _selectedFriends.add(friend);
-                            } else {
-                              _selectedFriends.remove(friend);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
+                  _serverFriends.isEmpty
+                      ? Text(
+                          isEn ? 'Log in and add friends to invite them.' : 'Войдите и добавьте друзей для приглашений.',
+                          style: TextStyle(color: palette.textSecondary, fontSize: 13),
+                        )
+                      : Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _serverFriends.map((f) {
+                            final selected = _selectedFriendIds.contains(f.id);
+                            return FilterChip(
+                              label: Text('@${f.username}'),
+                              selected: selected,
+                              onSelected: (value) {
+                                setState(() {
+                                  if (value) {
+                                    _selectedFriendIds.add(f.id);
+                                  } else {
+                                    _selectedFriendIds.remove(f.id);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
                 ],
               ),
             ),

@@ -15,7 +15,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/social/friend_request_notifications.dart';
+import '../../core/network/notifications_api.dart';
 import '../../core/platform/platform.dart';
 import '../../core/player/shell_route_back_guard.dart';
 import '../widgets/server_me_avatar.dart';
@@ -120,7 +120,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    FriendRequestNotifications.instance.seedDemoIfNeeded(_profileNickname);
     final palette = AppPaletteExtension.of(context).palette;
     final size = MediaQuery.sizeOf(context);
     final topPadding = MediaQuery.paddingOf(context).top;
@@ -192,72 +191,9 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        ListenableBuilder(
-                          listenable: FriendRequestNotifications.instance,
-                          builder: (context, _) {
-                            final notifications =
-                                FriendRequestNotifications.instance.allFor(
-                              _profileNickname,
-                            );
-                            final pending = notifications
-                                .where(
-                                  (n) =>
-                                      n.status == FriendRequestStatus.pending,
-                                )
-                                .length;
-                            return IconButton(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  ShellMaterialPageRoute<void>(
-                                    builder: (context) => NotificationsPage(
-                                      currentUsername: _profileNickname,
-                                      audioPlayerService: widget.audioPlayerService,
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  const Icon(
-                                    Icons.notifications_rounded,
-                                    color: Colors.white,
-                                  ),
-                                  if (pending > 0)
-                                    Positioned(
-                                      right: -6,
-                                      top: -6,
-                                      child: Container(
-                                        constraints: const BoxConstraints(
-                                          minWidth: 16,
-                                          minHeight: 16,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.redAccent,
-                                          borderRadius: BorderRadius.circular(10),
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          '$pending',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              style: IconButton.styleFrom(
-                                backgroundColor:
-                                    Colors.black.withValues(alpha: 0.25),
-                              ),
-                            );
-                          },
+                        _ProfileNotificationBell(
+                          audioPlayerService: widget.audioPlayerService,
+                          profileNickname: _profileNickname,
                         ),
                         const SizedBox(width: 4),
                         IconButton(
@@ -759,6 +695,104 @@ class _StatItem extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ProfileNotificationBell extends StatefulWidget {
+  const _ProfileNotificationBell({
+    required this.audioPlayerService,
+    required this.profileNickname,
+  });
+
+  final AudioPlayerService audioPlayerService;
+  final String profileNickname;
+
+  @override
+  State<_ProfileNotificationBell> createState() => _ProfileNotificationBellState();
+}
+
+class _ProfileNotificationBellState extends State<_ProfileNotificationBell> {
+  int _unread = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refresh());
+    _timer = Timer.periodic(const Duration(seconds: 35), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.trim().isEmpty) {
+      if (mounted) setState(() => _unread = 0);
+      return;
+    }
+    try {
+      final c = await NotificationsApi().fetchUnreadCount();
+      if (mounted) setState(() => _unread = c);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: () async {
+        await Navigator.of(context).push<void>(
+          ShellMaterialPageRoute<void>(
+            builder: (context) => NotificationsPage(
+              currentUsername: widget.profileNickname,
+              audioPlayerService: widget.audioPlayerService,
+              onUnreadChanged: _refresh,
+            ),
+          ),
+        );
+        if (mounted) await _refresh();
+      },
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Icon(
+            Icons.notifications_rounded,
+            color: Colors.white,
+          ),
+          if (_unread > 0)
+            Positioned(
+              right: -6,
+              top: -6,
+              child: Container(
+                constraints: const BoxConstraints(
+                  minWidth: 16,
+                  minHeight: 16,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  _unread > 99 ? '99+' : '$_unread',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.black.withValues(alpha: 0.25),
+      ),
     );
   }
 }

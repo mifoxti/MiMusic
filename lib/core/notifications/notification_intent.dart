@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum NotificationTarget { friendProfile, release }
+enum NotificationTarget { friendProfile, release, colistenInvite }
 
 class NotificationIntent {
   const NotificationIntent({
@@ -9,6 +9,7 @@ class NotificationIntent {
     this.avatarUrl,
     this.releaseTitle,
     this.releaseCoverUrl,
+    this.roomId,
   });
 
   final NotificationTarget target;
@@ -16,17 +17,20 @@ class NotificationIntent {
   final String? avatarUrl;
   final String? releaseTitle;
   final String? releaseCoverUrl;
+  final String? roomId;
 
   String toPayload() {
     return jsonEncode({
       'target': switch (target) {
         NotificationTarget.friendProfile => 'friend_profile',
         NotificationTarget.release => 'release',
+        NotificationTarget.colistenInvite => 'colisten_invite',
       },
       'username': username,
       'avatarUrl': avatarUrl,
       'releaseTitle': releaseTitle,
       'releaseCoverUrl': releaseCoverUrl,
+      'roomId': roomId,
     });
   }
 
@@ -39,6 +43,7 @@ class NotificationIntent {
       final target = switch (targetRaw) {
         'friend_profile' => NotificationTarget.friendProfile,
         'release' => NotificationTarget.release,
+        'colisten_invite' => NotificationTarget.colistenInvite,
         _ => null,
       };
       if (target == null) return null;
@@ -48,6 +53,7 @@ class NotificationIntent {
         avatarUrl: map['avatarUrl'] as String?,
         releaseTitle: map['releaseTitle'] as String?,
         releaseCoverUrl: map['releaseCoverUrl'] as String?,
+        roomId: map['roomId'] as String?,
       );
     } catch (_) {
       return null;

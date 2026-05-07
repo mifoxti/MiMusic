@@ -22,6 +22,7 @@ import '../../features/playlists/data/repositories/remote_playlists_repository.d
 import '../../features/playlists/domain/repositories/playlists_repository.dart';
 import 'artist_page.dart';
 import 'playlist_detail_page.dart';
+import 'user_public_profile_page.dart';
 
 /// Режим поиска: музыка (треки + релизы как альбомы) или пользователи.
 enum _SearchMode { music, people }
@@ -158,6 +159,7 @@ class _SearchPageState extends State<SearchPage> {
                 (u) => ListeningFriend(
                   username: u.nickname,
                   avatarUrl: userAvatarUrl(u.id, cacheBust: bust),
+                  userId: u.id,
                 ),
               )
               .toList();
@@ -781,15 +783,27 @@ class _SearchPageState extends State<SearchPage> {
                   friend: friend,
                   palette: palette,
                   onTap: () {
-                    Navigator.of(context).push(
-                      ShellMaterialPageRoute<void>(
-                        builder: (_) => ArtistPage(
-                          artistName: friend.username,
-                          coverImageUrl: friend.avatarUrl,
-                          audioPlayerService: widget.audioPlayerService,
+                    if (friend.userId != null) {
+                      Navigator.of(context).push(
+                        ShellMaterialPageRoute<void>(
+                          builder: (_) => UserPublicProfilePage(
+                            userId: friend.userId!,
+                            nickname: friend.username,
+                            audioPlayerService: widget.audioPlayerService,
+                          ),
                         ),
-                      ),
-                    );
+                      );
+                    } else {
+                      Navigator.of(context).push(
+                        ShellMaterialPageRoute<void>(
+                          builder: (_) => ArtistPage(
+                            artistName: friend.username,
+                            coverImageUrl: friend.avatarUrl,
+                            audioPlayerService: widget.audioPlayerService,
+                          ),
+                        ),
+                      );
+                    }
                   },
                 ),
               );

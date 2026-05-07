@@ -179,6 +179,58 @@ class LocalNotificationsService {
     );
   }
 
+  Future<void> showColistenInviteNotification({
+    required String fromUsername,
+    required String roomId,
+    String? fromAvatarUrl,
+    String? fromAvatarAssetPath,
+  }) async {
+    final notificationsEnabled = await _notificationsEnabled();
+    if (!notificationsEnabled) return;
+    if (!_initialized) {
+      await initialize();
+    }
+    if (!_initialized) return;
+    final avatarPath = await _resolveAvatarPath(
+      avatarUrl: fromAvatarUrl,
+      avatarAssetPath: fromAvatarAssetPath,
+    );
+    final avatarBitmap =
+        avatarPath != null ? FilePathAndroidBitmap(avatarPath) : null;
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _friendRequestsChannel.id,
+        _friendRequestsChannel.name,
+        channelDescription: _friendRequestsChannel.description,
+        importance: Importance.high,
+        priority: Priority.high,
+        largeIcon: avatarBitmap,
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        attachments: avatarPath != null
+            ? <DarwinNotificationAttachment>[
+                DarwinNotificationAttachment(avatarPath),
+              ]
+            : null,
+      ),
+    );
+    await _plugin.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: 'Приглашение в совместное прослушивание',
+      body: '@$fromUsername приглашает вас в комнату',
+      notificationDetails: details,
+      payload: NotificationIntent(
+        target: NotificationTarget.colistenInvite,
+        username: fromUsername,
+        avatarUrl: fromAvatarUrl,
+        roomId: roomId,
+      ).toPayload(),
+    );
+  }
+
   Future<String?> _resolveAvatarPath({
     String? avatarUrl,
     String? avatarAssetPath,

@@ -1,18 +1,21 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
-import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/auth/auth_session_store.dart';
+import '../../core/network/api_config.dart';
+import '../../core/network/playlists_api.dart';
+import '../../core/network/thoughts_api.dart';
+import '../../core/network/tracks_api.dart';
 import '../../core/player/shell_route_back_guard.dart';
-import '../../features/playlists/data/repositories/local_playlists_repository.dart';
-import '../../features/playlists/domain/entities/playlist.dart';
 import 'artist_page.dart';
 import 'playlist_detail_page.dart';
 
@@ -24,10 +27,16 @@ class ThoughtsPage extends StatefulWidget {
     super.key,
     required this.currentUsername,
     this.audioPlayerService,
+    this.viewedUserId,
+    this.viewedUserNickname,
   });
 
-  final String currentUsername; 
+  final String currentUsername;
   final AudioPlayerService? audioPlayerService;
+
+  /// Если задан — лента одной последней мысли этого пользователя с сервера ([GET /users/{id}/thought]).
+  final int? viewedUserId;
+  final String? viewedUserNickname;
 
   @override
   State<ThoughtsPage> createState() => _ThoughtsPageState();
@@ -44,7 +53,78 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   @override
   void initState() {
     super.initState();
-    _items.addAll(_seedThoughts());
+    if (widget.viewedUserId != null) {
+      unawaited(_loadUserThoughtsList());
+    } else {
+      unawaited(_loadFeed());
+    }
+  }
+
+  _ThoughtItem _fromDto(ThoughtFeedItemDto dto) {
+    _ThoughtAttachment? att;
+    final at = dto.attachmentType;
+    if (at == 1 && dto.attachmentTrackId != null) {
+      final tid = dto.attachmentTrackId!;
+      att = _ThoughtAttachment(
+        type: _ThoughtAttachmentType.track,
+        title: (dto.attachmentTrackTitle ?? '').trim().isEmpty ? '—' : dto.attachmentTrackTitle!.trim(),
+        subtitle: (dto.attachmentTrackArtist ?? '').trim().isEmpty ? null : dto.attachmentTrackArtist!.trim(),
+        trackAssetPath: 'server_track_$tid',
+        serverTrackId: tid,
+      );
+    } else if (at == 2 && dto.attachmentPlaylistId != null) {
+      final pid = dto.attachmentPlaylistId!;
+      att = _ThoughtAttachment(
+        type: _ThoughtAttachmentType.playlist,
+        title: (dto.attachmentPlaylistTitle ?? '').trim().isEmpty ? '—' : dto.attachmentPlaylistTitle!.trim(),
+        subtitle: null,
+        playlistId: 'srv:$pid',
+      );
+    }
+    final ts = dto.createdAt;
+    return _ThoughtItem(
+      id: dto.id.toString(),
+      author: dto.authorNickname,
+      text: (dto.bodyText ?? '').trim(),
+      createdAt: DateTime.tryParse(ts ?? '') ?? DateTime.now(),
+      isFriend: dto.isFriend,
+      attachment: att,
+      likesCount: 0,
+      comments: const [],
+    );
+  }
+
+  Future<void> _loadFeed() async {
+    try {
+      final scope = _feed == _ThoughtFeed.friends ? 'friends' : 'popular';
+      final list = await ThoughtsApi().fetchThoughtFeed(scope: scope);
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(list.map(_fromDto));
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _items.clear());
+    }
+  }
+
+  Future<void> _loadUserThoughtsList() async {
+    final id = widget.viewedUserId;
+    if (id == null) return;
+    try {
+      final list = await ThoughtsApi().fetchUserThoughts(id);
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(list.map(_fromDto));
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _items.clear());
+    }
   }
 
   @override
@@ -60,65 +140,6 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
       thoughtId,
       TextEditingController.new,
     );
-  }
-
-  List<_ThoughtItem> _seedThoughts() {
-    return [
-      _ThoughtItem(
-        id: '1',
-        author: 'alexwave',
-        text:
-            'Никто так не спасает вечер, как правильный дроп в наушниках.',
-        createdAt: DateTime.now().subtract(const Duration(minutes: 12)),
-        isFriend: true,
-        attachment: const _ThoughtAttachment(
-          type: _ThoughtAttachmentType.track,
-          title: 'Why We Lose',
-          subtitle: 'Cartoon',
-          trackAssetPath: 'assets/music/Cartoon - Why We Lose - Cartoon.mp3',
-        ),
-        likesCount: 28,
-        comments: const [
-          _ThoughtComment(author: 'nightcore_anna', text: 'Согласен, дроп отличный'),
-          _ThoughtComment(author: 'dockfr10', text: 'У меня этот трек в repeat'),
-        ],
-      ),
-      _ThoughtItem(
-        id: '2',
-        author: 'nightcore_anna',
-        text: 'Собрала плейлист для ночной поездки по городу.',
-        createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-        isFriend: true,
-        attachment: const _ThoughtAttachment(
-          type: _ThoughtAttachmentType.playlist,
-          title: 'Night Drive',
-          subtitle: '12 треков',
-          playlistId: 'seed-night-drive',
-        ),
-        likesCount: 34,
-        comments: const [
-          _ThoughtComment(author: 'alexwave', text: 'Кинь ссылку на плейлист'),
-          _ThoughtComment(author: 'mifoxti', text: 'Топ для вечерних поездок'),
-        ],
-      ),
-      _ThoughtItem(
-        id: '3',
-        author: 'synthfox',
-        text: 'Лучший момент трека начинается после второго припева.',
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-        isFriend: false,
-        attachment: const _ThoughtAttachment(
-          type: _ThoughtAttachmentType.track,
-          title: 'Lost Control',
-          subtitle: 'Gotarux',
-          trackAssetPath: 'assets/music/Gotarux - Lost Control.mp3',
-        ),
-        likesCount: 17,
-        comments: const [
-          _ThoughtComment(author: 'lofi_nora', text: 'Этот синт просто космос'),
-        ],
-      ),
-    ];
   }
 
   Future<void> _openCreateThoughtDialog() async {
@@ -243,27 +264,52 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     );
     _overlayDepth = max(0, _overlayDepth - 1);
     if (!mounted || created == null) return;
-    setState(() {
-      _items.insert(
-        0,
-        _ThoughtItem(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          author: widget.currentUsername,
-          text: created.text,
-          createdAt: DateTime.now(),
-          isFriend: true,
-          attachment: created.attachment,
-          likesCount: 0,
-          comments: const <_ThoughtComment>[],
-        ),
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('friends.loginToFriend'))),
       );
-      _feed = _ThoughtFeed.friends;
-    });
+      return;
+    }
+    int? attachType;
+    int? attachTrack;
+    int? attachPlaylist;
+    final a = created.attachment;
+    if (a != null) {
+      if (a.type == _ThoughtAttachmentType.track && a.serverTrackId != null) {
+        attachType = 1;
+        attachTrack = a.serverTrackId;
+      } else if (a.type == _ThoughtAttachmentType.playlist) {
+        final sid = parseServerPlaylistId(a.playlistId ?? '');
+        if (sid != null) {
+          attachType = 2;
+          attachPlaylist = sid;
+        }
+      }
+    }
+    try {
+      final dto = await ThoughtsApi().createThought(
+        bodyText: created.text,
+        attachmentType: attachType,
+        attachmentTrackId: attachTrack,
+        attachmentPlaylistId: attachPlaylist,
+      );
+      if (!mounted) return;
+      setState(() {
+        _items.insert(0, _fromDto(dto));
+        _feed = _ThoughtFeed.friends;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('thoughts.postFailed'))),
+      );
+    }
     // Защита от assert в активных TextInput-зависимостях:
     // освобождаем контроллер после завершения закрытия диалога.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      controller.dispose();
-    });
+    // Ничего: принудительный dispose здесь может падать assertion'ом
+    // (`_dependents.isEmpty`) при закрытии вложенных bottom-sheet/dialog.
   }
 
   Future<_ThoughtAttachmentType?> _showAttachmentTypePicker(BuildContext ownerContext) {
@@ -334,15 +380,36 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   }
 
   Future<_ThoughtAttachment?> _pickTrackAttachment(BuildContext ownerContext) async {
-    final tracks = await loadLocalTracks();
-    if (!mounted || tracks.isEmpty) return null;
     if (!ownerContext.mounted) return null;
-    final likedPaths = widget.audioPlayerService?.likedPaths ?? <String>{};
-    final likedTracks =
-        tracks.where((t) => likedPaths.contains(t.assetPath)).toList();
+    List<ServerTrackListItem> serverTracks;
+    try {
+      serverTracks = await TracksApi().fetchTracks(limit: 500);
+    } catch (_) {
+      serverTracks = [];
+    }
+    if (!mounted) return null;
+    if (serverTracks.isEmpty) {
+      if (!context.mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('thoughts.noServerTracks'))),
+      );
+      return null;
+    }
     final searchController = TextEditingController();
     _overlayDepth++;
-    final selected = await showModalBottomSheet<Track>(
+    var query = '';
+    List<ServerTrackListItem> filtered() {
+      if (query.trim().isEmpty) return serverTracks;
+      final q = query.toLowerCase();
+      return serverTracks
+          .where(
+            (t) =>
+                t.title.toLowerCase().contains(q) ||
+                (t.artist ?? '').toLowerCase().contains(q),
+          )
+          .toList();
+    }
+    final selected = await showModalBottomSheet<ServerTrackListItem>(
       context: ownerContext,
       backgroundColor: Colors.transparent,
       useRootNavigator: true,
@@ -357,19 +424,6 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 AppConstants.shellBottomInset - 28,
                 media.padding.bottom + 8,
               );
-        var showLiked = true;
-        var query = '';
-        List<Track> filtered(List<Track> source) {
-          if (query.trim().isEmpty) return source;
-          final q = query.toLowerCase();
-          return source
-              .where(
-                (t) =>
-                    t.title.toLowerCase().contains(q) ||
-                    t.artistDisplay.toLowerCase().contains(q),
-              )
-              .toList();
-        }
         return SafeArea(
           child: ClipRRect(
             borderRadius: const BorderRadius.vertical(
@@ -379,8 +433,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
               child: StatefulBuilder(
                 builder: (context, setSheetState) {
-                  final source = showLiked ? likedTracks : tracks;
-                  final data = filtered(source);
+                  final data = filtered();
                   return Container(
                     decoration: BoxDecoration(
                       color: palette.cardBackground.withValues(alpha: 0.7),
@@ -395,63 +448,42 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                      child: Row(
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Liked'),
-                            selected: showLiked,
-                            onSelected: (_) => setSheetState(() => showLiked = true),
-                          ),
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: const Text('All'),
-                            selected: !showLiked,
-                            onSelected: (_) => setSheetState(() => showLiked = false),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      child: TextField(
-                        controller: searchController,
-                        autofocus: true,
-                        textInputAction: TextInputAction.search,
-                        onChanged: (v) => setSheetState(() => query = v),
-                        decoration: InputDecoration(
-                          hintText: context.t('common.search'),
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          filled: true,
-                          fillColor: palette.cardBackground.withValues(alpha: 0.65),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Flexible(
-                      child: data.isEmpty
-                          ? Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Text(context.t('search.notFound')),
-                            )
-                          : ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: data.length,
-                              itemBuilder: (context, index) {
-                                final t = data[index];
-                                return ListTile(
-                                  title: Text(t.title),
-                                  subtitle: Text(
-                                    t.artistDisplay.isEmpty
-                                        ? 'Unknown artist'
-                                        : t.artistDisplay,
-                                  ),
-                                  onTap: () => Navigator.of(sheetContext).pop(t),
-                                );
-                              },
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: TextField(
+                            controller: searchController,
+                            autofocus: true,
+                            textInputAction: TextInputAction.search,
+                            onChanged: (v) => setSheetState(() => query = v),
+                            decoration: InputDecoration(
+                              hintText: context.t('common.search'),
+                              prefixIcon: const Icon(Icons.search_rounded),
+                              filled: true,
+                              fillColor: palette.cardBackground.withValues(alpha: 0.65),
                             ),
-                    ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          height: min(420.0, MediaQuery.of(sheetContext).size.height * 0.55),
+                          child: data.isEmpty
+                              ? Center(child: Text(context.t('search.notFound')))
+                              : ListView.builder(
+                                  itemCount: data.length,
+                                  itemBuilder: (context, index) {
+                                    final t = data[index];
+                                    return ListTile(
+                                      title: Text(t.title),
+                                      subtitle: Text(
+                                        (t.artist ?? '').trim().isEmpty
+                                            ? context.t('thoughts.unknownArtist')
+                                            : t.artist!,
+                                      ),
+                                      onTap: () => Navigator.of(sheetContext).pop(t),
+                                    );
+                                  },
+                                ),
+                        ),
                       ],
                     ),
                   );
@@ -468,28 +500,39 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     return _ThoughtAttachment(
       type: _ThoughtAttachmentType.track,
       title: selected.title,
-      subtitle:
-          selected.artistDisplay.isEmpty ? 'Unknown artist' : selected.artistDisplay,
-      trackAssetPath: selected.assetPath,
+      subtitle: (selected.artist ?? '').trim().isEmpty ? null : selected.artist,
+      trackAssetPath: 'server_track_${selected.id}',
+      serverTrackId: selected.id,
     );
   }
 
   Future<_ThoughtAttachment?> _pickPlaylistAttachment(BuildContext ownerContext) async {
-    final repo = LocalPlaylistsRepository();
-    final playlists = await repo.getPlaylists();
-    if (!mounted) return null;
-    if (playlists.isEmpty) {
+    final tracksWord = context.t('userProfile.tracksWord');
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.trim().isEmpty) {
+      if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Create a playlist first'),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(context.t('friends.loginToFriend'))),
       );
       return null;
     }
     if (!ownerContext.mounted) return null;
+    List<MyPlaylistListItemRemote> rows;
+    try {
+      rows = await PlaylistsApi().fetchMyPlaylists();
+    } catch (_) {
+      rows = [];
+    }
+    if (!mounted) return null;
+    if (rows.isEmpty) {
+      if (!context.mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('thoughts.noPlaylistsForAttach'))),
+      );
+      return null;
+    }
     _overlayDepth++;
-    final selected = await showModalBottomSheet<Playlist>(
+    final selected = await showModalBottomSheet<MyPlaylistListItemRemote>(
       context: ownerContext,
       backgroundColor: Colors.transparent,
       useRootNavigator: true,
@@ -524,12 +567,13 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 padding: EdgeInsets.only(bottom: bottomInset),
                 child: ListView.builder(
                   shrinkWrap: true,
-                  itemCount: playlists.length,
+                  itemCount: rows.length,
                   itemBuilder: (context, index) {
-                    final p = playlists[index];
+                    final p = rows[index];
+                    final title = (p.title ?? '').trim().isEmpty ? '—' : p.title!.trim();
                     return ListTile(
-                      title: Text(p.title),
-                      subtitle: Text('${p.trackAssetPaths.length} tracks'),
+                      title: Text(title),
+                      subtitle: Text('${p.trackCount} $tracksWord'),
                       onTap: () => Navigator.of(sheetContext).pop(p),
                     );
                   },
@@ -541,45 +585,41 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
       },
     ).whenComplete(() => _overlayDepth = max(0, _overlayDepth - 1));
     if (selected == null) return null;
+    final title = (selected.title ?? '').trim().isEmpty ? '—' : selected.title!.trim();
     return _ThoughtAttachment(
       type: _ThoughtAttachmentType.playlist,
-      title: selected.title,
-      subtitle: '${selected.trackAssetPaths.length} tracks',
-      playlistId: selected.id,
+      title: title,
+      subtitle: '${selected.trackCount} $tracksWord',
+      playlistId: 'srv:${selected.id}',
     );
   }
 
   Future<void> _openAttachment(_ThoughtAttachment attachment) async {
     if (attachment.type == _ThoughtAttachmentType.track) {
-      final path = attachment.trackAssetPath;
-      if (path == null || widget.audioPlayerService == null) return;
-      final tracks = await loadLocalTracks();
-      final idx = tracks.indexWhere((t) => t.assetPath == path);
-      if (idx < 0) return;
-      final track = tracks[idx];
-      await widget.audioPlayerService!.playTrack(track, queue: tracks);
+      if (widget.audioPlayerService == null) return;
+      final sid = attachment.serverTrackId ??
+          TracksApi().parseServerTrackId(attachment.trackAssetPath ?? '');
+      if (sid == null) return;
+      final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
+      final track = Track(
+        assetPath: 'server_track_$sid',
+        title: attachment.title,
+        artist: attachment.subtitle,
+        audioFilePath: '$base/tracks/$sid/stream',
+        coverAssetPath: '$base/tracks/$sid/cover',
+      );
+      await widget.audioPlayerService!.playTrack(track, queue: [track]);
       return;
     }
     if (attachment.type == _ThoughtAttachmentType.playlist) {
       if (!mounted) return;
-      final repo = LocalPlaylistsRepository();
-      var id = attachment.playlistId;
-      if (id == null || id.isEmpty) {
-        final all = await repo.getPlaylists();
-        if (!mounted) return;
-        final matched = all.where((p) => p.title == attachment.title).toList();
-        if (matched.isEmpty) return;
-        id = matched.first.id;
-      }
-      if (id.isEmpty) return;
-      if (widget.audioPlayerService == null) return;
-      final resolvedId = id;
+      final id = attachment.playlistId;
+      if (id == null || id.isEmpty || widget.audioPlayerService == null) return;
       await Navigator.of(context).push(
         ShellMaterialPageRoute<void>(
           builder: (_) => PlaylistDetailPage(
-            playlistId: resolvedId,
+            playlistId: id,
             audioPlayerService: widget.audioPlayerService!,
-            repository: repo,
           ),
         ),
       );
@@ -646,9 +686,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    final items = _items
-        .where((e) => _feed == _ThoughtFeed.popular ? true : e.isFriend)
-        .toList();
+    final items = List<_ThoughtItem>.from(_items);
 
     return Container(
       decoration: BoxDecoration(
@@ -679,7 +717,10 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 palette: palette,
                 items: items,
                 feed: _feed,
-                onFeedChanged: (f) => setState(() => _feed = f),
+                onFeedChanged: (f) {
+                  setState(() => _feed = f);
+                  unawaited(_loadFeed());
+                },
                 onAttachmentTap: _openAttachment,
                 onLikeTap: _toggleLike,
                 onCommentTap: _toggleComments,
@@ -689,6 +730,11 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 onAuthorTap: _openAuthorProfile,
                 onCreateTap: _openCreateThoughtDialog,
                 fabBottomInset: AppConstants.shellBottomInset,
+                showComposer: widget.viewedUserId == null,
+                showFeedSwitch: widget.viewedUserId == null,
+                titleOverride: widget.viewedUserId != null
+                    ? '${context.t('profile.thoughts')} · @${widget.viewedUserNickname ?? ''}'
+                    : null,
               )
             : ListenableBuilder(
                 listenable: widget.audioPlayerService!,
@@ -701,7 +747,10 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               palette: palette,
               items: items,
               feed: _feed,
-              onFeedChanged: (f) => setState(() => _feed = f),
+              onFeedChanged: (f) {
+                setState(() => _feed = f);
+                unawaited(_loadFeed());
+              },
               onAttachmentTap: _openAttachment,
               onLikeTap: _toggleLike,
               onCommentTap: _toggleComments,
@@ -711,6 +760,11 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               onAuthorTap: _openAuthorProfile,
               onCreateTap: _openCreateThoughtDialog,
               fabBottomInset: fabBottomInset,
+              showComposer: widget.viewedUserId == null,
+              showFeedSwitch: widget.viewedUserId == null,
+              titleOverride: widget.viewedUserId != null
+                  ? '${context.t('profile.thoughts')} · @${widget.viewedUserNickname ?? ''}'
+                  : null,
             );
           },
         ),
@@ -734,6 +788,9 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
     required this.onAuthorTap,
     required this.onCreateTap,
     required this.fabBottomInset,
+    this.showComposer = true,
+    this.showFeedSwitch = true,
+    this.titleOverride,
   });
 
   final AppColorPalette palette;
@@ -749,45 +806,51 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
   final ValueChanged<String> onAuthorTap;
   final VoidCallback onCreateTap;
   final double fabBottomInset;
+  final bool showComposer;
+  final bool showFeedSwitch;
+  final String? titleOverride;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: fabBottomInset),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: FloatingActionButton(
-              onPressed: onCreateTap,
-              backgroundColor: palette.cardBackground.withValues(alpha: 0.52),
-              foregroundColor: palette.textPrimary,
-              shape: RoundedRectangleBorder(
+      floatingActionButton: showComposer
+          ? Padding(
+              padding: EdgeInsets.only(bottom: fabBottomInset),
+              child: ClipRRect(
                 borderRadius: BorderRadius.circular(28),
-                side: BorderSide(
-                  color: palette.textPrimary.withValues(alpha: 0.15),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: FloatingActionButton(
+                    onPressed: onCreateTap,
+                    backgroundColor: palette.cardBackground.withValues(alpha: 0.52),
+                    foregroundColor: palette.textPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                      side: BorderSide(
+                        color: palette.textPrimary.withValues(alpha: 0.15),
+                      ),
+                    ),
+                    child: const Icon(Icons.add_rounded, size: 30),
+                  ),
                 ),
               ),
-              child: const Icon(Icons.add_rounded, size: 30),
-            ),
-          ),
-        ),
-      ),
+            )
+          : null,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: Text(context.t('thoughts.title')),
+        title: Text(titleOverride ?? context.t('thoughts.title')),
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-            child: _FeedSwitch(
-              feed: feed,
-              onChanged: onFeedChanged,
+          if (showFeedSwitch)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+              child: _FeedSwitch(
+                feed: feed,
+                onChanged: onFeedChanged,
+              ),
             ),
-          ),
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
@@ -1380,6 +1443,7 @@ class _ThoughtAttachment {
     this.subtitle,
     this.trackAssetPath,
     this.playlistId,
+    this.serverTrackId,
   });
 
   final _ThoughtAttachmentType type;
@@ -1387,4 +1451,5 @@ class _ThoughtAttachment {
   final String? subtitle;
   final String? trackAssetPath;
   final String? playlistId;
+  final int? serverTrackId;
 }

@@ -3,16 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../core/audio/audio_player_service.dart';
+import '../core/auth/auth_session_store.dart';
 import '../core/audio/local_tracks.dart';
 import '../core/history/listening_history_repository.dart';
 import '../core/l10n/app_localization.dart';
+import '../core/network/notifications_api.dart';
+import '../core/network/playlists_api.dart';
 import '../core/notifications/local_notifications_service.dart';
 import '../core/notifications/notification_intent.dart';
 import '../core/player/full_player_visibility.dart';
 import '../core/player/player_dock_host.dart';
 import '../core/player/shell_route_back_guard.dart';
 import '../core/player/shell_navigator_host.dart';
+import '../core/social/colisten_controller.dart';
 import '../core/social/listening_room_session.dart';
 import '../core/settings/app_settings.dart';
 import '../core/settings/settings_repository.dart';
@@ -76,6 +82,7 @@ class _MainShellState extends State<MainShell>
 
   late final AnimationController _playerDockController;
   StreamSubscription<NotificationIntent>? _notificationIntentSub;
+  Timer? _serverNotifPollTimer;
 
   /// Для setState только при смене трека / наличия трека (не при каждом тике позиции).
   bool _lastHadTrack = false;
@@ -159,6 +166,56 @@ class _MainShellState extends State<MainShell>
       });
     }
     _syncFullPlayerVisibility();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_pollServerFriendNotifications());
+      _serverNotifPollTimer =
+          Timer.periodic(const Duration(seconds: 3), (_) {
+        if (!mounted) return;
+        unawaited(_pollServerFriendNotifications());
+      });
+    });
+  }
+
+  Future<void> _pollServerFriendNotifications() async {
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.trim().isEmpty) return;
+    final userId = acc.userId;
+    if (userId == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'mimusic_last_friend_push_notif_id_$userId';
+      var lastShown = prefs.getInt(key) ?? 0;
+      final list =
+          await NotificationsApi().fetchNotifications(unreadOnly: true, limit: 30);
+      var maxId = lastShown;
+      for (final n in list) {
+        if (n.id > maxId) maxId = n.id;
+      }
+      for (final n in list) {
+        if (n.normalizedType != 'friend_request' && n.normalizedType != 'colisten_invite') continue;
+        if (n.id <= lastShown) continue;
+        final nick = n.actorNickname ?? 'MiMusic';
+        final url = n.actorUserId != null ? userAvatarUrl(n.actorUserId!) : null;
+        if (n.normalizedType == 'friend_request') {
+          await LocalNotificationsService.instance.showFriendRequestNotification(
+            fromUsername: nick,
+            fromAvatarUrl: url,
+          );
+        } else if (n.normalizedType == 'colisten_invite') {
+          final roomId = n.colistenRoomId;
+          if (roomId == null || roomId.isEmpty) continue;
+          await LocalNotificationsService.instance.showColistenInviteNotification(
+            fromUsername: nick,
+            fromAvatarUrl: url,
+            roomId: roomId,
+          );
+        }
+      }
+      if (maxId > lastShown) {
+        await prefs.setInt(key, maxId);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -169,6 +226,7 @@ class _MainShellState extends State<MainShell>
     _playerDockController.removeStatusListener(_onPlayerDockStatus);
     _playerDockController.dispose();
     _notificationIntentSub?.cancel();
+    _serverNotifPollTimer?.cancel();
     _homeCatalogReloadToken.dispose();
     PlayerDockHost.unregister();
     ShellNavigatorHost.unregister();
@@ -207,6 +265,39 @@ class _MainShellState extends State<MainShell>
       }
       return;
     }
+    if (intent.target == NotificationTarget.colistenInvite) {
+      final roomId = intent.roomId?.trim();
+      if (roomId == null || roomId.isEmpty) return;
+      Future<void>.microtask(() async {
+        try {
+          final acc = await AuthSessionStore.readAccount();
+          final me = (acc?.nickname.trim().isNotEmpty ?? false)
+              ? acc!.nickname
+              : 'me';
+          ListeningRoomSession.instance.start(
+            roomTitle: '@${intent.username ?? "room"}',
+            listeners: [me, intent.username ?? 'host'],
+            hostUsername: intent.username ?? '',
+            currentUsername: me,
+            privateRoom: false,
+            pauseHostOnly: true,
+            seekHostOnly: true,
+            shuffleHostOnly: true,
+            repeatHostOnly: true,
+            skipHostOnly: true,
+            playlistHostOnly: true,
+            selectedPlaylists: const [],
+            queue: const [],
+          );
+          await ColistenController.instance.connectGuest(
+            roomId: roomId,
+            audio: widget.audioPlayerService,
+          );
+          PlayerDockHost.expand();
+        } catch (_) {}
+      });
+      return;
+    }
     final route = switch (intent.target) {
       NotificationTarget.friendProfile => ShellMaterialPageRoute<void>(
           builder: (_) => ArtistPage(
@@ -216,6 +307,7 @@ class _MainShellState extends State<MainShell>
           ),
         ),
       NotificationTarget.release => null,
+      NotificationTarget.colistenInvite => null,
     };
     if (route == null) return;
     final pushed = ShellNavigatorHost.push(route);

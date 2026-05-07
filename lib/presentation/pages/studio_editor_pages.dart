@@ -368,7 +368,6 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
   int? _serverTrackId;
   String _lastUploadedAudioPath = '';
   Uint8List? _serverCoverPreviewBytes;
-  bool _step2Uploading = false;
 
   void _clearServerDraft() {
     _serverTrackId = null;
@@ -432,44 +431,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
         );
         return;
       }
-      if (!_serverLoggedIn) {
-        setState(() {
-          _clearServerDraft();
-          _wizardStep = 2;
-        });
-        return;
-      }
-      if (_serverTrackId != null && _lastUploadedAudioPath == _audioPath) {
-        setState(() => _wizardStep = 2);
-        return;
-      }
-      setState(() => _step2Uploading = true);
-      try {
-        final file = File(_audioPath);
-        final result = await TracksUploadApi().uploadTrack(
-          audioFile: file,
-          title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
-          artist: _artistCtrl.text.trim().isEmpty ? null : _artistCtrl.text.trim(),
-          coverFile: null,
-          genreSlugs: const [],
-        );
-        final preview = await TracksUploadApi.fetchTrackCoverBytes(result.trackId);
-        if (!mounted) return;
-        setState(() {
-          _step2Uploading = false;
-          _serverTrackId = result.trackId;
-          _lastUploadedAudioPath = _audioPath;
-          _serverCoverPreviewBytes = preview;
-          _wizardStep = 2;
-        });
-      } catch (_) {
-        if (!mounted) return;
-        setState(() => _step2Uploading = false);
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.t('studio.upload.audioUploadFail'))),
-        );
-      }
+      setState(() => _wizardStep = 2);
       return;
     }
   }
@@ -481,22 +443,37 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
       );
       return;
     }
-    final id = _serverTrackId;
-    if (id == null) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(context.t('studio.upload.loginForServer'))),
-      );
-      return;
-    }
     try {
       final api = TracksUploadApi();
-      await api.putTrackGenres(trackId: id, genreSlugs: _genres, normalizeWeights: false);
+      var id = _serverTrackId;
+      final mustUploadAudio = id == null || _lastUploadedAudioPath != _audioPath;
+      if (mustUploadAudio) {
+        if (_audioPath.isEmpty || !File(_audioPath).existsSync()) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            SnackBar(content: Text(context.t('studio.upload.needAudioForNext'))),
+          );
+          return;
+        }
+        final result = await api.uploadTrack(
+          audioFile: File(_audioPath),
+          title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
+          artist: _artistCtrl.text.trim().isEmpty ? null : _artistCtrl.text.trim(),
+          coverFile: null,
+          genreSlugs: const [],
+        );
+        id = result.trackId;
+        _serverTrackId = id;
+        _lastUploadedAudioPath = _audioPath;
+      }
+      final trackId = id;
+      await api.putTrackGenres(trackId: trackId, genreSlugs: _genres, normalizeWeights: false);
       if (_coverPath.isNotEmpty) {
         final coverFile = File(_coverPath);
         if (await coverFile.exists()) {
-          await api.uploadTrackCover(trackId: id, imageFile: coverFile);
+          await api.uploadTrackCover(trackId: trackId, imageFile: coverFile);
         }
       }
+      _serverCoverPreviewBytes = await TracksUploadApi.fetchTrackCoverBytes(trackId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.t('studio.serverUploadOk'))),
@@ -795,9 +772,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
                                   ),
                                 ),
                                 TextButton.icon(
-                                  onPressed: _step2Uploading
-                                      ? null
-                                      : () async {
+                                  onPressed: () async {
                                           final copied = await pickAndSaveTrackAudio(widget.assetPath);
                                           if (copied != null && mounted) setState(() => _audioPath = copied);
                                         },
@@ -896,9 +871,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
                     children: [
                       if (_wizardStep > 0)
                         TextButton(
-                          onPressed: _step2Uploading
-                              ? null
-                              : () {
+                          onPressed: () {
                                   if (_wizardStep == 2) {
                                     setState(() => _wizardStep = 1);
                                   } else if (_wizardStep == 1) {
@@ -913,17 +886,8 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
                       const Spacer(),
                       if (_wizardStep < 2)
                         FilledButton(
-                          onPressed: _step2Uploading ? null : () => unawaited(_onWizardNext()),
-                          child: _step2Uploading
-                              ? SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: palette.textPrimary,
-                                  ),
-                                )
-                              : Text(context.t('studio.upload.next')),
+                          onPressed: () => unawaited(_onWizardNext()),
+                          child: Text(context.t('studio.upload.next')),
                         ),
                     ],
                   ),

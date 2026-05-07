@@ -98,6 +98,15 @@ class ProfileApi {
     }
   }
 
+  /// [PUT /me/now-playing] — `trackId: null` сбрасывает статус на сервере.
+  Future<void> putNowPlaying({int? trackId}) async {
+    final dio = await createAuthenticatedDio();
+    await dio.put<void>(
+      '/me/now-playing',
+      data: <String, dynamic>{'trackId': trackId},
+    );
+  }
+
   Future<String> postMyInviteKey({String? keyCode}) async {
     final dio = await createAuthenticatedDio();
     final res = await dio.post<Map<String, dynamic>>(

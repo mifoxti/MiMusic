@@ -14,11 +14,12 @@ class RemotePlaylistsRepository implements PlaylistsRepository {
 
   Playlist _fromListItem(MyPlaylistListItemRemote e, {required bool liked}) {
     final sid = e.id;
+    final hasCover = e.coverStorageKey != null && e.coverStorageKey!.trim().isNotEmpty;
     return Playlist(
       id: idForServer(sid),
       title: (e.title ?? '').trim().isEmpty ? '—' : e.title!.trim(),
       isPrivate: !(e.isPublic ?? false),
-      coverPath: playlistCoverUrl(sid),
+      coverPath: hasCover ? playlistCoverUrl(sid) : null,
       trackAssetPaths: const [],
       isLiked: liked,
       remoteTrackCount: e.trackCount,

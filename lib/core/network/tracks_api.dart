@@ -84,6 +84,15 @@ class TracksApi {
         .toList();
   }
 
+  Future<ServerTrackListItem> fetchTrackById(int trackId) async {
+    final res = await _dio.get<Map<String, dynamic>>('/tracks/$trackId');
+    final data = res.data;
+    if (data == null) {
+      throw StateError('Empty track response');
+    }
+    return ServerTrackListItem.fromJson(data);
+  }
+
   int? parseServerTrackId(String path) {
     const p = 'server_track_';
     if (!path.startsWith(p)) return null;
@@ -104,6 +113,15 @@ class TracksApi {
     final m = RegExp(r'/tracks/(\d+)/stream').firstMatch(p);
     if (m == null) return null;
     return int.tryParse(m.group(1)!);
+  }
+
+  String trackKeyForPaths({
+    required String assetPath,
+    String? audioFilePath,
+  }) {
+    final sid = resolveServerTrackId(assetPath: assetPath, audioFilePath: audioFilePath);
+    if (sid != null) return 'srv:$sid';
+    return 'asset:$assetPath';
   }
 
   /// [DELETE /tracks/{id}] — только для владельца трека; файлы удаляются на сервере.

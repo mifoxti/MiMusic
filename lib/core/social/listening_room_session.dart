@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../audio/track.dart';
+import 'colisten_controller.dart';
 
 class ListeningRoomSession extends ChangeNotifier {
   ListeningRoomSession._();
@@ -21,6 +24,7 @@ class ListeningRoomSession extends ChangeNotifier {
   bool _playlistHostOnly = true;
   List<String> _selectedPlaylists = const [];
   List<Track> _queue = const [];
+  bool _joining = false;
 
   bool get active => _active;
   String get roomTitle => _roomTitle;
@@ -37,6 +41,7 @@ class ListeningRoomSession extends ChangeNotifier {
   bool get playlistHostOnly => _playlistHostOnly;
   List<String> get selectedPlaylists => List.unmodifiable(_selectedPlaylists);
   List<Track> get queue => List.unmodifiable(_queue);
+  bool get joining => _joining;
   bool get isHost => _hostUsername.isNotEmpty && _hostUsername == _currentUsername;
   bool get canControlPause => isHost || !_pauseHostOnly;
   bool get canControlSeek => isHost || !_seekHostOnly;
@@ -96,6 +101,50 @@ class ListeningRoomSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  void applyRealtimeState({
+    required int listenersCount,
+    required List<int> participantIds,
+    required bool privateRoom,
+    required bool pauseHostOnly,
+    required bool seekHostOnly,
+    required bool shuffleHostOnly,
+    required bool repeatHostOnly,
+    required bool skipHostOnly,
+    required bool playlistHostOnly,
+  }) {
+    final safeCount = listenersCount < 1 ? 1 : listenersCount;
+    final ids = participantIds.toSet().toList();
+    final nextListeners = <String>[_hostUsername];
+    for (final id in ids) {
+      final label = 'user_$id';
+      if (nextListeners.contains(label)) continue;
+      nextListeners.add(label);
+    }
+    while (nextListeners.length < safeCount) {
+      nextListeners.add('listener_${nextListeners.length + 1}');
+    }
+    _listeners = nextListeners;
+    _privateRoom = privateRoom;
+    _pauseHostOnly = pauseHostOnly;
+    _seekHostOnly = seekHostOnly;
+    _shuffleHostOnly = shuffleHostOnly;
+    _repeatHostOnly = repeatHostOnly;
+    _skipHostOnly = skipHostOnly;
+    _playlistHostOnly = playlistHostOnly;
+    notifyListeners();
+  }
+
+  void replaceQueue(List<Track> nextQueue) {
+    _queue = List<Track>.from(nextQueue);
+    notifyListeners();
+  }
+
+  void setJoining(bool value) {
+    if (_joining == value) return;
+    _joining = value;
+    notifyListeners();
+  }
+
   void removeParticipant(String username) {
     if (!_listeners.contains(username)) return;
     _listeners = _listeners.where((e) => e != username).toList();
@@ -135,6 +184,7 @@ class ListeningRoomSession extends ChangeNotifier {
   }
 
   void end() {
+    unawaited(ColistenController.instance.disconnect());
     _active = false;
     _roomTitle = '';
     _hostUsername = '';
@@ -149,6 +199,7 @@ class ListeningRoomSession extends ChangeNotifier {
     _playlistHostOnly = true;
     _selectedPlaylists = const [];
     _queue = const [];
+    _joining = false;
     notifyListeners();
   }
 }

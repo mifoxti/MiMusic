@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 
 import 'authenticated_dio.dart';
 
-/// Ответ [POST /upload/track] после загрузки MP3 и опционально обложки в одном запросе.
+/// Ответ [POST /upload/track]: вход mp3/wav/m4a, сервер конвертирует в AAC `.m4a`; опционально обложка.
 class UploadTrackResult {
   const UploadTrackResult({
     required this.trackId,
@@ -72,8 +72,8 @@ class TracksUploadApi {
     );
   }
 
-  /// Одна загрузка: MP3, поля `title`/`artist`, жанры; опционально файл обложки `cover`.
-  /// Сервер сохраняет свою обложку или извлекает встроенную из MP3.
+  /// Одна загрузка: аудио (mp3/wav/m4a), поля `title`/`artist`, жанры; опционально обложка `cover`.
+  /// Сервер конвертирует в AAC; встроенная обложка — best-effort из исходного MP3.
   Future<UploadTrackResult> uploadTrack({
     required File audioFile,
     String? title,
@@ -86,7 +86,7 @@ class TracksUploadApi {
     final map = <String, dynamic>{
       'file': await MultipartFile.fromFile(
         audioFile.path,
-        filename: audioFile.uri.pathSegments.isNotEmpty ? audioFile.uri.pathSegments.last : 'track.mp3',
+        filename: audioFile.uri.pathSegments.isNotEmpty ? audioFile.uri.pathSegments.last : 'track.m4a',
       ),
       'genreSlugs': jsonEncode(genreSlugs),
       'genreNormalizeWeights': normalizeGenreWeights ? 'true' : 'false',

@@ -1,4 +1,5 @@
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.util.Base64
 import java.util.Properties
 
@@ -93,9 +94,31 @@ tasks.register("reverseTcp8080") {
                 else -> "adb"
             }
         try {
+            val out = ByteArrayOutputStream()
             project.exec {
-                commandLine(adbCmd, "reverse", "tcp:8080", "tcp:8080")
+                commandLine(adbCmd, "devices")
+                standardOutput = out
                 isIgnoreExitValue = true
+            }
+            val devices = out.toString()
+                .lineSequence()
+                .drop(1)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it.endsWith("\tdevice") }
+                .map { it.substringBefore('\t') }
+                .toList()
+            if (devices.isEmpty()) {
+                project.exec {
+                    commandLine(adbCmd, "reverse", "tcp:8080", "tcp:8080")
+                    isIgnoreExitValue = true
+                }
+            } else {
+                devices.forEach { serial ->
+                    project.exec {
+                        commandLine(adbCmd, "-s", serial, "reverse", "tcp:8080", "tcp:8080")
+                        isIgnoreExitValue = true
+                    }
+                }
             }
         } catch (_: Exception) {
             logger.lifecycle("reverseTcp8080: adb недоступен ($adbCmd), пропуск — выполни вручную: adb reverse tcp:8080 tcp:8080")

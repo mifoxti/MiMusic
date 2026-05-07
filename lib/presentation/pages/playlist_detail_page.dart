@@ -72,17 +72,6 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       _playlistLikesCount = 0;
       _playlistLiked = false;
     });
-    final playlist = await _repo.getPlaylist(widget.playlistId);
-    if (playlist == null) {
-      if (mounted) {
-        setState(() {
-          _playlist = null;
-          _tracks = [];
-          _loading = false;
-        });
-      }
-      return;
-    }
     final sid = parseServerPlaylistId(widget.playlistId);
     if (sid != null) {
       try {
@@ -110,6 +99,15 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
             likesCount = st.likesCount;
           } catch (_) {}
         }
+        final playlist = Playlist(
+          id: 'srv:$sid',
+          title: (d.title ?? '').trim().isEmpty ? '—' : d.title!.trim(),
+          isPrivate: !d.isPublic,
+          coverPath: playlistCoverUrl(sid),
+          trackAssetPaths: d.tracks.map((t) => 'server_track_${t.trackId}').toList(),
+          isLiked: liked,
+          remoteTrackCount: d.tracks.length,
+        );
         if (mounted) {
           setState(() {
             _playlist = playlist;
@@ -126,8 +124,19 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         }
         return;
       } catch (_) {
-        /* fallback local */
+        /* fallback: try local repo */
       }
+    }
+    final playlist = await _repo.getPlaylist(widget.playlistId);
+    if (playlist == null) {
+      if (mounted) {
+        setState(() {
+          _playlist = null;
+          _tracks = [];
+          _loading = false;
+        });
+      }
+      return;
     }
     final allTracks = await loadLocalTracks();
     final ids = playlist.trackAssetPaths.toSet();

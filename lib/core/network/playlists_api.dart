@@ -30,12 +30,14 @@ class MyPlaylistListItemRemote {
     required this.title,
     required this.isPublic,
     required this.trackCount,
+    this.coverStorageKey,
   });
 
   final int id;
   final String? title;
   final bool? isPublic;
   final int trackCount;
+  final String? coverStorageKey;
 
   factory MyPlaylistListItemRemote.fromJson(Map<String, dynamic> j) {
     return MyPlaylistListItemRemote(
@@ -43,6 +45,7 @@ class MyPlaylistListItemRemote {
       title: j['title'] as String?,
       isPublic: j['isPublic'] as bool?,
       trackCount: (j['trackCount'] as num?)?.toInt() ?? 0,
+      coverStorageKey: j['coverStorageKey'] as String?,
     );
   }
 }

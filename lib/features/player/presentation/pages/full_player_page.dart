@@ -7,6 +7,7 @@ import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/audio/local_tracks.dart';
 import '../../../../core/audio/track.dart';
 import '../../../../core/l10n/app_localization.dart';
+import '../../../../core/social/colisten_controller.dart';
 import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -55,6 +56,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                   final multiQueue = audioPlayerService.hasMultiTrackQueue;
                   final roomSession = ListeningRoomSession.instance;
                   final roomActive = roomSession.active;
+                  final roomJoining = roomSession.joining;
                   final guestMode = roomActive && !roomSession.isHost;
                   final roomAccent = guestMode
                       ? const Color(0xFFA5AEBB)
@@ -332,6 +334,47 @@ class FullPlayerDockPanel extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 20),
                                     if (roomActive) ...[
+                                      if (roomJoining) ...[
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: palette.primaryDark.withValues(alpha: 0.28),
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: palette.textPrimary.withValues(alpha: 0.2),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: roomAccent,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  Localizations.localeOf(context).languageCode == 'en'
+                                                      ? 'Connecting to room...'
+                                                      : 'Подключение к комнате...',
+                                                  style: TextStyle(
+                                                    color: palette.textPrimary,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                      ],
                                       Container(
                                         width: double.infinity,
                                         padding: const EdgeInsets.symmetric(
@@ -376,6 +419,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                                   _showRoomManageSheet(
                                                     context: context,
                                                     palette: palette,
+                                                    audioPlayerService: audioPlayerService,
                                                     roomSession: roomSession,
                                                     initialView: _RoomManageView.settings,
                                                   );
@@ -554,7 +598,7 @@ void _showPlayerQueueSheet({
             child: ListenableBuilder(
               listenable: roomActive ? roomSession : audioPlayerService,
               builder: (context, _) {
-                final queue = roomActive ? roomSession.queue : audioPlayerService.activeQueue;
+                final queue = audioPlayerService.activeQueue;
                 final canEditQueue = roomActive ? roomSession.canEditQueue : true;
                 return Column(
                   children: [
@@ -665,7 +709,7 @@ void _showPlayerQueueSheet({
                               ),
                               onDismissed: (_) {
                                 if (roomActive) {
-                                  roomSession.removeFromQueue(item.assetPath);
+                                  audioPlayerService.removeFromQueue(item.assetPath);
                                 } else {
                                   audioPlayerService.removeFromQueue(item.assetPath);
                                 }
@@ -689,10 +733,7 @@ void _showPlayerQueueSheet({
                                   onPressed: canEditQueue
                                       ? () {
                                           if (roomActive) {
-                                            roomSession.moveToPlayNext(
-                                              assetPath: item.assetPath,
-                                              currentAssetPath: currentTrack.assetPath,
-                                            );
+                                            audioPlayerService.moveToPlayNext(item.assetPath);
                                           } else {
                                             audioPlayerService.moveToPlayNext(item.assetPath);
                                           }
@@ -766,7 +807,7 @@ Future<void> _showAddTrackToQueueSheet({
                   trailing: const Icon(Icons.add_circle_outline_rounded),
                   onTap: () {
                     if (roomActive) {
-                      roomSession.insertIntoQueue(roomSession.queue.length, item);
+                      audioPlayerService.addToQueue(item);
                     } else {
                       audioPlayerService.addToQueue(item);
                     }
@@ -785,6 +826,7 @@ Future<void> _showAddTrackToQueueSheet({
 void _showRoomManageSheet({
   required BuildContext context,
   required AppColorPalette palette,
+  required AudioPlayerService audioPlayerService,
   required ListeningRoomSession roomSession,
   required _RoomManageView initialView,
 }) {
@@ -795,6 +837,34 @@ void _showRoomManageSheet({
     isScrollControlled: true,
     builder: (_) {
       var currentView = initialView;
+      void applyRoomSettings({
+        required bool privateRoom,
+        required bool pauseHostOnly,
+        required bool seekHostOnly,
+        required bool shuffleHostOnly,
+        required bool repeatHostOnly,
+        required bool skipHostOnly,
+        required bool playlistHostOnly,
+      }) {
+        roomSession.updateSettings(
+          privateRoom: privateRoom,
+          pauseHostOnly: pauseHostOnly,
+          seekHostOnly: seekHostOnly,
+          shuffleHostOnly: shuffleHostOnly,
+          repeatHostOnly: repeatHostOnly,
+          skipHostOnly: skipHostOnly,
+          playlistHostOnly: playlistHostOnly,
+        );
+        ColistenController.instance.updateRoomSettings(
+          privateRoom: privateRoom,
+          pauseHostOnly: pauseHostOnly,
+          seekHostOnly: seekHostOnly,
+          shuffleHostOnly: shuffleHostOnly,
+          repeatHostOnly: repeatHostOnly,
+          skipHostOnly: skipHostOnly,
+          playlistHostOnly: playlistHostOnly,
+        );
+      }
       return StatefulBuilder(
         builder: (context, setSheetState) {
           return FractionallySizedBox(
@@ -875,7 +945,7 @@ void _showRoomManageSheet({
                             ),
                             value: roomSession.privateRoom,
                             onChanged: (v) {
-                              roomSession.updateSettings(
+                              applyRoomSettings(
                                 privateRoom: v,
                                 pauseHostOnly: roomSession.pauseHostOnly,
                                 seekHostOnly: roomSession.seekHostOnly,
@@ -893,7 +963,7 @@ void _showRoomManageSheet({
                                 ? 'Pause / resume'
                                 : 'Пауза / продолжить',
                             value: roomSession.pauseHostOnly,
-                            onChanged: (v) => roomSession.updateSettings(
+                            onChanged: (v) => applyRoomSettings(
                               privateRoom: roomSession.privateRoom,
                               pauseHostOnly: v,
                               seekHostOnly: roomSession.seekHostOnly,
@@ -910,7 +980,7 @@ void _showRoomManageSheet({
                                 ? 'Seek progress bar'
                                 : 'Перемотка трека',
                             value: roomSession.seekHostOnly,
-                            onChanged: (v) => roomSession.updateSettings(
+                            onChanged: (v) => applyRoomSettings(
                               privateRoom: roomSession.privateRoom,
                               pauseHostOnly: roomSession.pauseHostOnly,
                               seekHostOnly: v,
@@ -927,7 +997,7 @@ void _showRoomManageSheet({
                                 ? 'Shuffle queue'
                                 : 'Перемешивание очереди',
                             value: roomSession.shuffleHostOnly,
-                            onChanged: (v) => roomSession.updateSettings(
+                            onChanged: (v) => applyRoomSettings(
                               privateRoom: roomSession.privateRoom,
                               pauseHostOnly: roomSession.pauseHostOnly,
                               seekHostOnly: roomSession.seekHostOnly,
@@ -944,7 +1014,7 @@ void _showRoomManageSheet({
                                 ? 'Repeat mode'
                                 : 'Режим повтора',
                             value: roomSession.repeatHostOnly,
-                            onChanged: (v) => roomSession.updateSettings(
+                            onChanged: (v) => applyRoomSettings(
                               privateRoom: roomSession.privateRoom,
                               pauseHostOnly: roomSession.pauseHostOnly,
                               seekHostOnly: roomSession.seekHostOnly,
@@ -961,7 +1031,7 @@ void _showRoomManageSheet({
                                 ? 'Skip tracks'
                                 : 'Переключение треков',
                             value: roomSession.skipHostOnly,
-                            onChanged: (v) => roomSession.updateSettings(
+                            onChanged: (v) => applyRoomSettings(
                               privateRoom: roomSession.privateRoom,
                               pauseHostOnly: roomSession.pauseHostOnly,
                               seekHostOnly: roomSession.seekHostOnly,
@@ -978,7 +1048,7 @@ void _showRoomManageSheet({
                                 ? 'Edit queue'
                                 : 'Редактирование очереди',
                             value: roomSession.playlistHostOnly,
-                            onChanged: (v) => roomSession.updateSettings(
+                            onChanged: (v) => applyRoomSettings(
                               privateRoom: roomSession.privateRoom,
                               pauseHostOnly: roomSession.pauseHostOnly,
                               seekHostOnly: roomSession.seekHostOnly,
@@ -991,6 +1061,9 @@ void _showRoomManageSheet({
                           const SizedBox(height: 12),
                           FilledButton.icon(
                             onPressed: () {
+                              if (!roomSession.isHost) {
+                                audioPlayerService.stop();
+                              }
                               roomSession.end();
                               Navigator.of(context).pop();
                             },
