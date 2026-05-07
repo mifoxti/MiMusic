@@ -92,6 +92,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 title: r.title,
                 artist: r.artist,
                 audioFilePath: r.streamUrl(),
+                coverBytes: r.coverBytes,
                 coverAssetPath: r.coverUrl(),
               ),
             );

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../audio/track.dart';
@@ -12,6 +15,7 @@ class RecommendedTrackDto {
     this.durationSec,
     this.genres = const [],
     this.score = 0,
+    this.coverBytes,
   });
 
   final int id;
@@ -20,9 +24,19 @@ class RecommendedTrackDto {
   final int? durationSec;
   final List<String> genres;
   final double score;
+  final Uint8List? coverBytes;
 
   factory RecommendedTrackDto.fromJson(Map<String, dynamic> json) {
     final g = json['genres'];
+    Uint8List? coverBytes;
+    final rawCover = json['cover'];
+    if (rawCover is String && rawCover.isNotEmpty) {
+      try {
+        coverBytes = Uint8List.fromList(base64Decode(rawCover));
+      } catch (_) {
+        coverBytes = null;
+      }
+    }
     return RecommendedTrackDto(
       id: (json['id'] as num).toInt(),
       title: json['title'] as String? ?? '',
@@ -30,6 +44,7 @@ class RecommendedTrackDto {
       durationSec: (json['duration'] as num?)?.toInt(),
       genres: g is List ? g.map((e) => e.toString()).toList() : const [],
       score: (json['score'] as num?)?.toDouble() ?? 0,
+      coverBytes: coverBytes,
     );
   }
 
@@ -49,6 +64,7 @@ class RecommendedTrackDto {
       title: title,
       artist: artist,
       audioFilePath: streamUrl(),
+      coverBytes: coverBytes,
       coverAssetPath: coverUrl(),
     );
   }

@@ -180,7 +180,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
               key: 'server_track_${e.id}',
               title: e.title,
               subtitle: (e.artist ?? '').trim().isEmpty ? null : e.artist!.trim(),
-              coverSource: e.coverUrl(),
+              coverSource: e.coverBytes ?? e.coverUrl(),
             ),
           )
           .toList(growable: false);
