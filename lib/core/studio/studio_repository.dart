@@ -9,6 +9,7 @@ class TrackMetadataOverride {
     this.genres = const [],
     this.audioFilePath,
     this.coAuthors = const [],
+    this.serverTrackId,
   });
 
   final String? title;
@@ -18,6 +19,9 @@ class TrackMetadataOverride {
 
   /// Путь к загруженному аудиофайлу на диске (копия из выбора в студии).
   final String? audioFilePath;
+
+  /// Id трека на сервере после [POST /upload/track], для удаления с сервера из студии.
+  final int? serverTrackId;
 
   /// Соавторы трека (дополнительные имена к основному [artist]).
   final List<String> coAuthors;
@@ -37,11 +41,13 @@ class TrackMetadataOverride {
         if (genres.isNotEmpty) 'genres': genres,
         if (audioFilePath != null) 'audioFilePath': audioFilePath,
         if (coAuthors.isNotEmpty) 'coAuthors': coAuthors,
+        if (serverTrackId != null) 'serverTrackId': serverTrackId,
       };
 
   static TrackMetadataOverride fromJson(Map<String, dynamic> json) {
     final g = json['genres'];
     final co = json['coAuthors'];
+    final sid = json['serverTrackId'];
     return TrackMetadataOverride(
       title: json['title'] as String?,
       artist: json['artist'] as String?,
@@ -49,6 +55,7 @@ class TrackMetadataOverride {
       genres: g is List ? List<String>.from(g.map((e) => e.toString())) : [],
       audioFilePath: json['audioFilePath'] as String?,
       coAuthors: co is List ? List<String>.from(co.map((e) => e.toString())) : [],
+      serverTrackId: sid is int ? sid : (sid is num ? sid.toInt() : null),
     );
   }
 }

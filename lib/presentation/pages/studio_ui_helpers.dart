@@ -4,7 +4,34 @@ import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/studio/studio_constants.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_glass.dart';
 import '../../core/platform/platform.dart';
+
+/// Стеклянная карточка в стиле главной / плейлистов.
+Widget studioGlassPanel({
+  required BuildContext context,
+  required Widget child,
+  EdgeInsetsGeometry padding = const EdgeInsets.all(14),
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+    child: AppGlass.blurredTintLayer(
+      isDark: isDark,
+      child: Container(
+        width: double.infinity,
+        padding: padding,
+        decoration: BoxDecoration(
+          color: AppGlass.tint(isDark),
+          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+          border: Border.all(color: AppGlass.border(isDark)),
+          boxShadow: AppGlass.cardShadows(isDark),
+        ),
+        child: child,
+      ),
+    ),
+  );
+}
 
 InputDecoration studioGlassFieldDecoration({
   required AppColorPalette palette,

@@ -1,4 +1,6 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -362,6 +364,17 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
   late List<String> _coAuthors;
   late bool _authorIsMe;
   bool _serverLoggedIn = false;
+  int _wizardStep = 0;
+  int? _serverTrackId;
+  String _lastUploadedAudioPath = '';
+  Uint8List? _serverCoverPreviewBytes;
+  bool _step2Uploading = false;
+
+  void _clearServerDraft() {
+    _serverTrackId = null;
+    _lastUploadedAudioPath = '';
+    _serverCoverPreviewBytes = null;
+  }
 
   @override
   void initState() {
@@ -377,6 +390,10 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
     final nick = widget.nickname ?? '';
     _authorIsMe = nick.isNotEmpty && _artistCtrl.text.trim() == nick;
     _coAuthorCtrl = TextEditingController();
+    _serverTrackId = o?.serverTrackId;
+    if (_serverTrackId != null && _audioPath.isNotEmpty) {
+      _lastUploadedAudioPath = _audioPath;
+    }
     AuthSessionStore.readAccount().then((acc) {
       if (!mounted) return;
       setState(() {
@@ -394,6 +411,69 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
     super.dispose();
   }
 
+  Future<void> _onWizardNext() async {
+    if (_wizardStep == 0) {
+      setState(() => _wizardStep = 1);
+      return;
+    }
+    if (_wizardStep == 1) {
+      if (_audioPath.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.t('studio.upload.needAudioForNext'))),
+        );
+        return;
+      }
+      final f = File(_audioPath);
+      if (!f.existsSync()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.t('studio.upload.needAudioForNext'))),
+        );
+        return;
+      }
+      if (!_serverLoggedIn) {
+        setState(() {
+          _clearServerDraft();
+          _wizardStep = 2;
+        });
+        return;
+      }
+      if (_serverTrackId != null && _lastUploadedAudioPath == _audioPath) {
+        setState(() => _wizardStep = 2);
+        return;
+      }
+      setState(() => _step2Uploading = true);
+      try {
+        final file = File(_audioPath);
+        final result = await TracksUploadApi().uploadTrack(
+          audioFile: file,
+          title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
+          artist: _artistCtrl.text.trim().isEmpty ? null : _artistCtrl.text.trim(),
+          coverFile: null,
+          genreSlugs: const [],
+        );
+        final preview = await TracksUploadApi.fetchTrackCoverBytes(result.trackId);
+        if (!mounted) return;
+        setState(() {
+          _step2Uploading = false;
+          _serverTrackId = result.trackId;
+          _lastUploadedAudioPath = _audioPath;
+          _serverCoverPreviewBytes = preview;
+          _wizardStep = 2;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _step2Uploading = false);
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.t('studio.upload.audioUploadFail'))),
+        );
+      }
+      return;
+    }
+  }
+
   Future<void> _publishTrackToServer() async {
     if (!_serverLoggedIn) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -401,30 +481,20 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
       );
       return;
     }
-    if (_audioPath.isEmpty) {
+    final id = _serverTrackId;
+    if (id == null) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(context.t('studio.serverUploadNeedAudio'))),
-      );
-      return;
-    }
-    final file = File(_audioPath);
-    if (!await file.exists()) {
-      if (!mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(context.t('studio.serverUploadNeedAudio'))),
+        SnackBar(content: Text(context.t('studio.upload.loginForServer'))),
       );
       return;
     }
     try {
-      final trackId = await TracksUploadApi().uploadTrackMp3(
-        file: file,
-        title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
-        genreSlugs: _genres,
-      );
+      final api = TracksUploadApi();
+      await api.putTrackGenres(trackId: id, genreSlugs: _genres, normalizeWeights: false);
       if (_coverPath.isNotEmpty) {
         final coverFile = File(_coverPath);
         if (await coverFile.exists()) {
-          await TracksUploadApi().uploadTrackCover(trackId: trackId, imageFile: coverFile);
+          await api.uploadTrackCover(trackId: id, imageFile: coverFile);
         }
       }
       if (!mounted) return;
@@ -461,6 +531,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
           genres: List<String>.from(_genres),
           audioFilePath: _audioPath.isEmpty ? null : _audioPath,
           coAuthors: List<String>.from(_coAuthors),
+          serverTrackId: _serverTrackId,
         ),
       ),
     );
@@ -503,7 +574,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
               ),
             ),
             actions: [
-              if (_serverLoggedIn)
+              if (_serverLoggedIn && _wizardStep == 2 && _serverTrackId != null)
                 IconButton(
                   tooltip: context.t('studio.publishToServer'),
                   onPressed: _publishTrackToServer,
@@ -514,195 +585,349 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
               const SizedBox(width: 8),
             ],
           ),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
-                controller: _titleCtrl,
-                decoration: studioGlassFieldDecoration(
-                  palette: palette,
-                  labelText: context.t('playlists.name'),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (nick.isNotEmpty)
-                CheckboxListTile(
-                  value: _authorIsMe,
-                  onChanged: (v) => setState(() {
-                    _authorIsMe = v ?? false;
-                    if (_authorIsMe) {
-                      _artistCtrl.text = nick;
-                      _artistCtrl.selection = TextSelection.collapsed(offset: nick.length);
-                    }
-                  }),
-                  title: Text(context.t('studio.iAmAuthor')),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              TextField(
-                controller: _artistCtrl,
-                readOnly: _authorIsMe,
-                decoration: studioGlassFieldDecoration(
-                  palette: palette,
-                  labelText: context.t('studio.artist'),
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-              if (!_authorIsMe && artistSuggestions.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 160),
-                  decoration: BoxDecoration(
-                    color: palette.primaryDark.withValues(alpha: 0.24),
-                    borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-                    border: Border.all(color: palette.textPrimary.withValues(alpha: 0.08)),
-                  ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: artistSuggestions.length,
-                    itemBuilder: (context, i) {
-                      final suggestion = artistSuggestions[i];
-                      return ListTile(
-                        dense: true,
-                        title: Text(suggestion, style: TextStyle(color: palette.textPrimary)),
-                        onTap: () {
-                          _artistCtrl.text = suggestion;
-                          _artistCtrl.selection = TextSelection.collapsed(offset: suggestion.length);
-                          setState(() {});
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              Text(context.t('studio.coAuthors'), style: TextStyle(fontSize: 12, color: palette.textSecondary)),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: _coAuthors
-                    .map(
-                      (name) => Chip(
-                        label: Text(name),
-                        onDeleted: () => setState(() => _coAuthors.remove(name)),
-                        deleteIconColor: palette.textMuted,
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        TextField(
-                          controller: _coAuthorCtrl,
-                          decoration: studioGlassFieldDecoration(
-                            palette: palette,
-                            labelText: context.t('studio.coAuthorName'),
-                          ),
-                          onChanged: (_) => setState(() {}),
-                          onSubmitted: (_) => _addCoAuthorFromField(),
-                        ),
-                        if (coSuggestions.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Container(
-                            constraints: const BoxConstraints(maxHeight: 120),
-                            decoration: BoxDecoration(
-                              color: palette.primaryDark.withValues(alpha: 0.24),
-                              borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-                              border: Border.all(color: palette.textPrimary.withValues(alpha: 0.08)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: studioGlassPanel(
+                  context: context,
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: List.generate(3, (i) {
+                          final active = i <= _wizardStep;
+                          return Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                              child: Container(
+                                height: 3,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(2),
+                                  color: active ? palette.accent : palette.textMuted.withValues(alpha: 0.28),
+                                ),
+                              ),
                             ),
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: coSuggestions.length,
-                              itemBuilder: (context, i) {
-                                final suggestion = coSuggestions[i];
-                                return ListTile(
-                                  dense: true,
-                                  title: Text(suggestion, style: TextStyle(color: palette.textPrimary)),
-                                  onTap: () {
-                                    if (!_coAuthors.contains(suggestion)) {
-                                      setState(() => _coAuthors.add(suggestion));
-                                      _coAuthorCtrl.clear();
-                                    }
-                                  },
-                                );
-                              },
+                          );
+                        }),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _wizardStep == 0
+                            ? context.t('studio.upload.stepMeta')
+                            : _wizardStep == 1
+                                ? context.t('studio.upload.stepAudio')
+                                : context.t('studio.upload.stepCover'),
+                        style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                  children: [
+                    if (_wizardStep == 0)
+                      studioGlassPanel(
+                        context: context,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: _titleCtrl,
+                              decoration: studioGlassFieldDecoration(
+                                palette: palette,
+                                labelText: context.t('playlists.name'),
+                              ),
+                            ),
+                      const SizedBox(height: 16),
+                      if (nick.isNotEmpty)
+                        CheckboxListTile(
+                          value: _authorIsMe,
+                          onChanged: (v) => setState(() {
+                            _authorIsMe = v ?? false;
+                            if (_authorIsMe) {
+                              _artistCtrl.text = nick;
+                              _artistCtrl.selection = TextSelection.collapsed(offset: nick.length);
+                            }
+                          }),
+                          title: Text(context.t('studio.iAmAuthor')),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      TextField(
+                        controller: _artistCtrl,
+                        readOnly: _authorIsMe,
+                        decoration: studioGlassFieldDecoration(
+                          palette: palette,
+                          labelText: context.t('studio.artist'),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      if (!_authorIsMe && artistSuggestions.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 160),
+                          decoration: BoxDecoration(
+                            color: palette.primaryDark.withValues(alpha: 0.24),
+                            borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                            border: Border.all(color: palette.textPrimary.withValues(alpha: 0.08)),
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: artistSuggestions.length,
+                            itemBuilder: (context, i) {
+                              final suggestion = artistSuggestions[i];
+                              return ListTile(
+                                dense: true,
+                                title: Text(suggestion, style: TextStyle(color: palette.textPrimary)),
+                                onTap: () {
+                                  _artistCtrl.text = suggestion;
+                                  _artistCtrl.selection = TextSelection.collapsed(offset: suggestion.length);
+                                  setState(() {});
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Text(context.t('studio.coAuthors'), style: TextStyle(fontSize: 12, color: palette.textSecondary)),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: _coAuthors
+                            .map(
+                              (name) => Chip(
+                                label: Text(name),
+                                onDeleted: () => setState(() => _coAuthors.remove(name)),
+                                deleteIconColor: palette.textMuted,
+                              ),
+                            )
+                            .toList(),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                TextField(
+                                  controller: _coAuthorCtrl,
+                                  decoration: studioGlassFieldDecoration(
+                                    palette: palette,
+                                    labelText: context.t('studio.coAuthorName'),
+                                  ),
+                                  onChanged: (_) => setState(() {}),
+                                  onSubmitted: (_) => _addCoAuthorFromField(),
+                                ),
+                                if (coSuggestions.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    constraints: const BoxConstraints(maxHeight: 120),
+                                    decoration: BoxDecoration(
+                                      color: palette.primaryDark.withValues(alpha: 0.24),
+                                      borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                                      border: Border.all(color: palette.textPrimary.withValues(alpha: 0.08)),
+                                    ),
+                                    child: ListView.builder(
+                                      shrinkWrap: true,
+                                      itemCount: coSuggestions.length,
+                                      itemBuilder: (context, i) {
+                                        final suggestion = coSuggestions[i];
+                                        return ListTile(
+                                          dense: true,
+                                          title: Text(suggestion, style: TextStyle(color: palette.textPrimary)),
+                                          onTap: () {
+                                            if (!_coAuthors.contains(suggestion)) {
+                                              setState(() => _coAuthors.add(suggestion));
+                                              _coAuthorCtrl.clear();
+                                            }
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: FilledButton(
+                              onPressed: _addCoAuthorFromField,
+                              child: Text(context.t('studio.add')),
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: FilledButton(
-                      onPressed: _addCoAuthorFromField,
-                      child: Text(context.t('studio.add')),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(context.t('studio.audioFile'), style: TextStyle(fontSize: 12, color: palette.textSecondary)),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _audioPath.isEmpty
-                          ? context.t('studio.notSelected')
-                          : _audioPath.split(RegExp(r'[/\\]')).last,
-                      style: TextStyle(fontSize: 13, color: palette.textPrimary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () async {
-                      final copied = await pickAndSaveTrackAudio(widget.assetPath);
-                      if (copied != null && mounted) setState(() => _audioPath = copied);
-                    },
-                    icon: const Icon(Icons.upload_file_rounded, size: 20),
-                    label: Text(context.t('playlists.chooseFile')),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(context.t('playlists.cover'), style: TextStyle(fontSize: 12, color: palette.textSecondary)),
-              const SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  studioDialogCoverPreview(palette, _coverPath, 64),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: () async {
-                        final copied = await pickAndSaveCoverImage(widget.assetPath);
-                        if (copied != null && mounted) setState(() => _coverPath = copied);
-                      },
-                      icon: const Icon(Icons.image_rounded, size: 20),
-                      label: Text(
-                        _coverPath.isEmpty ? context.t('playlists.chooseFile') : context.t('playlists.replace'),
                       ),
-                    ),
-                  ),
-                ],
+                          ],
+                        ),
+                      ),
+                    if (_wizardStep == 1)
+                      studioGlassPanel(
+                        context: context,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              context.t('studio.audioFile'),
+                              style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _audioPath.isEmpty
+                                        ? context.t('studio.notSelected')
+                                        : _audioPath.split(RegExp(r'[/\\]')).last,
+                                    style: TextStyle(fontSize: 13, color: palette.textPrimary),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _step2Uploading
+                                      ? null
+                                      : () async {
+                                          final copied = await pickAndSaveTrackAudio(widget.assetPath);
+                                          if (copied != null && mounted) setState(() => _audioPath = copied);
+                                        },
+                                  icon: const Icon(Icons.upload_file_rounded, size: 20),
+                                  label: Text(context.t('playlists.chooseFile')),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_wizardStep == 2)
+                      studioGlassPanel(
+                        context: context,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (_serverTrackId == null)
+                              Text(
+                                context.t('studio.upload.offlineStep3'),
+                                style: TextStyle(fontSize: 12, color: palette.textSecondary, height: 1.35),
+                              )
+                            else
+                              ...[
+                              Text(
+                                context.t('studio.upload.finalizeHint'),
+                                style: TextStyle(fontSize: 12, color: palette.textSecondary, height: 1.35),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                context.t('studio.upload.coverFromServer'),
+                                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                                child: SizedBox(
+                                  width: 120,
+                                  height: 120,
+                                  child: _coverPath.isNotEmpty
+                                      ? studioDialogCoverPreview(palette, _coverPath, 120)
+                                      : (_serverCoverPreviewBytes != null &&
+                                              _serverCoverPreviewBytes!.isNotEmpty)
+                                          ? Image.memory(
+                                              _serverCoverPreviewBytes!,
+                                              fit: BoxFit.cover,
+                                              gaplessPlayback: true,
+                                            )
+                                          : Container(
+                                              color: palette.primaryDark.withValues(alpha: 0.35),
+                                              alignment: Alignment.center,
+                                              padding: const EdgeInsets.all(8),
+                                              child: Text(
+                                                context.t('studio.upload.noCoverPreview'),
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(fontSize: 11, color: palette.textMuted),
+                                              ),
+                                            ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                            TextButton.icon(
+                              onPressed: () async {
+                                final copied = await pickAndSaveCoverImage(widget.assetPath);
+                                if (copied != null && mounted) setState(() => _coverPath = copied);
+                              },
+                              icon: const Icon(Icons.image_rounded, size: 20),
+                              label: Text(
+                                _coverPath.isEmpty ? context.t('playlists.chooseFile') : context.t('playlists.replace'),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              context.t('studio.genres'),
+                              style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                            ),
+                            const SizedBox(height: 6),
+                            StudioGenrePicker(
+                              palette: palette,
+                              selected: _genres,
+                              onSelectionChanged: (v) => setState(() => _genres = v),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
-              Text(context.t('studio.genres'), style: TextStyle(fontSize: 12, color: palette.textSecondary)),
-              const SizedBox(height: 6),
-              StudioGenrePicker(
-                palette: palette,
-                selected: _genres,
-                onSelectionChanged: (v) => setState(() => _genres = v),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                child: studioGlassPanel(
+                  context: context,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(
+                    children: [
+                      if (_wizardStep > 0)
+                        TextButton(
+                          onPressed: _step2Uploading
+                              ? null
+                              : () {
+                                  if (_wizardStep == 2) {
+                                    setState(() => _wizardStep = 1);
+                                  } else if (_wizardStep == 1) {
+                                    setState(() {
+                                      _clearServerDraft();
+                                      _wizardStep = 0;
+                                    });
+                                  }
+                                },
+                          child: Text(context.t('studio.upload.back')),
+                        ),
+                      const Spacer(),
+                      if (_wizardStep < 2)
+                        FilledButton(
+                          onPressed: _step2Uploading ? null : () => unawaited(_onWizardNext()),
+                          child: _step2Uploading
+                              ? SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: palette.textPrimary,
+                                  ),
+                                )
+                              : Text(context.t('studio.upload.next')),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

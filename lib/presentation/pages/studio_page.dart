@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/track.dart';
+import '../../core/auth/auth_session_store.dart';
+import '../../core/network/tracks_api.dart';
 import '../../core/player/player_dock_host.dart';
 import '../../core/player/shell_route_back_guard.dart';
 import '../../core/constants/app_constants.dart';
@@ -322,6 +324,29 @@ class _StudioPageState extends State<StudioPage> {
       ),
     );
     if (confirm != true || !mounted) return;
+
+    final sid = TracksApi().resolveServerTrackId(
+      assetPath: track.assetPath,
+      audioFilePath: track.audioFilePath,
+      metadataServerTrackId: _overrides[track.assetPath]?.serverTrackId,
+    );
+    final acc = await AuthSessionStore.readAccount();
+    final hasToken = acc != null && acc.sessionToken.trim().isNotEmpty;
+    if (sid != null && hasToken) {
+      try {
+        await TracksApi().deleteServerTrack(sid);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.t('studio.deleteServerFailed'))),
+        );
+        return;
+      }
+    }
+    if (sid != null) {
+      await widget.audioPlayerService.removeFromFavorites('server_track_$sid');
+    }
+
     final customPaths = _customPaths.where((p) => p != track.assetPath).toList();
     await _repo.saveCustomTrackPaths(customPaths);
     await _repo.saveTrackMetadataOverride(track.assetPath, null);

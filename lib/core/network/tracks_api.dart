@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import 'api_config.dart';
+import 'authenticated_dio.dart';
 
 /// Элемент списка `GET /tracks` (сервер Ktor).
 class ServerTrackListItem {
@@ -10,6 +14,7 @@ class ServerTrackListItem {
     this.artist,
     this.durationSec,
     this.genres = const [],
+    this.coverBytes,
   });
 
   final int id;
@@ -18,14 +23,27 @@ class ServerTrackListItem {
   final int? durationSec;
   final List<String> genres;
 
+  /// Растровые байты обложки из поля JSON `cover` (base64), если сервер их отдал.
+  final Uint8List? coverBytes;
+
   factory ServerTrackListItem.fromJson(Map<String, dynamic> json) {
     final g = json['genres'];
+    Uint8List? coverBytes;
+    final rawCover = json['cover'];
+    if (rawCover is String && rawCover.isNotEmpty) {
+      try {
+        coverBytes = Uint8List.fromList(base64Decode(rawCover));
+      } catch (_) {
+        coverBytes = null;
+      }
+    }
     return ServerTrackListItem(
       id: (json['id'] as num).toInt(),
       title: json['title'] as String? ?? '',
       artist: json['artist'] as String?,
       durationSec: (json['duration'] as num?)?.toInt(),
       genres: g is List ? g.map((e) => e.toString()).toList() : const [],
+      coverBytes: coverBytes,
     );
   }
 
@@ -70,6 +88,28 @@ class TracksApi {
     const p = 'server_track_';
     if (!path.startsWith(p)) return null;
     return int.tryParse(path.substring(p.length));
+  }
+
+  /// Id трека на сервере: явный [metadataServerTrackId], [assetPath] вида `server_track_N` или URL `.../tracks/N/stream`.
+  int? resolveServerTrackId({
+    required String assetPath,
+    String? audioFilePath,
+    int? metadataServerTrackId,
+  }) {
+    if (metadataServerTrackId != null) return metadataServerTrackId;
+    final fromAsset = parseServerTrackId(assetPath);
+    if (fromAsset != null) return fromAsset;
+    final p = audioFilePath;
+    if (p == null || !p.contains('/tracks/')) return null;
+    final m = RegExp(r'/tracks/(\d+)/stream').firstMatch(p);
+    if (m == null) return null;
+    return int.tryParse(m.group(1)!);
+  }
+
+  /// [DELETE /tracks/{id}] — только для владельца трека; файлы удаляются на сервере.
+  Future<void> deleteServerTrack(int trackId) async {
+    final dio = await createAuthenticatedDio();
+    await dio.delete<void>('/tracks/$trackId');
   }
 
   Future<bool> getTrackLikeStatus({
