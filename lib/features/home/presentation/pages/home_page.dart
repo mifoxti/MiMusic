@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/audio/local_tracks.dart';
 import '../../../../core/audio/track.dart';
+import '../../../../core/auth/auth_session_store.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/history/listening_history_repository.dart';
 import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/network/tracks_api.dart';
 import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
+import '../../../../core/social/colisten_controller.dart';
 import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_glass.dart';
@@ -62,16 +64,19 @@ class _HomePageState extends State<HomePage> {
   List<ServerTrackListItem> _serverTracks = [];
   String? _serverTracksError;
   bool _isLoading = true;
+  Timer? _homeSectionRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _startHomeSectionAutoRefresh();
     widget.catalogReloadToken?.addListener(_onCatalogReloadToken);
   }
 
   @override
   void dispose() {
+    _homeSectionRefreshTimer?.cancel();
     widget.catalogReloadToken?.removeListener(_onCatalogReloadToken);
     super.dispose();
   }
@@ -87,6 +92,21 @@ class _HomePageState extends State<HomePage> {
 
   void _onCatalogReloadToken() {
     unawaited(_reloadServerTracks());
+  }
+
+  void _startHomeSectionAutoRefresh() {
+    _homeSectionRefreshTimer?.cancel();
+    _homeSectionRefreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      unawaited(_refreshHomeSectionSilently());
+    });
+  }
+
+  Future<void> _refreshHomeSectionSilently() async {
+    try {
+      final next = await widget.getHomeSectionUseCase();
+      if (!mounted) return;
+      setState(() => _section = next);
+    } catch (_) {}
   }
 
   Future<void> _reloadServerTracks() async {
@@ -140,7 +160,8 @@ class _HomePageState extends State<HomePage> {
     if (queue.isEmpty) return;
     final service = widget.audioPlayerService;
     final first = queue.first;
-    final same = service.currentTrack?.assetPath == first.assetPath &&
+    final same =
+        service.currentTrack?.assetPath == first.assetPath &&
         service.currentTrack?.audioFilePath == first.audioFilePath;
     if (same) {
       await service.togglePlayPause();
@@ -150,7 +171,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Track> _resolveRecommendedTracks(HomeSection section) {
-    if (section.recommendedTrackAssetPaths.isEmpty) return _localTracks.take(8).toList();
+    if (section.recommendedTrackAssetPaths.isEmpty) {
+      return _localTracks.take(8).toList();
+    }
     final byPath = {for (final t in _localTracks) t.assetPath: t};
     final result = <Track>[];
     for (final path in section.recommendedTrackAssetPaths) {
@@ -164,9 +187,8 @@ class _HomePageState extends State<HomePage> {
   void _openCharts(BuildContext context) {
     Navigator.of(context).push(
       ShellMaterialPageRoute<void>(
-        builder: (_) => ChartsPage(
-          audioPlayerService: widget.audioPlayerService,
-        ),
+        builder: (_) =>
+            ChartsPage(audioPlayerService: widget.audioPlayerService),
       ),
     );
   }
@@ -216,7 +238,8 @@ class _HomePageState extends State<HomePage> {
     if (_serverTracks.isEmpty) return;
     final queue = _serverTracks.map(_trackFromServerItem).toList();
     final selected = _trackFromServerItem(item);
-    final same = widget.audioPlayerService.currentTrack?.assetPath == selected.assetPath;
+    final same =
+        widget.audioPlayerService.currentTrack?.assetPath == selected.assetPath;
     if (same) {
       await widget.audioPlayerService.togglePlayPause();
       return;
@@ -259,33 +282,52 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _joinGuestListeningRoom(HomeSection section) async {
-    final host = section.listeningFriends.isNotEmpty
-        ? section.listeningFriends.first.username
-        : 'alexwave';
-    final queue = _resolveRecommendedTracks(section);
-    ListeningRoomSession.instance.start(
-      roomTitle: 'Guest room',
-      listeners: ['mifoxti', ...section.listeningFriends.map((e) => e.username).take(4)],
-      hostUsername: host,
-      currentUsername: 'mifoxti',
-      privateRoom: false,
-      pauseHostOnly: true,
-      seekHostOnly: true,
-      shuffleHostOnly: true,
-      repeatHostOnly: true,
-      skipHostOnly: true,
-      playlistHostOnly: true,
-      selectedPlaylists: section.recommendedPlaylists.map((e) => e.title).take(2).toList(),
-      queue: queue,
-    );
-    if (queue.isNotEmpty) {
-      await widget.audioPlayerService.playTrack(
-        queue.first,
-        queue: queue,
-        leaveListeningRoomSession: false,
+    final roomId = section.friendPlayback?.activeRoomId;
+    if (roomId == null || roomId.trim().isEmpty) return;
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('friends.loginToFriend'))),
       );
+      return;
     }
-    PlayerDockHost.expand();
+    try {
+      final currentUsername = acc.nickname.trim().isNotEmpty
+          ? acc.nickname.trim()
+          : 'mifoxti';
+      final host = section.listeningFriends.isNotEmpty
+          ? section.listeningFriends.first.username
+          : 'MiMusic';
+      ListeningRoomSession.instance.start(
+        roomTitle: '@$host',
+        listeners: [
+          currentUsername,
+          ...section.listeningFriends.map((friend) => friend.username),
+        ],
+        hostUsername: host,
+        currentUsername: currentUsername,
+        privateRoom: false,
+        pauseHostOnly: true,
+        seekHostOnly: true,
+        shuffleHostOnly: true,
+        repeatHostOnly: true,
+        skipHostOnly: true,
+        playlistHostOnly: true,
+        selectedPlaylists: const [],
+        queue: const [],
+      );
+      await ColistenController.instance.connectGuest(
+        roomId: roomId,
+        audio: widget.audioPlayerService,
+      );
+      PlayerDockHost.expand();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.t('common.errorLoading'))));
+    }
   }
 
   void _openReleaseCard(
@@ -321,9 +363,7 @@ class _HomePageState extends State<HomePage> {
     final h = widget.listeningHistoryRepository.entries;
     if (h.isEmpty) {
       final mock = section.historyArtists.join(', ');
-      return mock.isEmpty
-          ? context.t('home.listenPrompt')
-          : mock;
+      return mock.isEmpty ? context.t('home.listenPrompt') : mock;
     }
     return h.take(3).map((e) => e.title).join(' · ');
   }
@@ -347,19 +387,18 @@ class _HomePageState extends State<HomePage> {
     final palette = AppPaletteExtension.of(context).palette;
     if (_isLoading) {
       return Container(
-        decoration: BoxDecoration(
-          gradient: _homeGradient(palette),
-        ),
+        decoration: BoxDecoration(gradient: _homeGradient(palette)),
         child: Center(child: CircularProgressIndicator(color: palette.accent)),
       );
     }
     if (_section == null) {
       return Container(
-        decoration: BoxDecoration(
-          gradient: _homeGradient(palette),
-        ),
+        decoration: BoxDecoration(gradient: _homeGradient(palette)),
         child: Center(
-          child: Text(context.t('common.errorLoading'), style: TextStyle(color: palette.textSecondary)),
+          child: Text(
+            context.t('common.errorLoading'),
+            style: TextStyle(color: palette.textSecondary),
+          ),
         ),
       );
     }
@@ -372,17 +411,13 @@ class _HomePageState extends State<HomePage> {
         ? AppConstants.shellBottomInsetWithMiniPlayer
         : AppConstants.shellBottomInset;
     return Container(
-      decoration: BoxDecoration(
-        gradient: _homeGradient(palette),
-      ),
+      decoration: BoxDecoration(gradient: _homeGradient(palette)),
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
         slivers: [
-          CupertinoSliverRefreshControl(
-            onRefresh: _load,
-          ),
+          CupertinoSliverRefreshControl(onRefresh: _load),
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(0, 16 + topPadding, 0, 0),
@@ -406,7 +441,8 @@ class _HomePageState extends State<HomePage> {
                     builder: (context, _) {
                       return _TopHeroStream(
                         isPlaying: widget.audioPlayerService.isPlaying,
-                        onPlayPauseTap: () => _toggleRecommendationStream(recommendedTracks),
+                        onPlayPauseTap: () =>
+                            _toggleRecommendationStream(recommendedTracks),
                       );
                     },
                   ),
@@ -450,15 +486,18 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: FriendsSection(
-                      friendPlayback: section.friendPlayback,
-                      listeningFriends: section.listeningFriends,
-                      onConnectTap: () => _joinGuestListeningRoom(section),
+                  if (section.friendPlayback != null &&
+                      section.listeningFriends.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: FriendsSection(
+                        friendPlayback: section.friendPlayback,
+                        listeningFriends: section.listeningFriends,
+                        onConnectTap: () => _joinGuestListeningRoom(section),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
+                    const SizedBox(height: 20),
+                  ],
                   _buildRecommendationRow(
                     context,
                     title: Localizations.localeOf(context).languageCode == 'en'
@@ -559,13 +598,15 @@ class _HomePageState extends State<HomePage> {
     BuildContext context, {
     required String title,
     required List<
-        ({
-          String title,
-          String subtitle,
-          String? imageUrl,
-          bool circle,
-          VoidCallback onTap
-        })> items,
+      ({
+        String title,
+        String subtitle,
+        String? imageUrl,
+        bool circle,
+        VoidCallback onTap,
+      })
+    >
+    items,
   }) {
     final palette = AppPaletteExtension.of(context).palette;
     return Column(
@@ -576,9 +617,9 @@ class _HomePageState extends State<HomePage> {
           child: Text(
             title,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: palette.textPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: palette.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
         const SizedBox(height: 10),
@@ -600,13 +641,23 @@ class _HomePageState extends State<HomePage> {
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: item.onTap,
-                      borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusLarge,
+                      ),
                       child: Container(
-                        constraints: const BoxConstraints(minWidth: 140, maxWidth: 220),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        constraints: const BoxConstraints(
+                          minWidth: 140,
+                          maxWidth: 220,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: AppGlass.tint(isDark),
-                          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                          borderRadius: BorderRadius.circular(
+                            AppConstants.radiusLarge,
+                          ),
                           border: Border.all(color: AppGlass.border(isDark)),
                           boxShadow: AppGlass.cardShadows(isDark),
                         ),
@@ -618,9 +669,13 @@ class _HomePageState extends State<HomePage> {
                               height: 52,
                               borderRadius: item.circle
                                   ? BorderRadius.circular(26)
-                                  : BorderRadius.circular(AppConstants.radiusMedium),
+                                  : BorderRadius.circular(
+                                      AppConstants.radiusMedium,
+                                    ),
                               placeholder: Container(
-                                color: palette.primaryDark.withValues(alpha: 0.45),
+                                color: palette.primaryDark.withValues(
+                                  alpha: 0.45,
+                                ),
                                 alignment: Alignment.center,
                                 child: Icon(
                                   item.circle
@@ -700,9 +755,9 @@ class _ServerTracksDevSection extends StatelessWidget {
         Text(
           context.t('home.serverTracks'),
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: palette.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
+            color: palette.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 10),
         ClipRRect(
@@ -742,7 +797,11 @@ class _ServerTracksDevSection extends StatelessWidget {
     return Column(
       children: [
         for (var i = 0; i < tracks.length; i++) ...[
-          if (i > 0) Divider(height: 1, color: palette.textMuted.withValues(alpha: 0.25)),
+          if (i > 0)
+            Divider(
+              height: 1,
+              color: palette.textMuted.withValues(alpha: 0.25),
+            ),
           Material(
             color: Colors.transparent,
             child: InkWell(
@@ -755,16 +814,24 @@ class _ServerTracksDevSection extends StatelessWidget {
                       coverSource: tracks[i].coverBytes ?? tracks[i].coverUrl(),
                       width: 44,
                       height: 44,
-                      borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusMedium,
+                      ),
                       placeholder: Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
                           color: palette.primaryDark.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                          borderRadius: BorderRadius.circular(
+                            AppConstants.radiusMedium,
+                          ),
                         ),
                         alignment: Alignment.center,
-                        child: Icon(Icons.music_note_rounded, color: palette.textMuted, size: 22),
+                        child: Icon(
+                          Icons.music_note_rounded,
+                          color: palette.textMuted,
+                          size: 22,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -787,16 +854,26 @@ class _ServerTracksDevSection extends StatelessWidget {
                               tracks[i].artist!,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: palette.textSecondary, fontSize: 12),
+                              style: TextStyle(
+                                color: palette.textSecondary,
+                                fontSize: 12,
+                              ),
                             ),
                           Text(
                             'id ${tracks[i].id} · ${formatDuration(tracks[i].durationSec)}',
-                            style: TextStyle(color: palette.textMuted, fontSize: 11),
+                            style: TextStyle(
+                              color: palette.textMuted,
+                              fontSize: 11,
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    Icon(Icons.play_circle_outline_rounded, color: palette.accent, size: 28),
+                    Icon(
+                      Icons.play_circle_outline_rounded,
+                      color: palette.accent,
+                      size: 28,
+                    ),
                   ],
                 ),
               ),
@@ -809,10 +886,7 @@ class _ServerTracksDevSection extends StatelessWidget {
 }
 
 class _TopHeroStream extends StatelessWidget {
-  const _TopHeroStream({
-    required this.isPlaying,
-    required this.onPlayPauseTap,
-  });
+  const _TopHeroStream({required this.isPlaying, required this.onPlayPauseTap});
 
   final bool isPlaying;
   final VoidCallback onPlayPauseTap;
