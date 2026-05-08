@@ -657,6 +657,12 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  Future<void> setLoopMode(LoopMode mode) async {
+    try {
+      await _player.setLoopMode(mode);
+    } catch (_) {}
+  }
+
   /// «Басс-буст» распределяем по двум нижним полосам, чтобы один пиковый фильтр не перегружал сигнал.
   /// При нулевых полосах и преампе DSP отключается (меньше шумов/искажений на части устройств).
   Future<void> _syncAndroidEqualizer(List<double> gains, double preamp) async {

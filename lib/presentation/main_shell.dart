@@ -61,10 +61,12 @@ class MainShell extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
   final ValueChanged<String> onLanguageChanged;
+
   /// После сохранения настроек (профиль и т.д.) перечитать [AppSettings] в корне приложения.
   final Future<void> Function() onShellSettingsReload;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+
   /// Меняется при перезагрузке настроек, чтобы сбросить кэш изображений с тем же путём.
   final int settingsDisplayGeneration;
 
@@ -169,8 +171,7 @@ class _MainShellState extends State<MainShell>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_pollServerFriendNotifications());
-      _serverNotifPollTimer =
-          Timer.periodic(const Duration(seconds: 3), (_) {
+      _serverNotifPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
         if (!mounted) return;
         unawaited(_pollServerFriendNotifications());
       });
@@ -186,30 +187,39 @@ class _MainShellState extends State<MainShell>
       final prefs = await SharedPreferences.getInstance();
       final key = 'mimusic_last_friend_push_notif_id_$userId';
       var lastShown = prefs.getInt(key) ?? 0;
-      final list =
-          await NotificationsApi().fetchNotifications(unreadOnly: true, limit: 30);
+      final list = await NotificationsApi().fetchNotifications(
+        unreadOnly: true,
+        limit: 30,
+      );
       var maxId = lastShown;
       for (final n in list) {
         if (n.id > maxId) maxId = n.id;
       }
       for (final n in list) {
-        if (n.normalizedType != 'friend_request' && n.normalizedType != 'colisten_invite') continue;
+        if (n.normalizedType != 'friend_request' &&
+            n.normalizedType != 'colisten_invite') {
+          continue;
+        }
         if (n.id <= lastShown) continue;
         final nick = n.actorNickname ?? 'MiMusic';
-        final url = n.actorUserId != null ? userAvatarUrl(n.actorUserId!) : null;
+        final url = n.actorUserId != null
+            ? userAvatarUrl(n.actorUserId!)
+            : null;
         if (n.normalizedType == 'friend_request') {
-          await LocalNotificationsService.instance.showFriendRequestNotification(
-            fromUsername: nick,
-            fromAvatarUrl: url,
-          );
+          await LocalNotificationsService.instance
+              .showFriendRequestNotification(
+                fromUsername: nick,
+                fromAvatarUrl: url,
+              );
         } else if (n.normalizedType == 'colisten_invite') {
           final roomId = n.colistenRoomId;
           if (roomId == null || roomId.isEmpty) continue;
-          await LocalNotificationsService.instance.showColistenInviteNotification(
-            fromUsername: nick,
-            fromAvatarUrl: url,
-            roomId: roomId,
-          );
+          await LocalNotificationsService.instance
+              .showColistenInviteNotification(
+                fromUsername: nick,
+                fromAvatarUrl: url,
+                roomId: roomId,
+              );
         }
       }
       if (maxId > lastShown) {
@@ -300,12 +310,12 @@ class _MainShellState extends State<MainShell>
     }
     final route = switch (intent.target) {
       NotificationTarget.friendProfile => ShellMaterialPageRoute<void>(
-          builder: (_) => ArtistPage(
-            artistName: intent.username ?? 'Пользователь',
-            coverImageUrl: intent.avatarUrl,
-            audioPlayerService: widget.audioPlayerService,
-          ),
+        builder: (_) => ArtistPage(
+          artistName: intent.username ?? 'Пользователь',
+          coverImageUrl: intent.avatarUrl,
+          audioPlayerService: widget.audioPlayerService,
         ),
+      ),
       NotificationTarget.release => null,
       NotificationTarget.colistenInvite => null,
     };
@@ -428,47 +438,51 @@ class _MainShellState extends State<MainShell>
                             key: _navigatorKey,
                             initialRoute: _ShellRoutes.tabs,
                             onGenerateRoute: (settings) {
-                            if (settings.name == _ShellRoutes.tabs) {
-                              return ShellMaterialPageRoute<void>(
-                                builder: (_) => _TabsView(
-                                  selectedIndex: _selectedIndex,
-                                  onTabTap: (i) =>
-                                      setState(() => _selectedIndex = i),
-                                  homeCatalogReloadToken:
-                                      _homeCatalogReloadToken,
-                                  getHomeSectionUseCase:
-                                      widget.getHomeSectionUseCase,
-                                  audioPlayerService: widget.audioPlayerService,
-                                  listeningHistoryRepository:
-                                      widget.listeningHistoryRepository,
-                                  playlistsRepository: widget.playlistsRepository,
-                                  themeMode: widget.themeMode,
-                                  onThemeChanged: widget.onThemeChanged,
-                                  onLanguageChanged: widget.onLanguageChanged,
-                                  onShellSettingsReload:
-                                      widget.onShellSettingsReload,
-                                  settingsRepository: widget.settingsRepository,
-                                  initialSettings: widget.initialSettings,
-                                  settingsDisplayGeneration:
-                                      widget.settingsDisplayGeneration,
-                                ),
-                                settings: const RouteSettings(
-                                  name: _ShellRoutes.tabs,
-                                ),
-                              );
-                            }
-                            if (settings.name == _ShellRoutes.favorites) {
-                              return ShellMaterialPageRoute<void>(
-                                builder: (_) => FavoritesPage(
-                                  audioPlayerService: widget.audioPlayerService,
-                                ),
-                                settings: const RouteSettings(
-                                  name: _ShellRoutes.favorites,
-                                ),
-                              );
-                            }
-                            return null;
-                          },
+                              if (settings.name == _ShellRoutes.tabs) {
+                                return ShellMaterialPageRoute<void>(
+                                  builder: (_) => _TabsView(
+                                    selectedIndex: _selectedIndex,
+                                    onTabTap: (i) =>
+                                        setState(() => _selectedIndex = i),
+                                    homeCatalogReloadToken:
+                                        _homeCatalogReloadToken,
+                                    getHomeSectionUseCase:
+                                        widget.getHomeSectionUseCase,
+                                    audioPlayerService:
+                                        widget.audioPlayerService,
+                                    listeningHistoryRepository:
+                                        widget.listeningHistoryRepository,
+                                    playlistsRepository:
+                                        widget.playlistsRepository,
+                                    themeMode: widget.themeMode,
+                                    onThemeChanged: widget.onThemeChanged,
+                                    onLanguageChanged: widget.onLanguageChanged,
+                                    onShellSettingsReload:
+                                        widget.onShellSettingsReload,
+                                    settingsRepository:
+                                        widget.settingsRepository,
+                                    initialSettings: widget.initialSettings,
+                                    settingsDisplayGeneration:
+                                        widget.settingsDisplayGeneration,
+                                  ),
+                                  settings: const RouteSettings(
+                                    name: _ShellRoutes.tabs,
+                                  ),
+                                );
+                              }
+                              if (settings.name == _ShellRoutes.favorites) {
+                                return ShellMaterialPageRoute<void>(
+                                  builder: (_) => FavoritesPage(
+                                    audioPlayerService:
+                                        widget.audioPlayerService,
+                                  ),
+                                  settings: const RouteSettings(
+                                    name: _ShellRoutes.favorites,
+                                  ),
+                                );
+                              }
+                              return null;
+                            },
                           ),
                         ),
                       ),
@@ -527,7 +541,8 @@ class _MainShellState extends State<MainShell>
                                   expandController: _playerDockController,
                                   audioPlayerService: widget.audioPlayerService,
                                   onCollapse: _collapsePlayerDock,
-                                  playlistsRepository: widget.playlistsRepository,
+                                  playlistsRepository:
+                                      widget.playlistsRepository,
                                 ),
                               ),
                             Positioned(
@@ -564,9 +579,11 @@ class _MainShellState extends State<MainShell>
                                                 return const SizedBox.shrink();
                                               }
                                               final dur = widget
-                                                  .audioPlayerService.duration;
+                                                  .audioPlayerService
+                                                  .duration;
                                               final pos = widget
-                                                  .audioPlayerService.position;
+                                                  .audioPlayerService
+                                                  .position;
                                               final progress =
                                                   dur != null &&
                                                       dur.inMilliseconds > 0
@@ -580,14 +597,23 @@ class _MainShellState extends State<MainShell>
                                                     .audioPlayerService
                                                     .isPlaying,
                                                 collaborativeMode:
-                                                    ListeningRoomSession.instance.active,
+                                                    ListeningRoomSession
+                                                        .instance
+                                                        .active,
                                                 collaborativeGuestMode:
-                                                    ListeningRoomSession.instance.active &&
-                                                    !ListeningRoomSession.instance.isHost,
+                                                    ListeningRoomSession
+                                                        .instance
+                                                        .active &&
+                                                    !ListeningRoomSession
+                                                        .instance
+                                                        .isHost,
+                                                guestLocalPauseActive: widget
+                                                    .audioPlayerService
+                                                    .guestLocalPauseActive,
                                                 onTap: _expandPlayerDock,
                                                 onPlayPause: () {
                                                   widget.audioPlayerService
-                                                      .togglePlayPause();
+                                                      .toggleGuestLocalPause();
                                                 },
                                               );
                                             },
@@ -719,40 +745,37 @@ class _BottomNavBar extends StatelessWidget {
               boxShadow: AppGlass.cardShadows(isDark),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: 12,
-                horizontal: 20,
-              ),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                    _NavItem(
-                      icon: Icons.music_note_rounded,
-                      label: context.t('search.musicMode'),
-                      isSelected: selectedIndex == 0,
-                      palette: palette,
-                      onTap: () => onTap(0),
-                    ),
-                    _NavItem(
-                      icon: Icons.search_rounded,
-                      label: context.t('common.search'),
-                      isSelected: selectedIndex == 1,
-                      palette: palette,
-                      onTap: () => onTap(1),
-                    ),
-                    _NavItem(
-                      icon: Icons.person_rounded,
-                      label: context.t('settings.profile'),
-                      isSelected: selectedIndex == 2,
-                      palette: palette,
-                      onTap: () => onTap(2),
-                    ),
-                  ],
-                ),
+                  _NavItem(
+                    icon: Icons.music_note_rounded,
+                    label: context.t('search.musicMode'),
+                    isSelected: selectedIndex == 0,
+                    palette: palette,
+                    onTap: () => onTap(0),
+                  ),
+                  _NavItem(
+                    icon: Icons.search_rounded,
+                    label: context.t('common.search'),
+                    isSelected: selectedIndex == 1,
+                    palette: palette,
+                    onTap: () => onTap(1),
+                  ),
+                  _NavItem(
+                    icon: Icons.person_rounded,
+                    label: context.t('settings.profile'),
+                    isSelected: selectedIndex == 2,
+                    palette: palette,
+                    onTap: () => onTap(2),
+                  ),
+                ],
               ),
             ),
           ),
         ),
+      ),
     );
   }
 }

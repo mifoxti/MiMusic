@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../../../core/audio/audio_player_service.dart';
-import '../../../../core/audio/local_tracks.dart';
 import '../../../../core/audio/track.dart';
 import '../../../../core/l10n/app_localization.dart';
+import '../../../../core/network/playlists_api.dart';
+import '../../../../core/network/tracks_api.dart';
 import '../../../../core/social/colisten_controller.dart';
 import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -15,6 +16,7 @@ import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/player/shell_navigator_host.dart';
 import '../../../../core/widgets/track_cover.dart';
+import '../../../playlists/domain/entities/playlist.dart';
 import '../../../playlists/domain/repositories/playlists_repository.dart';
 import '../../../../presentation/pages/artist_page.dart';
 import '../../../../presentation/pages/listening_room_page.dart';
@@ -39,530 +41,590 @@ class FullPlayerDockPanel extends StatelessWidget {
 
     return SafeArea(
       child: ListenableBuilder(
-        listenable: Listenable.merge([audioPlayerService, ListeningRoomSession.instance]),
+        listenable: Listenable.merge([
+          audioPlayerService,
+          ListeningRoomSession.instance,
+        ]),
         builder: (context, _) {
-                  final track = audioPlayerService.currentTrack;
-                  final position = audioPlayerService.position;
-                  final duration = audioPlayerService.duration ?? Duration.zero;
-                  final isPlaying = audioPlayerService.isPlaying;
-                  final path = audioPlayerService.currentPlayablePath ?? '';
-                  final liked =
-                      path.isNotEmpty && audioPlayerService.isPathLiked(path);
-                  final disliked =
-                      path.isNotEmpty &&
-                      audioPlayerService.isPathDisliked(path);
-                  final shuffleOn = audioPlayerService.shuffleEnabled;
-                  final loop = audioPlayerService.loopMode;
-                  final multiQueue = audioPlayerService.hasMultiTrackQueue;
-                  final roomSession = ListeningRoomSession.instance;
-                  final roomActive = roomSession.active;
-                  final roomJoining = roomSession.joining;
-                  final guestMode = roomActive && !roomSession.isHost;
-                  final roomAccent = guestMode
-                      ? const Color(0xFFA5AEBB)
-                      : const Color(0xFF5FD1FF);
+          final track = audioPlayerService.currentTrack;
+          final position = audioPlayerService.position;
+          final duration = audioPlayerService.duration ?? Duration.zero;
+          final isPlaying = audioPlayerService.isPlaying;
+          final path = audioPlayerService.currentPlayablePath ?? '';
+          final liked = path.isNotEmpty && audioPlayerService.isPathLiked(path);
+          final disliked =
+              path.isNotEmpty && audioPlayerService.isPathDisliked(path);
+          final shuffleOn = audioPlayerService.shuffleEnabled;
+          final loop = audioPlayerService.loopMode;
+          final multiQueue = audioPlayerService.hasMultiTrackQueue;
+          final roomSession = ListeningRoomSession.instance;
+          final roomActive = roomSession.active;
+          final roomJoining = roomSession.joining;
+          final guestMode = roomActive && !roomSession.isHost;
+          final roomAccent = guestMode
+              ? const Color(0xFFC084FC)
+              : const Color(0xFF5FD1FF);
+          final guestEnabledColor = guestMode
+              ? const Color(0xFFE9D5FF)
+              : palette.textSecondary;
+          final guestDisabledColor = guestMode
+              ? const Color(0xFF21132F)
+              : palette.textMuted.withValues(alpha: 0.35);
+          final guestControlSurface = guestMode
+              ? const Color(0xFF3B1A57).withValues(alpha: 0.82)
+              : Colors.white.withValues(alpha: 0.18);
 
-                  if (track == null) {
-                    return Center(
-                      child: Text(
-                        context.t('player.nothingPlaying'),
-                        style: TextStyle(
-                          color: palette.textSecondary,
-                          fontSize: 16,
+          if (track == null) {
+            return Center(
+              child: Text(
+                context.t('player.nothingPlaying'),
+                style: TextStyle(color: palette.textSecondary, fontSize: 16),
+              ),
+            );
+          }
+          final playable = AudioPlayerService.playablePath(track);
+          final downloading = audioPlayerService.isTrackDownloading(playable);
+          final downloaded = audioPlayerService.isTrackDownloaded(playable);
+
+          final clampedPosition = position.inMilliseconds.clamp(
+            0,
+            duration.inMilliseconds == 0 ? 0 : duration.inMilliseconds,
+          );
+          final sliderMax = duration.inMilliseconds == 0
+              ? 1.0
+              : duration.inMilliseconds.toDouble();
+          final sliderValue = duration.inMilliseconds == 0
+              ? 0.0
+              : clampedPosition.toDouble();
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                      color: palette.textPrimary,
+                      iconSize: 30,
+                      onPressed: onCollapse,
+                    ),
+                    const Spacer(),
+                    if (roomActive)
+                      IconButton(
+                        icon: const Icon(Icons.stop_rounded),
+                        color: roomAccent,
+                        tooltip:
+                            Localizations.localeOf(context).languageCode == 'en'
+                            ? 'Leave room'
+                            : 'Покинуть комнату',
+                        onPressed: () => roomSession.end(),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.queue_music_rounded),
+                      color: roomActive ? roomAccent : palette.textSecondary,
+                      tooltip:
+                          Localizations.localeOf(context).languageCode == 'en'
+                          ? 'Queue'
+                          : 'Очередь',
+                      onPressed: () {
+                        _showPlayerQueueSheet(
+                          context: context,
+                          palette: palette,
+                          audioPlayerService: audioPlayerService,
+                          roomSession: roomSession,
+                          roomActive: roomActive,
+                          currentTrack: track,
+                          playlistsRepository: playlistsRepository,
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: downloading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              downloaded
+                                  ? Icons.download_done_rounded
+                                  : Icons.download_rounded,
+                            ),
+                      color: roomActive ? roomAccent : palette.textSecondary,
+                      tooltip:
+                          Localizations.localeOf(context).languageCode == 'en'
+                          ? (downloaded ? 'Cached' : 'Download track')
+                          : (downloaded ? 'Закешировано' : 'Скачать трек'),
+                      onPressed: downloading || downloaded
+                          ? null
+                          : () async {
+                              final isEn =
+                                  Localizations.localeOf(
+                                    context,
+                                  ).languageCode ==
+                                  'en';
+                              await audioPlayerService.cacheTrackMock(track);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  behavior: SnackBarBehavior.floating,
+                                  content: Text(
+                                    isEn
+                                        ? 'Track is cached locally (mock).'
+                                        : 'Трек закеширован локально (mock).',
+                                  ),
+                                ),
+                              );
+                            },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.more_vert_rounded),
+                      color: roomActive ? roomAccent : palette.textSecondary,
+                      onPressed: () => showFullPlayerTrackMenu(
+                        context,
+                        audioPlayerService: audioPlayerService,
+                        playlistsRepository: playlistsRepository,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: Column(
+                    children: [
+                      Hero(
+                        tag: 'mimusic_player_cover',
+                        child: buildTrackCover(
+                          coverSource:
+                              track.coverBytes ?? track.coverFallbackPath,
+                          width: 260,
+                          height: 260,
+                          borderRadius: BorderRadius.circular(32),
+                          placeholder: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(32),
+                              color: (roomActive ? roomAccent : palette.accent)
+                                  .withValues(alpha: 0.9),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.music_note_rounded,
+                              size: 56,
+                              color: Colors.white.withValues(alpha: 0.95),
+                            ),
+                          ),
                         ),
                       ),
-                    );
-                  }
-                  final playable = AudioPlayerService.playablePath(track);
-                  final downloading = audioPlayerService.isTrackDownloading(
-                    playable,
-                  );
-                  final downloaded = audioPlayerService.isTrackDownloaded(
-                    playable,
-                  );
-
-                  final clampedPosition = position.inMilliseconds.clamp(
-                    0,
-                    duration.inMilliseconds == 0 ? 0 : duration.inMilliseconds,
-                  );
-                  final sliderMax = duration.inMilliseconds == 0
-                      ? 1.0
-                      : duration.inMilliseconds.toDouble();
-                  final sliderValue = duration.inMilliseconds == 0
-                      ? 0.0
-                      : clampedPosition.toDouble();
-
-                  return Column(
-                    children: [
+                      const SizedBox(height: 28),
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Row(
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        child: Column(
                           children: [
-                            IconButton(
-                              icon: const Icon(
-                                Icons.keyboard_arrow_down_rounded,
+                            Text(
+                              track.title,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: palette.textPrimary,
                               ),
-                              color: palette.textPrimary,
-                              iconSize: 30,
-                              onPressed: onCollapse,
                             ),
-                            const Spacer(),
-                            if (roomActive)
-                              IconButton(
-                                icon: const Icon(Icons.stop_rounded),
-                                color: roomAccent,
-                                tooltip: Localizations.localeOf(context).languageCode == 'en'
-                                    ? 'Leave room'
-                                    : 'Покинуть комнату',
-                                onPressed: () => roomSession.end(),
-                              ),
-                            IconButton(
-                              icon: const Icon(Icons.queue_music_rounded),
-                              color: palette.textSecondary,
-                              tooltip: Localizations.localeOf(context).languageCode == 'en'
-                                  ? 'Queue'
-                                  : 'Очередь',
-                              onPressed: () {
-                                _showPlayerQueueSheet(
-                                  context: context,
-                                  palette: palette,
-                                  audioPlayerService: audioPlayerService,
-                                  roomSession: roomSession,
-                                  roomActive: roomActive,
-                                  currentTrack: track,
-                                );
-                              },
-                            ),
-                            IconButton(
-                              icon: downloading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : Icon(
-                                      downloaded
-                                          ? Icons.download_done_rounded
-                                          : Icons.download_rounded,
-                                    ),
-                              color: palette.textSecondary,
-                              tooltip: Localizations.localeOf(context).languageCode == 'en'
-                                  ? (downloaded ? 'Cached' : 'Download track')
-                                  : (downloaded ? 'Закешировано' : 'Скачать трек'),
-                              onPressed: downloading || downloaded
-                                  ? null
-                                  : () async {
-                                final isEn = Localizations.localeOf(context).languageCode == 'en';
-                                await audioPlayerService.cacheTrackMock(track);
-                                if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    behavior: SnackBarBehavior.floating,
-                                    content: Text(
-                                      isEn
-                                          ? 'Track is cached locally (mock).'
-                                          : 'Трек закеширован локально (mock).',
+                            const SizedBox(height: 10),
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: track.artistDisplay.trim().isEmpty
+                                    ? null
+                                    : () {
+                                        final route =
+                                            ShellMaterialPageRoute<void>(
+                                              builder: (_) => ArtistPage(
+                                                artistName: track.artistDisplay,
+                                                coverAssetPath:
+                                                    track.coverFallbackPath,
+                                                audioPlayerService:
+                                                    audioPlayerService,
+                                              ),
+                                            );
+                                        final pushed = ShellNavigatorHost.push(
+                                          route,
+                                        );
+                                        if (pushed) {
+                                          PlayerDockHost.collapse();
+                                        } else {
+                                          Navigator.of(context).push(route);
+                                        }
+                                      },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  child: Text(
+                                    track.artistDisplay.isEmpty
+                                        ? context.t('common.notSpecifiedArtist')
+                                        : track.artistDisplay,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                      color: track.artistDisplay.trim().isEmpty
+                                          ? palette.textMuted
+                                          : (roomActive
+                                                ? roomAccent
+                                                : palette.accent),
                                     ),
                                   ),
-                                );
-                              },
+                                ),
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.more_vert_rounded),
-                              color: palette.textSecondary,
-                              onPressed: () => showFullPlayerTrackMenu(
-                                context,
-                                audioPlayerService: audioPlayerService,
-                                playlistsRepository: playlistsRepository,
+                            const SizedBox(height: 24),
+                            _PlayerSeekBar(
+                              audioPlayerService: audioPlayerService,
+                              palette: palette,
+                              accentColor: roomActive
+                                  ? roomAccent
+                                  : palette.accent,
+                              disabledColor: guestDisabledColor,
+                              enabled:
+                                  !roomActive || roomSession.canControlSeek,
+                              clampedPositionMs: clampedPosition,
+                              duration: duration,
+                              sliderMax: sliderMax,
+                              sliderValueFromService: sliderValue.clamp(
+                                0.0,
+                                sliderMax,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _RoundIconButton(
+                                  icon: Icons.skip_previous_rounded,
+                                  onPressed:
+                                      roomActive && !roomSession.canControlSkip
+                                      ? null
+                                      : audioPlayerService.skipToPrevious,
+                                  foregroundColor: guestEnabledColor,
+                                  disabledColor: guestDisabledColor,
+                                  backgroundColor: guestControlSurface,
+                                ),
+                                const SizedBox(width: 20),
+                                _PlayPauseButton(
+                                  isPlaying: isPlaying,
+                                  onPressed:
+                                      roomActive && !roomSession.canControlPause
+                                      ? (guestMode
+                                            ? audioPlayerService
+                                                  .toggleGuestLocalPause
+                                            : null)
+                                      : audioPlayerService.togglePlayPause,
+                                  iconOverride:
+                                      guestMode && !roomSession.canControlPause
+                                      ? (audioPlayerService
+                                                .guestLocalPauseActive
+                                            ? Icons.volume_off_rounded
+                                            : Icons.volume_up_rounded)
+                                      : null,
+                                  foregroundColor: roomActive
+                                      ? roomAccent
+                                      : palette.textPrimary,
+                                  disabledColor: guestDisabledColor,
+                                ),
+                                const SizedBox(width: 20),
+                                _RoundIconButton(
+                                  icon: Icons.skip_next_rounded,
+                                  onPressed:
+                                      roomActive && !roomSession.canControlSkip
+                                      ? null
+                                      : audioPlayerService.skipToNext,
+                                  foregroundColor: guestEnabledColor,
+                                  disabledColor: guestDisabledColor,
+                                  backgroundColor: guestControlSurface,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            if (roomActive) ...[
+                              if (roomJoining) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.primaryDark.withValues(
+                                      alpha: 0.28,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: palette.textPrimary.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: roomAccent,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          Localizations.localeOf(
+                                                    context,
+                                                  ).languageCode ==
+                                                  'en'
+                                              ? 'Connecting to room...'
+                                              : 'Подключение к комнате...',
+                                          style: TextStyle(
+                                            color: palette.textPrimary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      (roomActive ? roomAccent : palette.accent)
+                                          .withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color:
+                                        (roomActive
+                                                ? roomAccent
+                                                : palette.accent)
+                                            .withValues(alpha: 0.45),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.groups_rounded,
+                                      color: roomActive
+                                          ? roomAccent
+                                          : palette.accent,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        Localizations.localeOf(
+                                                  context,
+                                                ).languageCode ==
+                                                'en'
+                                            ? 'Room active: ${roomSession.listenersCount} listeners'
+                                            : 'Комната активна: ${roomSession.listenersCount} слушают',
+                                        style: TextStyle(
+                                          color: palette.textPrimary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    if (roomSession.isHost)
+                                      IconButton(
+                                        tooltip:
+                                            Localizations.localeOf(
+                                                  context,
+                                                ).languageCode ==
+                                                'en'
+                                            ? 'Room settings'
+                                            : 'Настройки комнаты',
+                                        icon: const Icon(
+                                          Icons.settings_rounded,
+                                        ),
+                                        color: roomActive
+                                            ? roomAccent
+                                            : palette.accent,
+                                        onPressed: () {
+                                          _showRoomManageSheet(
+                                            context: context,
+                                            palette: palette,
+                                            audioPlayerService:
+                                                audioPlayerService,
+                                            roomSession: roomSession,
+                                            initialView:
+                                                _RoomManageView.settings,
+                                          );
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                            if (!roomActive)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        ShellMaterialPageRoute<void>(
+                                          settings: const RouteSettings(
+                                            name: ListeningRoomPage.routeName,
+                                          ),
+                                          builder: (_) => ListeningRoomPage(
+                                            audioPlayerService:
+                                                audioPlayerService,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.groups_rounded,
+                                      size: 22,
+                                    ),
+                                    label: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 4,
+                                      ),
+                                      child: Text(
+                                        context.t('player.listenTogether'),
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 16),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Center(
+                                      child: _LikeCircle(
+                                        icon: disliked
+                                            ? Icons.thumb_down_rounded
+                                            : Icons.thumb_down_off_alt_rounded,
+                                        filled: disliked,
+                                        onPressed: () => audioPlayerService
+                                            .toggleDislikeCurrent(),
+                                        palette: palette,
+                                        accentWhenOn: guestMode
+                                            ? guestEnabledColor
+                                            : palette.textSecondary,
+                                        backgroundColor: guestMode
+                                            ? guestControlSurface
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Center(
+                                      child: _RepeatGlyph(
+                                        mode: loop,
+                                        onPressed:
+                                            roomActive &&
+                                                !roomSession.canControlRepeat
+                                            ? null
+                                            : () => audioPlayerService
+                                                  .cycleLoopMode(),
+                                        palette: palette,
+                                        accentColor: roomAccent,
+                                        disabledColor: guestDisabledColor,
+                                        backgroundColor: guestControlSurface,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Center(
+                                      child: _TransportGlyph(
+                                        icon: Icons.shuffle_rounded,
+                                        active: shuffleOn,
+                                        enabled:
+                                            multiQueue &&
+                                            (!roomActive ||
+                                                roomSession.canControlShuffle),
+                                        onPressed:
+                                            multiQueue &&
+                                                (!roomActive ||
+                                                    roomSession
+                                                        .canControlShuffle)
+                                            ? () => audioPlayerService
+                                                  .toggleShuffle()
+                                            : null,
+                                        palette: palette,
+                                        accentColor: roomAccent,
+                                        disabledColor: guestDisabledColor,
+                                        backgroundColor: guestControlSurface,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Center(
+                                      child: _LikeCircle(
+                                        icon: liked
+                                            ? Icons.favorite_rounded
+                                            : Icons.favorite_border_rounded,
+                                        filled: liked,
+                                        onPressed: () =>
+                                            audioPlayerService.toggleLike(),
+                                        palette: palette,
+                                        accentWhenOn: roomActive
+                                            ? roomAccent
+                                            : palette.accent,
+                                        backgroundColor: guestMode
+                                            ? guestControlSurface
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.only(bottom: 24),
-                          child: Column(
-                            children: [
-                              Hero(
-                                tag: 'mimusic_player_cover',
-                                child: buildTrackCover(
-                                  coverSource:
-                                      track.coverBytes ??
-                                      track.coverFallbackPath,
-                                  width: 260,
-                                  height: 260,
-                                  borderRadius: BorderRadius.circular(32),
-                                  placeholder: Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(32),
-                                      color: (roomActive ? roomAccent : palette.accent).withValues(
-                                        alpha: 0.9,
-                                      ),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Icon(
-                                      Icons.music_note_rounded,
-                                      size: 56,
-                                      color: Colors.white.withValues(
-                                        alpha: 0.95,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 28),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 28,
-                                ),
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      track.title,
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.w700,
-                                        color: palette.textPrimary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        onTap:
-                                            track.artistDisplay.trim().isEmpty
-                                            ? null
-                                            : () {
-                                                final route =
-                                                    ShellMaterialPageRoute<void>(
-                                                  builder: (_) => ArtistPage(
-                                                    artistName:
-                                                        track.artistDisplay,
-                                                    coverAssetPath: track
-                                                        .coverFallbackPath,
-                                                    audioPlayerService:
-                                                        audioPlayerService,
-                                                  ),
-                                                );
-                                                final pushed =
-                                                    ShellNavigatorHost.push(
-                                                  route,
-                                                );
-                                                if (pushed) {
-                                                  PlayerDockHost.collapse();
-                                                } else {
-                                                  Navigator.of(context).push(
-                                                    route,
-                                                  );
-                                                }
-                                              },
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          child: Text(
-                                            track.artistDisplay.isEmpty
-                                                ? context.t('common.notSpecifiedArtist')
-                                                : track.artistDisplay,
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w500,
-                                              color:
-                                                  track.artistDisplay
-                                                      .trim()
-                                                      .isEmpty
-                                                  ? palette.textMuted
-                                                  : (roomActive ? roomAccent : palette.accent),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 24),
-                                    _PlayerSeekBar(
-                                      audioPlayerService: audioPlayerService,
-                                      palette: palette,
-                                      accentColor: roomActive ? roomAccent : palette.accent,
-                                      enabled: !roomActive || roomSession.canControlSeek,
-                                      clampedPositionMs: clampedPosition,
-                                      duration: duration,
-                                      sliderMax: sliderMax,
-                                      sliderValueFromService: sliderValue.clamp(
-                                        0.0,
-                                        sliderMax,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        _RoundIconButton(
-                                          icon: Icons.skip_previous_rounded,
-                                          onPressed: roomActive && !roomSession.canControlSkip
-                                              ? null
-                                              : audioPlayerService.skipToPrevious,
-                                          foregroundColor:
-                                              palette.textSecondary,
-                                        ),
-                                        const SizedBox(width: 20),
-                                        _PlayPauseButton(
-                                          isPlaying: isPlaying,
-                                          onPressed: audioPlayerService.togglePlayPause,
-                                          foregroundColor:
-                                              roomActive ? roomAccent : palette.textPrimary,
-                                        ),
-                                        const SizedBox(width: 20),
-                                        _RoundIconButton(
-                                          icon: Icons.skip_next_rounded,
-                                          onPressed: roomActive && !roomSession.canControlSkip
-                                              ? null
-                                              : audioPlayerService.skipToNext,
-                                          foregroundColor:
-                                              palette.textSecondary,
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 20),
-                                    if (roomActive) ...[
-                                      if (roomJoining) ...[
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: palette.primaryDark.withValues(alpha: 0.28),
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(
-                                              color: palette.textPrimary.withValues(alpha: 0.2),
-                                            ),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              SizedBox(
-                                                width: 14,
-                                                height: 14,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  color: roomAccent,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  Localizations.localeOf(context).languageCode == 'en'
-                                                      ? 'Connecting to room...'
-                                                      : 'Подключение к комнате...',
-                                                  style: TextStyle(
-                                                    color: palette.textPrimary,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                      ],
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 10,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: (roomActive ? roomAccent : palette.accent)
-                                              .withValues(alpha: 0.2),
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: (roomActive ? roomAccent : palette.accent)
-                                                .withValues(alpha: 0.45),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.groups_rounded,
-                                              color: roomActive ? roomAccent : palette.accent,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                Localizations.localeOf(context).languageCode == 'en'
-                                                    ? 'Room active: ${roomSession.listenersCount} listeners'
-                                                    : 'Комната активна: ${roomSession.listenersCount} слушают',
-                                                style: TextStyle(
-                                                  color: palette.textPrimary,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                            if (roomSession.isHost)
-                                              IconButton(
-                                                tooltip: Localizations.localeOf(context).languageCode == 'en'
-                                                    ? 'Room settings'
-                                                    : 'Настройки комнаты',
-                                                icon: const Icon(Icons.settings_rounded),
-                                                color: roomActive ? roomAccent : palette.accent,
-                                                onPressed: () {
-                                                  _showRoomManageSheet(
-                                                    context: context,
-                                                    palette: palette,
-                                                    audioPlayerService: audioPlayerService,
-                                                    roomSession: roomSession,
-                                                    initialView: _RoomManageView.settings,
-                                                  );
-                                                },
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 16),
-                                    ],
-                                    if (!roomActive)
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                        ),
-                                        child: SizedBox(
-                                          width: double.infinity,
-                                          child: FilledButton.icon(
-                                            onPressed: () {
-                                              Navigator.of(context).push(
-                                                ShellMaterialPageRoute<void>(
-                                                  settings: const RouteSettings(
-                                                    name: ListeningRoomPage.routeName,
-                                                  ),
-                                                  builder: (_) => ListeningRoomPage(
-                                                    audioPlayerService: audioPlayerService,
-                                                  ),
-                                                ),
-                                              );
-                                            },
-                                            icon: const Icon(
-                                              Icons.groups_rounded,
-                                              size: 22,
-                                            ),
-                                            label: Padding(
-                                              padding: const EdgeInsets.symmetric(
-                                                vertical: 4,
-                                              ),
-                                              child: Text(
-                                                context.t('player.listenTogether'),
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                            style: FilledButton.styleFrom(
-                                              padding: const EdgeInsets.symmetric(
-                                                vertical: 14,
-                                              ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(16),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    const SizedBox(height: 16),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Center(
-                                              child: _LikeCircle(
-                                                icon: disliked
-                                                    ? Icons.thumb_down_rounded
-                                                    : Icons
-                                                          .thumb_down_off_alt_rounded,
-                                                filled: disliked,
-                                                onPressed: () =>
-                                                    audioPlayerService
-                                                        .toggleDislikeCurrent(),
-                                                palette: palette,
-                                                accentWhenOn:
-                                                    palette.textSecondary,
-                                              ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Center(
-                                              child: _RepeatGlyph(
-                                                mode: loop,
-                                                onPressed: roomActive &&
-                                                        !roomSession.canControlRepeat
-                                                    ? null
-                                                    : () => audioPlayerService
-                                                          .cycleLoopMode(),
-                                                palette: palette,
-                                              ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Center(
-                                              child: _TransportGlyph(
-                                                icon: Icons.shuffle_rounded,
-                                                active: shuffleOn,
-                                                enabled: multiQueue &&
-                                                    (!roomActive ||
-                                                        roomSession.canControlShuffle),
-                                                onPressed: multiQueue &&
-                                                        (!roomActive ||
-                                                            roomSession.canControlShuffle)
-                                                    ? () => audioPlayerService
-                                                          .toggleShuffle()
-                                                    : null,
-                                                palette: palette,
-                                              ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Center(
-                                              child: _LikeCircle(
-                                                icon: liked
-                                                    ? Icons.favorite_rounded
-                                                    : Icons
-                                                          .favorite_border_rounded,
-                                                filled: liked,
-                                                onPressed: () =>
-                                                    audioPlayerService
-                                                        .toggleLike(),
-                                                palette: palette,
-                                                accentWhenOn: palette.accent,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
-                  );
-                },
+                  ),
+                ),
               ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -574,6 +636,7 @@ void _showPlayerQueueSheet({
   required ListeningRoomSession roomSession,
   required bool roomActive,
   required Track currentTrack,
+  required PlaylistsRepository playlistsRepository,
 }) {
   showModalBottomSheet<void>(
     context: context,
@@ -599,7 +662,9 @@ void _showPlayerQueueSheet({
               listenable: roomActive ? roomSession : audioPlayerService,
               builder: (context, _) {
                 final queue = audioPlayerService.activeQueue;
-                final canEditQueue = roomActive ? roomSession.canEditQueue : true;
+                final canEditQueue = roomActive
+                    ? roomSession.canEditQueue
+                    : true;
                 return Column(
                   children: [
                     Padding(
@@ -608,7 +673,8 @@ void _showPlayerQueueSheet({
                         children: [
                           Expanded(
                             child: Text(
-                              Localizations.localeOf(context).languageCode == 'en'
+                              Localizations.localeOf(context).languageCode ==
+                                      'en'
                                   ? 'Playback queue'
                                   : 'Очередь воспроизведения',
                               style: TextStyle(
@@ -619,18 +685,21 @@ void _showPlayerQueueSheet({
                             ),
                           ),
                           IconButton(
-                            tooltip: Localizations.localeOf(context).languageCode == 'en'
+                            tooltip:
+                                Localizations.localeOf(context).languageCode ==
+                                    'en'
                                 ? 'Add track'
                                 : 'Добавить трек',
                             icon: const Icon(Icons.add_rounded),
                             onPressed: canEditQueue
                                 ? () => _showAddTrackToQueueSheet(
-                                      context: context,
-                                      palette: palette,
-                                      audioPlayerService: audioPlayerService,
-                                      roomSession: roomSession,
-                                      roomActive: roomActive,
-                                    )
+                                    context: context,
+                                    palette: palette,
+                                    audioPlayerService: audioPlayerService,
+                                    roomSession: roomSession,
+                                    roomActive: roomActive,
+                                    playlistsRepository: playlistsRepository,
+                                  )
                                 : null,
                           ),
                         ],
@@ -642,7 +711,8 @@ void _showPlayerQueueSheet({
                         itemCount: queue.length,
                         itemBuilder: (_, index) {
                           final item = queue[index];
-                          final selected = item.assetPath == currentTrack.assetPath;
+                          final selected =
+                              item.assetPath == currentTrack.assetPath;
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: Dismissible(
@@ -656,17 +726,23 @@ void _showPlayerQueueSheet({
                                       barrierDismissible: true,
                                       builder: (_) {
                                         return AlertDialog(
-                                          backgroundColor: palette.cardBackground.withValues(
-                                            alpha: 0.82,
-                                          ),
+                                          backgroundColor: palette
+                                              .cardBackground
+                                              .withValues(alpha: 0.82),
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(16),
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
                                             side: BorderSide(
-                                              color: palette.textPrimary.withValues(alpha: 0.16),
+                                              color: palette.textPrimary
+                                                  .withValues(alpha: 0.16),
                                             ),
                                           ),
                                           title: Text(
-                                            Localizations.localeOf(context).languageCode == 'en'
+                                            Localizations.localeOf(
+                                                      context,
+                                                    ).languageCode ==
+                                                    'en'
                                                 ? 'Remove from queue?'
                                                 : 'Удалить из очереди?',
                                           ),
@@ -677,17 +753,27 @@ void _showPlayerQueueSheet({
                                           ),
                                           actions: [
                                             TextButton(
-                                              onPressed: () => Navigator.of(context).pop(false),
+                                              onPressed: () => Navigator.of(
+                                                context,
+                                              ).pop(false),
                                               child: Text(
-                                                Localizations.localeOf(context).languageCode == 'en'
+                                                Localizations.localeOf(
+                                                          context,
+                                                        ).languageCode ==
+                                                        'en'
                                                     ? 'Cancel'
                                                     : 'Отмена',
                                               ),
                                             ),
                                             FilledButton(
-                                              onPressed: () => Navigator.of(context).pop(true),
+                                              onPressed: () => Navigator.of(
+                                                context,
+                                              ).pop(true),
                                               child: Text(
-                                                Localizations.localeOf(context).languageCode == 'en'
+                                                Localizations.localeOf(
+                                                          context,
+                                                        ).languageCode ==
+                                                        'en'
                                                     ? 'Delete'
                                                     : 'Удалить',
                                               ),
@@ -700,7 +786,9 @@ void _showPlayerQueueSheet({
                               },
                               background: Container(
                                 alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.red.withValues(alpha: 0.25),
                                   borderRadius: BorderRadius.circular(12),
@@ -709,33 +797,51 @@ void _showPlayerQueueSheet({
                               ),
                               onDismissed: (_) {
                                 if (roomActive) {
-                                  audioPlayerService.removeFromQueue(item.assetPath);
+                                  audioPlayerService.removeFromQueue(
+                                    item.assetPath,
+                                  );
                                 } else {
-                                  audioPlayerService.removeFromQueue(item.assetPath);
+                                  audioPlayerService.removeFromQueue(
+                                    item.assetPath,
+                                  );
                                 }
                               },
                               child: ListTile(
-                                tileColor: palette.primaryDark.withValues(alpha: 0.2),
+                                tileColor: palette.primaryDark.withValues(
+                                  alpha: 0.2,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 leading: Icon(
-                                  selected ? Icons.graphic_eq_rounded : Icons.music_note_rounded,
-                                  color: selected ? palette.accent : palette.textSecondary,
+                                  selected
+                                      ? Icons.graphic_eq_rounded
+                                      : Icons.music_note_rounded,
+                                  color: selected
+                                      ? palette.accent
+                                      : palette.textSecondary,
                                 ),
                                 title: Text(item.title),
                                 subtitle: Text(item.artistDisplay),
                                 trailing: IconButton(
-                                  tooltip: Localizations.localeOf(context).languageCode == 'en'
+                                  tooltip:
+                                      Localizations.localeOf(
+                                            context,
+                                          ).languageCode ==
+                                          'en'
                                       ? 'Play next'
                                       : 'Играть следующим',
                                   icon: const Icon(Icons.playlist_play_rounded),
                                   onPressed: canEditQueue
                                       ? () {
                                           if (roomActive) {
-                                            audioPlayerService.moveToPlayNext(item.assetPath);
+                                            audioPlayerService.moveToPlayNext(
+                                              item.assetPath,
+                                            );
                                           } else {
-                                            audioPlayerService.moveToPlayNext(item.assetPath);
+                                            audioPlayerService.moveToPlayNext(
+                                              item.assetPath,
+                                            );
                                           }
                                         }
                                       : null,
@@ -771,56 +877,338 @@ Future<void> _showAddTrackToQueueSheet({
   required AudioPlayerService audioPlayerService,
   required ListeningRoomSession roomSession,
   required bool roomActive,
+  required PlaylistsRepository playlistsRepository,
 }) async {
-  final tracks = await loadLocalTracks();
+  final tracks = await _loadQueuePickerTracks();
+  final playlists = await _loadQueuePickerPlaylists(playlistsRepository);
   if (!context.mounted) return;
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     showDragHandle: true,
+    isScrollControlled: true,
     builder: (_) {
+      var query = '';
       return ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.78,
+            ),
             decoration: BoxDecoration(
               color: palette.cardBackground.withValues(alpha: 0.72),
               border: Border.all(
                 color: palette.textPrimary.withValues(alpha: 0.12),
               ),
             ),
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              itemCount: tracks.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final item = tracks[index];
-                return ListTile(
-                  tileColor: palette.primaryDark.withValues(alpha: 0.2),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  leading: const Icon(Icons.music_note_rounded),
-                  title: Text(item.title),
-                  subtitle: Text(item.artistDisplay),
-                  trailing: const Icon(Icons.add_circle_outline_rounded),
-                  onTap: () {
-                    if (roomActive) {
-                      audioPlayerService.addToQueue(item);
-                    } else {
-                      audioPlayerService.addToQueue(item);
-                    }
-                    Navigator.of(context).pop();
-                  },
-                );
-              },
+            child: DefaultTabController(
+              length: 3,
+              child: StatefulBuilder(
+                builder: (context, setSheetState) {
+                  final normalizedQuery = query.trim().toLowerCase();
+                  final visibleTracks = normalizedQuery.isEmpty
+                      ? tracks
+                      : tracks.where((track) {
+                          return track.title.toLowerCase().contains(
+                                normalizedQuery,
+                              ) ||
+                              track.artistDisplay.toLowerCase().contains(
+                                normalizedQuery,
+                              );
+                        }).toList();
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: TextField(
+                          onChanged: (value) =>
+                              setSheetState(() => query = value),
+                          decoration: InputDecoration(
+                            hintText:
+                                Localizations.localeOf(context).languageCode ==
+                                    'en'
+                                ? 'Search tracks'
+                                : 'Поиск треков',
+                            isDense: true,
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      TabBar(
+                        tabs: [
+                          Tab(
+                            text:
+                                Localizations.localeOf(context).languageCode ==
+                                    'en'
+                                ? 'Tracks'
+                                : 'Треки',
+                          ),
+                          Tab(
+                            text:
+                                Localizations.localeOf(context).languageCode ==
+                                    'en'
+                                ? 'My playlists'
+                                : 'Мои',
+                          ),
+                          Tab(
+                            text:
+                                Localizations.localeOf(context).languageCode ==
+                                    'en'
+                                ? 'Liked'
+                                : 'С лайком',
+                          ),
+                        ],
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            _QueueTrackList(
+                              palette: palette,
+                              tracks: visibleTracks,
+                              emptyText:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'No tracks found'
+                                  : 'Треки не найдены',
+                              onAdd: (track) {
+                                audioPlayerService.addToQueue(track);
+                                Navigator.of(context).pop();
+                              },
+                            ),
+                            _QueuePlaylistList(
+                              palette: palette,
+                              playlists: playlists
+                                  .where((p) => !p.isLiked)
+                                  .toList(),
+                              tracks: tracks,
+                              playlistsRepository: playlistsRepository,
+                              audioPlayerService: audioPlayerService,
+                              emptyText:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'No playlists yet'
+                                  : 'Плейлистов пока нет',
+                              onDone: () => Navigator.of(context).pop(),
+                            ),
+                            _QueuePlaylistList(
+                              palette: palette,
+                              playlists: playlists
+                                  .where((p) => p.isLiked)
+                                  .toList(),
+                              tracks: tracks,
+                              playlistsRepository: playlistsRepository,
+                              audioPlayerService: audioPlayerService,
+                              emptyText:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'No liked playlists'
+                                  : 'Нет плейлистов с лайком',
+                              onDone: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
       );
     },
   );
+}
+
+Future<List<Track>> _loadQueuePickerTracks() async {
+  try {
+    final remote = await TracksApi().fetchTracks(limit: 200);
+    return remote
+        .map(
+          (e) => Track(
+            assetPath: 'server_track_${e.id}',
+            title: e.title.trim().isEmpty ? '—' : e.title.trim(),
+            artist: e.artist,
+            audioFilePath: e.streamUrl(),
+            coverAssetPath: e.coverUrl(),
+            coverBytes: e.coverBytes,
+          ),
+        )
+        .toList();
+  } catch (_) {
+    return const [];
+  }
+}
+
+Future<List<Playlist>> _loadQueuePickerPlaylists(
+  PlaylistsRepository playlistsRepository,
+) async {
+  try {
+    return await playlistsRepository.getPlaylists();
+  } catch (_) {
+    return const [];
+  }
+}
+
+Track? _trackByAssetPath(List<Track> tracks, String assetPath) {
+  for (final track in tracks) {
+    if (track.assetPath == assetPath) return track;
+  }
+  return null;
+}
+
+Future<List<Track>> _tracksFromPlaylist({
+  required Playlist playlist,
+  required List<Track> knownTracks,
+  required PlaylistsRepository playlistsRepository,
+}) async {
+  var detailed = playlist;
+  if (detailed.trackAssetPaths.isEmpty) {
+    detailed = await playlistsRepository.getPlaylist(playlist.id) ?? playlist;
+  }
+  final out = <Track>[];
+  for (final path in detailed.trackAssetPaths) {
+    final known = _trackByAssetPath(knownTracks, path);
+    if (known != null) {
+      out.add(known);
+      continue;
+    }
+    final id = TracksApi().parseServerTrackId(path);
+    if (id == null) continue;
+    try {
+      final remote = await TracksApi().fetchTrackById(id);
+      out.add(
+        Track(
+          assetPath: 'server_track_${remote.id}',
+          title: remote.title.trim().isEmpty ? '—' : remote.title.trim(),
+          artist: remote.artist,
+          audioFilePath: remote.streamUrl(),
+          coverAssetPath: remote.coverUrl(),
+          coverBytes: remote.coverBytes,
+        ),
+      );
+    } catch (_) {}
+  }
+  return out;
+}
+
+class _QueueTrackList extends StatelessWidget {
+  const _QueueTrackList({
+    required this.palette,
+    required this.tracks,
+    required this.emptyText,
+    required this.onAdd,
+  });
+
+  final AppColorPalette palette;
+  final List<Track> tracks;
+  final String emptyText;
+  final ValueChanged<Track> onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tracks.isEmpty) {
+      return Center(
+        child: Text(emptyText, style: TextStyle(color: palette.textMuted)),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      itemCount: tracks.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final item = tracks[index];
+        return ListTile(
+          tileColor: palette.primaryDark.withValues(alpha: 0.2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          leading: const Icon(Icons.music_note_rounded),
+          title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            item.artistDisplay,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: const Icon(Icons.add_circle_outline_rounded),
+          onTap: () => onAdd(item),
+        );
+      },
+    );
+  }
+}
+
+class _QueuePlaylistList extends StatelessWidget {
+  const _QueuePlaylistList({
+    required this.palette,
+    required this.playlists,
+    required this.tracks,
+    required this.playlistsRepository,
+    required this.audioPlayerService,
+    required this.emptyText,
+    required this.onDone,
+  });
+
+  final AppColorPalette palette;
+  final List<Playlist> playlists;
+  final List<Track> tracks;
+  final PlaylistsRepository playlistsRepository;
+  final AudioPlayerService audioPlayerService;
+  final String emptyText;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    if (playlists.isEmpty) {
+      return Center(
+        child: Text(emptyText, style: TextStyle(color: palette.textMuted)),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      itemCount: playlists.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final playlist = playlists[index];
+        return ListTile(
+          tileColor: palette.primaryDark.withValues(alpha: 0.2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          leading: const Icon(Icons.library_music_rounded),
+          title: Text(
+            playlist.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text('${playlist.displayTrackCount} tracks'),
+          trailing: const Icon(Icons.add_circle_outline_rounded),
+          onTap: () async {
+            final selected = await _tracksFromPlaylist(
+              playlist: playlist,
+              knownTracks: tracks,
+              playlistsRepository: playlistsRepository,
+            );
+            for (final track in selected) {
+              await audioPlayerService.addToQueue(track);
+            }
+            onDone();
+          },
+        );
+      },
+    );
+  }
 }
 
 void _showRoomManageSheet({
@@ -865,216 +1253,288 @@ void _showRoomManageSheet({
           playlistHostOnly: playlistHostOnly,
         );
       }
+
       return StatefulBuilder(
         builder: (context, setSheetState) {
           return FractionallySizedBox(
             heightFactor: 0.76,
             child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                 child: Container(
                   decoration: BoxDecoration(
                     color: palette.cardBackground.withValues(alpha: 0.72),
-                    border: Border.all(color: palette.textPrimary.withValues(alpha: 0.12)),
+                    border: Border.all(
+                      color: palette.textPrimary.withValues(alpha: 0.12),
+                    ),
                   ),
                   child: ListenableBuilder(
                     listenable: roomSession,
                     builder: (context, _) {
+                      final participantIds = roomSession.participantIds;
                       final listeners = roomSession.listeners;
                       return ListView(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                         children: [
-                        SegmentedButton<_RoomManageView>(
-                          segments: [
-                            ButtonSegment(
-                              value: _RoomManageView.listeners,
-                              icon: const Icon(Icons.groups_rounded),
-                              label: Text(
-                                Localizations.localeOf(context).languageCode == 'en'
-                                    ? 'Listeners'
-                                    : 'Слушатели',
-                              ),
-                            ),
-                            ButtonSegment(
-                              value: _RoomManageView.settings,
-                              icon: const Icon(Icons.settings_rounded),
-                              label: Text(
-                                Localizations.localeOf(context).languageCode == 'en'
-                                    ? 'Settings'
-                                    : 'Настройки',
-                              ),
-                            ),
-                          ],
-                          selected: {currentView},
-                          onSelectionChanged: (v) {
-                            setSheetState(() => currentView = v.first);
-                          },
-                        ),
-                        const SizedBox(height: 10),
-                        if (currentView == _RoomManageView.listeners) ...[
-                          ...listeners.map((username) {
-                            final canKick = username != 'mifoxti';
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                tileColor: palette.primaryDark.withValues(alpha: 0.2),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                          SegmentedButton<_RoomManageView>(
+                            segments: [
+                              ButtonSegment(
+                                value: _RoomManageView.listeners,
+                                icon: const Icon(Icons.groups_rounded),
+                                label: Text(
+                                  Localizations.localeOf(
+                                            context,
+                                          ).languageCode ==
+                                          'en'
+                                      ? 'Listeners'
+                                      : 'Слушатели',
                                 ),
-                                leading: CircleAvatar(
-                                  child: Text(username[0].toUpperCase()),
-                                ),
-                                title: Text('@$username'),
-                                trailing: canKick
-                                    ? IconButton(
-                                        icon: const Icon(Icons.person_remove_rounded),
-                                        onPressed: () => roomSession.removeParticipant(username),
-                                      )
-                                    : null,
                               ),
-                            );
-                          }),
-                        ] else ...[
-                          SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              Localizations.localeOf(context).languageCode == 'en'
-                                  ? 'Private room'
-                                  : 'Приватная комната',
+                              ButtonSegment(
+                                value: _RoomManageView.settings,
+                                icon: const Icon(Icons.settings_rounded),
+                                label: Text(
+                                  Localizations.localeOf(
+                                            context,
+                                          ).languageCode ==
+                                          'en'
+                                      ? 'Settings'
+                                      : 'Настройки',
+                                ),
+                              ),
+                            ],
+                            selected: {currentView},
+                            onSelectionChanged: (v) {
+                              setSheetState(() => currentView = v.first);
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                          if (currentView == _RoomManageView.listeners) ...[
+                            if (participantIds.isNotEmpty)
+                              ...participantIds.map((userId) {
+                                final username = roomSession.participantName(
+                                  userId,
+                                );
+                                final isSelf =
+                                    username == roomSession.currentUsername;
+                                final canKick = roomSession.isHost && !isSelf;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: ListTile(
+                                    tileColor: palette.primaryDark.withValues(
+                                      alpha: 0.2,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    leading: CircleAvatar(
+                                      backgroundImage: NetworkImage(
+                                        userAvatarUrl(userId),
+                                      ),
+                                    ),
+                                    title: Text('@$username'),
+                                    trailing: canKick
+                                        ? IconButton(
+                                            icon: const Icon(
+                                              Icons.person_remove_rounded,
+                                            ),
+                                            onPressed: () => ColistenController
+                                                .instance
+                                                .kickParticipant(userId),
+                                          )
+                                        : null,
+                                  ),
+                                );
+                              })
+                            else
+                              ...listeners.map((username) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: ListTile(
+                                    tileColor: palette.primaryDark.withValues(
+                                      alpha: 0.2,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    leading: CircleAvatar(
+                                      child: Text(username[0].toUpperCase()),
+                                    ),
+                                    title: Text('@$username'),
+                                    trailing: null,
+                                  ),
+                                );
+                              }),
+                          ] else ...[
+                            SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                Localizations.localeOf(context).languageCode ==
+                                        'en'
+                                    ? 'Private room'
+                                    : 'Приватная комната',
+                              ),
+                              value: roomSession.privateRoom,
+                              onChanged: (v) {
+                                applyRoomSettings(
+                                  privateRoom: v,
+                                  pauseHostOnly: roomSession.pauseHostOnly,
+                                  seekHostOnly: roomSession.seekHostOnly,
+                                  shuffleHostOnly: roomSession.shuffleHostOnly,
+                                  repeatHostOnly: roomSession.repeatHostOnly,
+                                  skipHostOnly: roomSession.skipHostOnly,
+                                  playlistHostOnly:
+                                      roomSession.playlistHostOnly,
+                                );
+                              },
                             ),
-                            value: roomSession.privateRoom,
-                            onChanged: (v) {
-                              applyRoomSettings(
-                                privateRoom: v,
-                                pauseHostOnly: roomSession.pauseHostOnly,
+                            _roomPermissionTile(
+                              context: context,
+                              palette: palette,
+                              title:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'Pause / resume'
+                                  : 'Пауза / продолжить',
+                              value: roomSession.pauseHostOnly,
+                              onChanged: (v) => applyRoomSettings(
+                                privateRoom: roomSession.privateRoom,
+                                pauseHostOnly: v,
                                 seekHostOnly: roomSession.seekHostOnly,
                                 shuffleHostOnly: roomSession.shuffleHostOnly,
                                 repeatHostOnly: roomSession.repeatHostOnly,
                                 skipHostOnly: roomSession.skipHostOnly,
                                 playlistHostOnly: roomSession.playlistHostOnly,
-                              );
-                            },
-                          ),
-                          _roomPermissionTile(
-                            context: context,
-                            palette: palette,
-                            title: Localizations.localeOf(context).languageCode == 'en'
-                                ? 'Pause / resume'
-                                : 'Пауза / продолжить',
-                            value: roomSession.pauseHostOnly,
-                            onChanged: (v) => applyRoomSettings(
-                              privateRoom: roomSession.privateRoom,
-                              pauseHostOnly: v,
-                              seekHostOnly: roomSession.seekHostOnly,
-                              shuffleHostOnly: roomSession.shuffleHostOnly,
-                              repeatHostOnly: roomSession.repeatHostOnly,
-                              skipHostOnly: roomSession.skipHostOnly,
-                              playlistHostOnly: roomSession.playlistHostOnly,
+                              ),
                             ),
-                          ),
-                          _roomPermissionTile(
-                            context: context,
-                            palette: palette,
-                            title: Localizations.localeOf(context).languageCode == 'en'
-                                ? 'Seek progress bar'
-                                : 'Перемотка трека',
-                            value: roomSession.seekHostOnly,
-                            onChanged: (v) => applyRoomSettings(
-                              privateRoom: roomSession.privateRoom,
-                              pauseHostOnly: roomSession.pauseHostOnly,
-                              seekHostOnly: v,
-                              shuffleHostOnly: roomSession.shuffleHostOnly,
-                              repeatHostOnly: roomSession.repeatHostOnly,
-                              skipHostOnly: roomSession.skipHostOnly,
-                              playlistHostOnly: roomSession.playlistHostOnly,
+                            _roomPermissionTile(
+                              context: context,
+                              palette: palette,
+                              title:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'Seek progress bar'
+                                  : 'Перемотка трека',
+                              value: roomSession.seekHostOnly,
+                              onChanged: (v) => applyRoomSettings(
+                                privateRoom: roomSession.privateRoom,
+                                pauseHostOnly: roomSession.pauseHostOnly,
+                                seekHostOnly: v,
+                                shuffleHostOnly: roomSession.shuffleHostOnly,
+                                repeatHostOnly: roomSession.repeatHostOnly,
+                                skipHostOnly: roomSession.skipHostOnly,
+                                playlistHostOnly: roomSession.playlistHostOnly,
+                              ),
                             ),
-                          ),
-                          _roomPermissionTile(
-                            context: context,
-                            palette: palette,
-                            title: Localizations.localeOf(context).languageCode == 'en'
-                                ? 'Shuffle queue'
-                                : 'Перемешивание очереди',
-                            value: roomSession.shuffleHostOnly,
-                            onChanged: (v) => applyRoomSettings(
-                              privateRoom: roomSession.privateRoom,
-                              pauseHostOnly: roomSession.pauseHostOnly,
-                              seekHostOnly: roomSession.seekHostOnly,
-                              shuffleHostOnly: v,
-                              repeatHostOnly: roomSession.repeatHostOnly,
-                              skipHostOnly: roomSession.skipHostOnly,
-                              playlistHostOnly: roomSession.playlistHostOnly,
+                            _roomPermissionTile(
+                              context: context,
+                              palette: palette,
+                              title:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'Shuffle queue'
+                                  : 'Перемешивание очереди',
+                              value: roomSession.shuffleHostOnly,
+                              onChanged: (v) => applyRoomSettings(
+                                privateRoom: roomSession.privateRoom,
+                                pauseHostOnly: roomSession.pauseHostOnly,
+                                seekHostOnly: roomSession.seekHostOnly,
+                                shuffleHostOnly: v,
+                                repeatHostOnly: roomSession.repeatHostOnly,
+                                skipHostOnly: roomSession.skipHostOnly,
+                                playlistHostOnly: roomSession.playlistHostOnly,
+                              ),
                             ),
-                          ),
-                          _roomPermissionTile(
-                            context: context,
-                            palette: palette,
-                            title: Localizations.localeOf(context).languageCode == 'en'
-                                ? 'Repeat mode'
-                                : 'Режим повтора',
-                            value: roomSession.repeatHostOnly,
-                            onChanged: (v) => applyRoomSettings(
-                              privateRoom: roomSession.privateRoom,
-                              pauseHostOnly: roomSession.pauseHostOnly,
-                              seekHostOnly: roomSession.seekHostOnly,
-                              shuffleHostOnly: roomSession.shuffleHostOnly,
-                              repeatHostOnly: v,
-                              skipHostOnly: roomSession.skipHostOnly,
-                              playlistHostOnly: roomSession.playlistHostOnly,
+                            _roomPermissionTile(
+                              context: context,
+                              palette: palette,
+                              title:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'Repeat mode'
+                                  : 'Режим повтора',
+                              value: roomSession.repeatHostOnly,
+                              onChanged: (v) => applyRoomSettings(
+                                privateRoom: roomSession.privateRoom,
+                                pauseHostOnly: roomSession.pauseHostOnly,
+                                seekHostOnly: roomSession.seekHostOnly,
+                                shuffleHostOnly: roomSession.shuffleHostOnly,
+                                repeatHostOnly: v,
+                                skipHostOnly: roomSession.skipHostOnly,
+                                playlistHostOnly: roomSession.playlistHostOnly,
+                              ),
                             ),
-                          ),
-                          _roomPermissionTile(
-                            context: context,
-                            palette: palette,
-                            title: Localizations.localeOf(context).languageCode == 'en'
-                                ? 'Skip tracks'
-                                : 'Переключение треков',
-                            value: roomSession.skipHostOnly,
-                            onChanged: (v) => applyRoomSettings(
-                              privateRoom: roomSession.privateRoom,
-                              pauseHostOnly: roomSession.pauseHostOnly,
-                              seekHostOnly: roomSession.seekHostOnly,
-                              shuffleHostOnly: roomSession.shuffleHostOnly,
-                              repeatHostOnly: roomSession.repeatHostOnly,
-                              skipHostOnly: v,
-                              playlistHostOnly: roomSession.playlistHostOnly,
+                            _roomPermissionTile(
+                              context: context,
+                              palette: palette,
+                              title:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'Skip tracks'
+                                  : 'Переключение треков',
+                              value: roomSession.skipHostOnly,
+                              onChanged: (v) => applyRoomSettings(
+                                privateRoom: roomSession.privateRoom,
+                                pauseHostOnly: roomSession.pauseHostOnly,
+                                seekHostOnly: roomSession.seekHostOnly,
+                                shuffleHostOnly: roomSession.shuffleHostOnly,
+                                repeatHostOnly: roomSession.repeatHostOnly,
+                                skipHostOnly: v,
+                                playlistHostOnly: roomSession.playlistHostOnly,
+                              ),
                             ),
-                          ),
-                          _roomPermissionTile(
-                            context: context,
-                            palette: palette,
-                            title: Localizations.localeOf(context).languageCode == 'en'
-                                ? 'Edit queue'
-                                : 'Редактирование очереди',
-                            value: roomSession.playlistHostOnly,
-                            onChanged: (v) => applyRoomSettings(
-                              privateRoom: roomSession.privateRoom,
-                              pauseHostOnly: roomSession.pauseHostOnly,
-                              seekHostOnly: roomSession.seekHostOnly,
-                              shuffleHostOnly: roomSession.shuffleHostOnly,
-                              repeatHostOnly: roomSession.repeatHostOnly,
-                              skipHostOnly: roomSession.skipHostOnly,
-                              playlistHostOnly: v,
+                            _roomPermissionTile(
+                              context: context,
+                              palette: palette,
+                              title:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'en'
+                                  ? 'Edit queue'
+                                  : 'Редактирование очереди',
+                              value: roomSession.playlistHostOnly,
+                              onChanged: (v) => applyRoomSettings(
+                                privateRoom: roomSession.privateRoom,
+                                pauseHostOnly: roomSession.pauseHostOnly,
+                                seekHostOnly: roomSession.seekHostOnly,
+                                shuffleHostOnly: roomSession.shuffleHostOnly,
+                                repeatHostOnly: roomSession.repeatHostOnly,
+                                skipHostOnly: roomSession.skipHostOnly,
+                                playlistHostOnly: v,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          FilledButton.icon(
-                            onPressed: () {
-                              if (!roomSession.isHost) {
-                                audioPlayerService.stop();
-                              }
-                              roomSession.end();
-                              Navigator.of(context).pop();
-                            },
-                            icon: const Icon(Icons.stop_circle_outlined),
-                            label: Text(
-                              Localizations.localeOf(context).languageCode == 'en'
-                                  ? 'End listening room'
-                                  : 'Завершить комнату',
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              onPressed: () {
+                                if (!roomSession.isHost) {
+                                  audioPlayerService.stop();
+                                }
+                                roomSession.end();
+                                Navigator.of(context).pop();
+                              },
+                              icon: const Icon(Icons.stop_circle_outlined),
+                              label: Text(
+                                Localizations.localeOf(context).languageCode ==
+                                        'en'
+                                    ? 'End listening room'
+                                    : 'Завершить комнату',
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
                         ],
                       );
                     },
@@ -1103,10 +1563,7 @@ Widget _roomPermissionTile({
     child: Row(
       children: [
         Expanded(
-          child: Text(
-            title,
-            style: TextStyle(color: palette.textSecondary),
-          ),
+          child: Text(title, style: TextStyle(color: palette.textSecondary)),
         ),
         SegmentedButton<bool>(
           segments: [
@@ -1142,6 +1599,9 @@ class _TransportGlyph extends StatelessWidget {
     required this.enabled,
     required this.onPressed,
     required this.palette,
+    required this.accentColor,
+    required this.disabledColor,
+    required this.backgroundColor,
   });
 
   final IconData icon;
@@ -1149,28 +1609,28 @@ class _TransportGlyph extends StatelessWidget {
   final bool enabled;
   final VoidCallback? onPressed;
   final AppColorPalette palette;
+  final Color accentColor;
+  final Color disabledColor;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     final color = !enabled
-        ? palette.textMuted.withValues(alpha: 0.35)
+        ? disabledColor.withValues(alpha: 0.55)
         : active
-        ? palette.accent
-        : palette.textSecondary;
-    return Opacity(
-      opacity: enabled ? 1 : 0.45,
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.14),
-        shape: const CircleBorder(),
-        child: IconButton(
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          padding: EdgeInsets.zero,
-          icon: Icon(icon),
-          color: color,
-          iconSize: 24,
-          onPressed: onPressed,
-        ),
+        ? accentColor
+        : accentColor.withValues(alpha: 0.82);
+    return Material(
+      color: enabled ? backgroundColor : disabledColor.withValues(alpha: 0.95),
+      shape: const CircleBorder(),
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        padding: EdgeInsets.zero,
+        icon: Icon(icon),
+        color: color,
+        iconSize: 24,
+        onPressed: onPressed,
       ),
     );
   }
@@ -1181,11 +1641,17 @@ class _RepeatGlyph extends StatelessWidget {
     required this.mode,
     required this.onPressed,
     required this.palette,
+    required this.accentColor,
+    required this.disabledColor,
+    required this.backgroundColor,
   });
 
   final LoopMode mode;
   final VoidCallback? onPressed;
   final AppColorPalette palette;
+  final Color accentColor;
+  final Color disabledColor;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1194,32 +1660,29 @@ class _RepeatGlyph extends StatelessWidget {
     switch (mode) {
       case LoopMode.off:
         icon = Icons.repeat_rounded;
-        color = palette.textSecondary;
+        color = accentColor.withValues(alpha: 0.82);
         break;
       case LoopMode.all:
         icon = Icons.repeat_rounded;
-        color = palette.accent;
+        color = accentColor;
         break;
       case LoopMode.one:
         icon = Icons.repeat_one_rounded;
-        color = palette.accent;
+        color = accentColor;
         break;
     }
     final enabled = onPressed != null;
-    return Opacity(
-      opacity: enabled ? 1 : 0.45,
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.14),
-        shape: const CircleBorder(),
-        child: IconButton(
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          padding: EdgeInsets.zero,
-          icon: Icon(icon),
-          color: enabled ? color : palette.textMuted.withValues(alpha: 0.35),
-          iconSize: 24,
-          onPressed: onPressed,
-        ),
+    return Material(
+      color: enabled ? backgroundColor : disabledColor.withValues(alpha: 0.95),
+      shape: const CircleBorder(),
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        padding: EdgeInsets.zero,
+        icon: Icon(icon),
+        color: enabled ? color : disabledColor.withValues(alpha: 0.55),
+        iconSize: 24,
+        onPressed: onPressed,
       ),
     );
   }
@@ -1232,6 +1695,7 @@ class _LikeCircle extends StatelessWidget {
     required this.onPressed,
     required this.palette,
     required this.accentWhenOn,
+    this.backgroundColor,
   });
 
   final IconData icon;
@@ -1239,11 +1703,12 @@ class _LikeCircle extends StatelessWidget {
   final VoidCallback onPressed;
   final AppColorPalette palette;
   final Color accentWhenOn;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.14),
+      color: backgroundColor ?? Colors.white.withValues(alpha: 0.14),
       shape: const CircleBorder(),
       child: IconButton(
         visualDensity: VisualDensity.compact,
@@ -1264,6 +1729,7 @@ class _PlayerSeekBar extends StatefulWidget {
     required this.audioPlayerService,
     required this.palette,
     required this.accentColor,
+    required this.disabledColor,
     required this.enabled,
     required this.clampedPositionMs,
     required this.duration,
@@ -1274,6 +1740,7 @@ class _PlayerSeekBar extends StatefulWidget {
   final AudioPlayerService audioPlayerService;
   final AppColorPalette palette;
   final Color accentColor;
+  final Color disabledColor;
   final bool enabled;
   final int clampedPositionMs;
   final Duration duration;
@@ -1302,9 +1769,20 @@ class _PlayerSeekBarState extends State<_PlayerSeekBar> {
             trackHeight: 3,
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-            thumbColor: widget.accentColor,
-            activeTrackColor: widget.accentColor,
-            inactiveTrackColor: palette.cardBackground.withValues(alpha: 0.7),
+            thumbColor: widget.enabled
+                ? widget.accentColor
+                : widget.disabledColor,
+            activeTrackColor: widget.enabled
+                ? widget.accentColor
+                : widget.disabledColor,
+            inactiveTrackColor: widget.enabled
+                ? palette.cardBackground.withValues(alpha: 0.7)
+                : widget.disabledColor.withValues(alpha: 0.55),
+            disabledThumbColor: widget.disabledColor,
+            disabledActiveTrackColor: widget.disabledColor,
+            disabledInactiveTrackColor: widget.disabledColor.withValues(
+              alpha: 0.55,
+            ),
           ),
           child: Slider(
             min: 0,
@@ -1312,13 +1790,15 @@ class _PlayerSeekBarState extends State<_PlayerSeekBar> {
             value: thumb,
             onChangeStart: widget.enabled
                 ? (_) {
-              setState(() {
-                _dragging = true;
-                _dragValue = fromService;
-              });
-            }
+                    setState(() {
+                      _dragging = true;
+                      _dragValue = fromService;
+                    });
+                  }
                 : null,
-            onChanged: !widget.enabled || (maxV <= 1 && widget.duration.inMilliseconds == 0)
+            onChanged:
+                !widget.enabled ||
+                    (maxV <= 1 && widget.duration.inMilliseconds == 0)
                 ? null
                 : (value) {
                     setState(() => _dragValue = value);
@@ -1374,28 +1854,32 @@ class _RoundIconButton extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     required this.foregroundColor,
+    required this.disabledColor,
+    required this.backgroundColor,
   });
 
   final IconData icon;
   final VoidCallback? onPressed;
   final Color foregroundColor;
+  final Color disabledColor;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: onPressed == null ? 0.45 : 1.0,
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.18),
-        shape: const CircleBorder(),
-        child: IconButton(
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-          padding: const EdgeInsets.all(8),
-          icon: Icon(icon),
-          color: foregroundColor,
-          iconSize: 28,
-          onPressed: onPressed,
-        ),
+    final enabled = onPressed != null;
+    return Material(
+      color: enabled ? backgroundColor : disabledColor.withValues(alpha: 0.95),
+      shape: const CircleBorder(),
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        padding: const EdgeInsets.all(8),
+        icon: Icon(icon),
+        color: enabled
+            ? foregroundColor
+            : disabledColor.withValues(alpha: 0.55),
+        iconSize: 28,
+        onPressed: onPressed,
       ),
     );
   }
@@ -1406,55 +1890,62 @@ class _PlayPauseButton extends StatelessWidget {
     required this.isPlaying,
     required this.onPressed,
     required this.foregroundColor,
+    required this.disabledColor,
+    this.iconOverride,
   });
 
   final bool isPlaying;
   final VoidCallback? onPressed;
   final Color foregroundColor;
+  final Color disabledColor;
+  final IconData? iconOverride;
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final enabled = onPressed != null;
     final bgColors = isDark
         ? [
-            palette.playbackButtonBg,
-            palette.playbackButtonBg.withValues(alpha: 0.9),
+            enabled ? palette.playbackButtonBg : disabledColor,
+            enabled
+                ? palette.playbackButtonBg.withValues(alpha: 0.9)
+                : disabledColor,
           ]
         : [
-            Colors.white.withValues(alpha: 0.95),
-            Colors.white.withValues(alpha: 0.8),
+            enabled ? Colors.white.withValues(alpha: 0.95) : disabledColor,
+            enabled ? Colors.white.withValues(alpha: 0.8) : disabledColor,
           ];
-    final iconColor = isDark ? palette.playbackButtonIcon : foregroundColor;
+    final iconColor = enabled
+        ? (isDark ? palette.playbackButtonIcon : foregroundColor)
+        : disabledColor.withValues(alpha: 0.55);
     final shadowColor = isDark
         ? Colors.black.withValues(alpha: 0.4)
         : Colors.black.withValues(alpha: 0.18);
-    return Opacity(
-      opacity: onPressed == null ? 0.45 : 1.0,
-      child: SizedBox(
-        width: 76,
-        height: 76,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(colors: bgColors),
-            boxShadow: [
-              BoxShadow(
-                color: shadowColor,
-                blurRadius: 16,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: IconButton(
-            padding: EdgeInsets.zero,
-            icon: Icon(
-              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+    return SizedBox(
+      width: 76,
+      height: 76,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(colors: bgColors),
+          boxShadow: [
+            BoxShadow(
+              color: shadowColor,
+              blurRadius: 16,
+              offset: const Offset(0, 5),
             ),
-            iconSize: 38,
-            color: iconColor,
-            onPressed: onPressed,
+          ],
+        ),
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          icon: Icon(
+            iconOverride ??
+                (isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
           ),
+          iconSize: 38,
+          color: iconColor,
+          onPressed: onPressed,
         ),
       ),
     );

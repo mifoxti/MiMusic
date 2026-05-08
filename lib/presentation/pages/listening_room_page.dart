@@ -254,6 +254,8 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
           );
     final pos = service == null ? 0.0 : service.position.inMilliseconds / 1000.0;
     final playing = service?.isPlaying ?? false;
+    final shuffleEnabled = service?.shuffleEnabled ?? false;
+    final repeatMode = service?.roomRepeatModeWire ?? 'off';
     String roomId;
     try {
       roomId = await ColistenApi().createRoom(
@@ -263,6 +265,8 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
         queueTrackKeys: queueTrackKeys,
         positionSeconds: pos,
         playing: playing,
+        shuffleEnabled: shuffleEnabled,
+        repeatMode: repeatMode,
         controlPauseHostOnly: _pauseControl == _PermissionMode.hostOnly,
         controlSeekHostOnly: _seekControl == _PermissionMode.hostOnly,
         controlShuffleHostOnly: _shuffleControl == _PermissionMode.hostOnly,

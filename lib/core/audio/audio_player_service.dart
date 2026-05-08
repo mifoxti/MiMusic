@@ -21,8 +21,8 @@ class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
     required AudioHandler audioHandler,
     required SettingsRepository settingsRepository,
-  })  : _handler = audioHandler as MiMusicAudioHandler,
-        _settingsRepository = settingsRepository {
+  }) : _handler = audioHandler as MiMusicAudioHandler,
+       _settingsRepository = settingsRepository {
     _listenToHandler();
     unawaited(syncTrackLikesFromServer());
   }
@@ -38,6 +38,7 @@ class AudioPlayerService extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration? _duration;
   bool _isPlaying = false;
+  bool _guestLocalPauseActive = false;
   List<Track> _activeQueue = const [];
   final Set<String> _downloadingPaths = <String>{};
   final Set<String> _downloadedPaths = <String>{};
@@ -45,6 +46,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   Track? get currentTrack => _currentTrack;
   bool get isPlaying => _isPlaying;
+  bool get guestLocalPauseActive => _guestLocalPauseActive;
   Duration get position => _position;
   Duration? get duration => _duration;
 
@@ -52,11 +54,17 @@ class AudioPlayerService extends ChangeNotifier {
   Set<String> get likedPaths => Set.from(_handler.likedPathsNotifier.value);
 
   /// Пути с дизлайком.
-  Set<String> get dislikedPaths => Set.from(_handler.dislikedPathsNotifier.value);
+  Set<String> get dislikedPaths =>
+      Set.from(_handler.dislikedPathsNotifier.value);
 
   bool get shuffleEnabled => _handler.shuffleModeNotifier.value;
 
   LoopMode get loopMode => _handler.loopModeNotifier.value;
+  String get roomRepeatModeWire => switch (_handler.loopModeNotifier.value) {
+    LoopMode.off => 'off',
+    LoopMode.all => 'all',
+    LoopMode.one => 'one',
+  };
 
   /// Очередь из нескольких треков (для shuffle / repeat all).
   bool get hasMultiTrackQueue => _handler.hasMultiTrackQueue;
@@ -67,8 +75,7 @@ class AudioPlayerService extends ChangeNotifier {
   /// Путь текущего трека в очереди (как в плеере).
   String? get currentPlayablePath => _handler.currentPlayablePath;
 
-  bool isPathLiked(String path) =>
-      path.isNotEmpty && likedPaths.contains(path);
+  bool isPathLiked(String path) => path.isNotEmpty && likedPaths.contains(path);
 
   bool isPathDisliked(String path) =>
       path.isNotEmpty && dislikedPaths.contains(path);
@@ -104,11 +111,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Track _mediaItemToTrack(MediaItem item) {
-    return Track(
-      assetPath: item.id,
-      title: item.title,
-      artist: item.artist,
-    );
+    return Track(assetPath: item.id, title: item.title, artist: item.artist);
   }
 
   Track _trackFromMediaItem(MediaItem item) {
@@ -168,13 +171,17 @@ class AudioPlayerService extends ChangeNotifier {
       artUri = await _coverBytesToFileUri(track.coverBytes!);
     }
     final path = playablePath(track);
-    final queueMaps = queue?.map((t) => {
-      'path': playablePath(t),
-      'itemId': t.assetPath,
-      'title': t.title,
-      'artist': t.artist,
-      'artPath': t.coverFallbackPath,
-    }).toList();
+    final queueMaps = queue
+        ?.map(
+          (t) => {
+            'path': playablePath(t),
+            'itemId': t.assetPath,
+            'title': t.title,
+            'artist': t.artist,
+            'artPath': t.coverFallbackPath,
+          },
+        )
+        .toList();
     await _handler.customAction('playAsset', {
       'path': path,
       'itemId': track.assetPath,
@@ -223,7 +230,11 @@ class AudioPlayerService extends ChangeNotifier {
     }
     final resumeAt = position;
     final wasPlaying = isPlaying;
-    await playTrack(current, queue: nextQueue, leaveListeningRoomSession: false);
+    await playTrack(
+      current,
+      queue: nextQueue,
+      leaveListeningRoomSession: false,
+    );
     if (resumeAt > Duration.zero) {
       await seek(resumeAt);
     }
@@ -253,7 +264,9 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> removeFromQueue(String assetPath) async {
     if (_activeQueue.isEmpty) return;
-    final nextQueue = _activeQueue.where((e) => e.assetPath != assetPath).toList();
+    final nextQueue = _activeQueue
+        .where((e) => e.assetPath != assetPath)
+        .toList();
     if (nextQueue.length == _activeQueue.length) return;
     if (nextQueue.isEmpty) {
       await stop();
@@ -264,16 +277,20 @@ class AudioPlayerService extends ChangeNotifier {
 
     final current = _currentTrack;
     if (current != null && current.assetPath == assetPath) {
-      await playTrack(nextQueue.first, queue: nextQueue, leaveListeningRoomSession: false);
+      await playTrack(
+        nextQueue.first,
+        queue: nextQueue,
+        leaveListeningRoomSession: false,
+      );
       final room = ListeningRoomSession.instance;
-      if (room.active && room.isHost) {
+      if (room.active && room.canEditQueue) {
         ColistenController.instance.pushHostState(this);
       }
       return;
     }
     await _applyQueueKeepingCurrent(nextQueue);
     final room = ListeningRoomSession.instance;
-    if (room.active && room.isHost) {
+    if (room.active && room.canEditQueue) {
       ColistenController.instance.pushHostState(this);
     }
   }
@@ -288,11 +305,13 @@ class AudioPlayerService extends ChangeNotifier {
     final currentIndex = currentPath == null
         ? -1
         : updated.indexWhere((e) => e.assetPath == currentPath);
-    final insertAt = currentIndex == -1 ? 0 : (currentIndex + 1).clamp(0, updated.length);
+    final insertAt = currentIndex == -1
+        ? 0
+        : (currentIndex + 1).clamp(0, updated.length);
     updated.insert(insertAt, item);
     await _applyQueueKeepingCurrent(updated);
     final room = ListeningRoomSession.instance;
-    if (room.active && room.isHost) {
+    if (room.active && room.canEditQueue) {
       ColistenController.instance.pushHostState(this);
     }
   }
@@ -304,14 +323,14 @@ class AudioPlayerService extends ChangeNotifier {
     if (_currentTrack == null) {
       await playTrack(track, queue: updated, leaveListeningRoomSession: false);
       final room = ListeningRoomSession.instance;
-      if (room.active && room.isHost) {
+      if (room.active && room.canEditQueue) {
         ColistenController.instance.pushHostState(this);
       }
       return;
     }
     await _applyQueueKeepingCurrent(updated);
     final room = ListeningRoomSession.instance;
-    if (room.active && room.isHost) {
+    if (room.active && room.canEditQueue) {
       ColistenController.instance.pushHostState(this);
     }
   }
@@ -319,7 +338,9 @@ class AudioPlayerService extends ChangeNotifier {
   /// UX-заглушка скачивания: имитирует загрузку и помечает трек как закешированный.
   Future<void> cacheTrackMock(Track track) async {
     final path = playablePath(track);
-    if (path.isEmpty || _downloadedPaths.contains(path) || _downloadingPaths.contains(path)) {
+    if (path.isEmpty ||
+        _downloadedPaths.contains(path) ||
+        _downloadingPaths.contains(path)) {
       return;
     }
     _downloadingPaths.add(path);
@@ -357,9 +378,30 @@ class AudioPlayerService extends ChangeNotifier {
     } else {
       await _handler.play();
     }
-    if (room.active && room.isHost) {
+    if (room.active && room.canControlPause) {
       ColistenController.instance.pushHostState(this);
     }
+    notifyListeners();
+  }
+
+  Future<void> toggleGuestLocalPause() async {
+    final room = ListeningRoomSession.instance;
+    if (!room.active || room.isHost || room.canControlPause) {
+      await togglePlayPause();
+      return;
+    }
+    if (_guestLocalPauseActive) {
+      _guestLocalPauseActive = false;
+      notifyListeners();
+      await ColistenController.instance.forceGuestSnapshotSync(
+        this,
+        forceTrackReload: false,
+        forcePositionSync: true,
+      );
+      return;
+    }
+    _guestLocalPauseActive = true;
+    await _handler.pause();
     notifyListeners();
   }
 
@@ -376,7 +418,7 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> seek(Duration position) async {
     await _handler.seek(position);
     final room = ListeningRoomSession.instance;
-    if (room.active && room.isHost) {
+    if (room.active && room.canControlSeek) {
       ColistenController.instance.pushHostState(this);
     }
     notifyListeners();
@@ -393,6 +435,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> playFromRoomSync() async {
     if (!ListeningRoomSession.instance.active) return;
+    if (_guestLocalPauseActive) return;
     await _handler.customAction('roomSyncPlay');
     notifyListeners();
   }
@@ -405,6 +448,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> stop() async {
     await _handler.stop();
+    _guestLocalPauseActive = false;
     _currentTrack = null;
     _position = Duration.zero;
     _duration = null;
@@ -423,7 +467,7 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> skipToNext() async {
     await _handler.skipToNext();
     final room = ListeningRoomSession.instance;
-    if (room.active && room.isHost) {
+    if (room.active && room.canControlSkip) {
       ColistenController.instance.pushHostState(this);
     }
   }
@@ -431,7 +475,7 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> skipToPrevious() async {
     await _handler.skipToPrevious();
     final room = ListeningRoomSession.instance;
-    if (room.active && room.isHost) {
+    if (room.active && room.canControlSkip) {
       ColistenController.instance.pushHostState(this);
     }
   }
@@ -472,6 +516,10 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> setShuffleEnabled(bool enabled) async {
     await _handler.setShuffleEnabled(enabled);
+    final room = ListeningRoomSession.instance;
+    if (room.active && room.canControlShuffle) {
+      ColistenController.instance.pushHostState(this);
+    }
     notifyListeners();
   }
 
@@ -481,7 +529,35 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> cycleLoopMode() async {
     await _handler.cycleLoopMode();
+    final room = ListeningRoomSession.instance;
+    if (room.active && room.canControlRepeat) {
+      ColistenController.instance.pushHostState(this);
+    }
     notifyListeners();
+  }
+
+  Future<void> applyRoomPlaybackModes({
+    bool? shuffleEnabled,
+    String? repeatMode,
+  }) async {
+    if (!ListeningRoomSession.instance.active) return;
+    var changed = false;
+    if (shuffleEnabled != null && shuffleEnabled != this.shuffleEnabled) {
+      await _handler.setShuffleEnabled(shuffleEnabled);
+      changed = true;
+    }
+    if (repeatMode != null && repeatMode.isNotEmpty) {
+      final nextLoop = switch (repeatMode.trim().toLowerCase()) {
+        'all' => LoopMode.all,
+        'one' => LoopMode.one,
+        _ => LoopMode.off,
+      };
+      if (nextLoop != loopMode) {
+        await _handler.setLoopMode(nextLoop);
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
   }
 
   /// Удаляет трек из избранного по assetPath (для страницы «Любимые»).
@@ -524,7 +600,9 @@ class AudioPlayerService extends ChangeNotifier {
         );
         if (s) liked.add('server_track_${t.id}');
       }
-      await _handler.customAction('replaceLikedPaths', {'paths': liked.toList()});
+      await _handler.customAction('replaceLikedPaths', {
+        'paths': liked.toList(),
+      });
     } catch (_) {
       // сеть недоступна — оставляем локальное состояние
     }

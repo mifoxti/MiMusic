@@ -15,6 +15,8 @@ class ListeningRoomSession extends ChangeNotifier {
   String _hostUsername = '';
   String _currentUsername = 'mifoxti';
   List<String> _listeners = const [];
+  List<int> _participantIds = const [];
+  Map<int, String> _participantNames = const {};
   bool _privateRoom = true;
   bool _pauseHostOnly = true;
   bool _seekHostOnly = true;
@@ -31,6 +33,7 @@ class ListeningRoomSession extends ChangeNotifier {
   String get hostUsername => _hostUsername;
   String get currentUsername => _currentUsername;
   List<String> get listeners => List.unmodifiable(_listeners);
+  List<int> get participantIds => List.unmodifiable(_participantIds);
   int get listenersCount => _listeners.length;
   bool get privateRoom => _privateRoom;
   bool get pauseHostOnly => _pauseHostOnly;
@@ -42,7 +45,8 @@ class ListeningRoomSession extends ChangeNotifier {
   List<String> get selectedPlaylists => List.unmodifiable(_selectedPlaylists);
   List<Track> get queue => List.unmodifiable(_queue);
   bool get joining => _joining;
-  bool get isHost => _hostUsername.isNotEmpty && _hostUsername == _currentUsername;
+  bool get isHost =>
+      _hostUsername.isNotEmpty && _hostUsername == _currentUsername;
   bool get canControlPause => isHost || !_pauseHostOnly;
   bool get canControlSeek => isHost || !_seekHostOnly;
   bool get canControlShuffle => isHost || !_shuffleHostOnly;
@@ -70,6 +74,8 @@ class ListeningRoomSession extends ChangeNotifier {
     _hostUsername = hostUsername;
     _currentUsername = currentUsername;
     _listeners = List<String>.from(listeners);
+    _participantIds = const [];
+    _participantNames = const {};
     _privateRoom = privateRoom;
     _pauseHostOnly = pauseHostOnly;
     _seekHostOnly = seekHostOnly;
@@ -104,6 +110,7 @@ class ListeningRoomSession extends ChangeNotifier {
   void applyRealtimeState({
     required int listenersCount,
     required List<int> participantIds,
+    Map<int, String> participantNames = const {},
     required bool privateRoom,
     required bool pauseHostOnly,
     required bool seekHostOnly,
@@ -114,16 +121,31 @@ class ListeningRoomSession extends ChangeNotifier {
   }) {
     final safeCount = listenersCount < 1 ? 1 : listenersCount;
     final ids = participantIds.toSet().toList();
+    final names = Map<int, String>.from(participantNames);
     final nextListeners = <String>[_hostUsername];
     for (final id in ids) {
-      final label = 'user_$id';
-      if (nextListeners.contains(label)) continue;
-      nextListeners.add(label);
+      final name = names[id]?.trim();
+      if (name == null || name.isEmpty || name == _hostUsername) continue;
+      if (!nextListeners.contains(name)) nextListeners.add(name);
     }
     while (nextListeners.length < safeCount) {
       nextListeners.add('listener_${nextListeners.length + 1}');
     }
+    final unchanged =
+        listEquals(_listeners, nextListeners) &&
+        listEquals(_participantIds, ids) &&
+        mapEquals(_participantNames, names) &&
+        _privateRoom == privateRoom &&
+        _pauseHostOnly == pauseHostOnly &&
+        _seekHostOnly == seekHostOnly &&
+        _shuffleHostOnly == shuffleHostOnly &&
+        _repeatHostOnly == repeatHostOnly &&
+        _skipHostOnly == skipHostOnly &&
+        _playlistHostOnly == playlistHostOnly;
+    if (unchanged) return;
     _listeners = nextListeners;
+    _participantIds = ids;
+    _participantNames = names;
     _privateRoom = privateRoom;
     _pauseHostOnly = pauseHostOnly;
     _seekHostOnly = seekHostOnly;
@@ -132,6 +154,12 @@ class ListeningRoomSession extends ChangeNotifier {
     _skipHostOnly = skipHostOnly;
     _playlistHostOnly = playlistHostOnly;
     notifyListeners();
+  }
+
+  String participantName(int userId) {
+    final name = _participantNames[userId]?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    return 'listener_$userId';
   }
 
   void replaceQueue(List<Track> nextQueue) {
@@ -158,10 +186,7 @@ class ListeningRoomSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void moveToPlayNext({
-    required String assetPath,
-    String? currentAssetPath,
-  }) {
+  void moveToPlayNext({required String assetPath, String? currentAssetPath}) {
     final from = _queue.indexWhere((e) => e.assetPath == assetPath);
     if (from == -1) return;
     final item = _queue[from];
@@ -169,7 +194,9 @@ class ListeningRoomSession extends ChangeNotifier {
     final currentIndex = currentAssetPath == null
         ? -1
         : updated.indexWhere((e) => e.assetPath == currentAssetPath);
-    final insertAt = currentIndex == -1 ? 0 : (currentIndex + 1).clamp(0, updated.length);
+    final insertAt = currentIndex == -1
+        ? 0
+        : (currentIndex + 1).clamp(0, updated.length);
     updated.insert(insertAt, item);
     _queue = updated;
     notifyListeners();
@@ -190,6 +217,8 @@ class ListeningRoomSession extends ChangeNotifier {
     _hostUsername = '';
     _currentUsername = 'mifoxti';
     _listeners = const [];
+    _participantIds = const [];
+    _participantNames = const {};
     _privateRoom = true;
     _pauseHostOnly = true;
     _seekHostOnly = true;

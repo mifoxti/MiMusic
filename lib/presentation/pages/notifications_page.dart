@@ -98,9 +98,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await _load();
     } on DioException catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.t('common.errorLoading'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.t('common.errorLoading'))));
     }
   }
 
@@ -114,9 +114,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await _load();
     } on DioException catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.t('common.errorLoading'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.t('common.errorLoading'))));
     }
   }
 
@@ -135,11 +135,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
         hostUsername: host,
         currentUsername: me,
         privateRoom: false,
-        pauseHostOnly: true,
-        seekHostOnly: true,
-        shuffleHostOnly: true,
-        repeatHostOnly: true,
-        skipHostOnly: true,
+        pauseHostOnly: false,
+        seekHostOnly: false,
+        shuffleHostOnly: false,
+        repeatHostOnly: false,
+        skipHostOnly: false,
         playlistHostOnly: true,
         selectedPlaylists: const [],
         queue: const [],
@@ -154,9 +154,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await _load();
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.t('common.errorLoading'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.t('common.errorLoading'))));
     }
   }
 
@@ -211,71 +211,76 @@ class _NotificationsPageState extends State<NotificationsPage> {
         body: _loading
             ? Center(child: CircularProgressIndicator(color: palette.accent))
             : !_loggedIn
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        context.t('notifications.loginRequired'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: palette.textSecondary, fontSize: 16),
-                      ),
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    context.t('notifications.loginRequired'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 16,
                     ),
-                  )
-                : _error != null
-                    ? Center(
-                        child: Text(
-                          _error!,
-                          style: TextStyle(color: palette.textSecondary),
-                        ),
-                      )
-                    : _items.isEmpty
-                        ? Center(
-                            child: Text(
-                              context.t('notifications.empty'),
-                              style: TextStyle(color: palette.textSecondary, fontSize: 16),
-                            ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                              itemCount: _items.length,
-                              separatorBuilder: (_, _) => const SizedBox(height: 10),
-                              itemBuilder: (context, index) {
-                                final item = _items[index];
-                                return Dismissible(
-                                  key: ValueKey('n-${item.id}'),
-                                  direction: DismissDirection.horizontal,
-                                  background: _DismissBackground(
-                                    palette: palette,
-                                    alignment: Alignment.centerLeft,
-                                    icon: Icons.done_all_rounded,
-                                  ),
-                                  secondaryBackground: _DismissBackground(
-                                    palette: palette,
-                                    alignment: Alignment.centerRight,
-                                    icon: Icons.done_all_rounded,
-                                  ),
-                                  onDismissed: (_) => _markRead(item),
-                                  child: _ServerNotificationCard(
-                                    item: item,
-                                    palette: palette,
-                                    onAccept: !item.read
-                                        ? (item.normalizedType == 'friend_request'
-                                              ? () => _onAccept(item)
-                                              : (item.normalizedType == 'colisten_invite'
-                                                    ? () => _onJoinColisten(item)
-                                                    : null))
-                                        : null,
-                                    onDecline: item.normalizedType == 'friend_request' && !item.read
-                                        ? () => _onDecline(item)
-                                        : null,
-                                    onOpenProfile: () => _openActorProfile(item),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
+                  ),
+                ),
+              )
+            : _error != null
+            ? Center(
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: palette.textSecondary),
+                ),
+              )
+            : _items.isEmpty
+            ? Center(
+                child: Text(
+                  context.t('notifications.empty'),
+                  style: TextStyle(color: palette.textSecondary, fontSize: 16),
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                  itemCount: _items.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final item = _items[index];
+                    return Dismissible(
+                      key: ValueKey('n-${item.id}'),
+                      direction: DismissDirection.horizontal,
+                      background: _DismissBackground(
+                        palette: palette,
+                        alignment: Alignment.centerLeft,
+                        icon: Icons.done_all_rounded,
+                      ),
+                      secondaryBackground: _DismissBackground(
+                        palette: palette,
+                        alignment: Alignment.centerRight,
+                        icon: Icons.done_all_rounded,
+                      ),
+                      onDismissed: (_) => _markRead(item),
+                      child: _ServerNotificationCard(
+                        item: item,
+                        palette: palette,
+                        onAccept: !item.read
+                            ? (item.normalizedType == 'friend_request'
+                                  ? () => _onAccept(item)
+                                  : (item.normalizedType == 'colisten_invite'
+                                        ? () => _onJoinColisten(item)
+                                        : null))
+                            : null,
+                        onDecline:
+                            item.normalizedType == 'friend_request' &&
+                                !item.read
+                            ? () => _onDecline(item)
+                            : null,
+                        onOpenProfile: () => _openActorProfile(item),
+                      ),
+                    );
+                  },
+                ),
+              ),
       ),
     );
   }
@@ -344,7 +349,9 @@ class _ServerNotificationCard extends StatelessWidget {
 
   String _status(BuildContext context) {
     if (item.read) {
-      return Localizations.localeOf(context).languageCode == 'en' ? 'Read' : 'Прочитано';
+      return Localizations.localeOf(context).languageCode == 'en'
+          ? 'Read'
+          : 'Прочитано';
     }
     if (item.normalizedType == 'friend_request') {
       return context.t('notifications.pending');
@@ -434,7 +441,9 @@ class _ServerNotificationCard extends StatelessWidget {
                       child: Text(context.t('notifications.openProfile')),
                     ),
                   ),
-                  if (item.normalizedType == 'friend_request' && onAccept != null && onDecline != null) ...[
+                  if (item.normalizedType == 'friend_request' &&
+                      onAccept != null &&
+                      onDecline != null) ...[
                     const SizedBox(width: 8),
                     Expanded(
                       child: OutlinedButton(
@@ -456,9 +465,11 @@ class _ServerNotificationCard extends StatelessWidget {
                       child: FilledButton(
                         onPressed: onAccept,
                         style: FilledButton.styleFrom(
-                          backgroundColor: palette.accent.withValues(alpha: 0.78),
-                          disabledBackgroundColor:
-                              palette.primaryDark.withValues(alpha: 0.45),
+                          backgroundColor: palette.accent.withValues(
+                            alpha: 0.78,
+                          ),
+                          disabledBackgroundColor: palette.primaryDark
+                              .withValues(alpha: 0.45),
                           textStyle: const TextStyle(
                             decoration: TextDecoration.none,
                           ),

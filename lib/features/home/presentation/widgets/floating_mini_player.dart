@@ -15,6 +15,7 @@ class MiniPlayerInterior extends StatelessWidget {
     this.isPlaying = true,
     this.collaborativeMode = false,
     this.collaborativeGuestMode = false,
+    this.guestLocalPauseActive = false,
     this.onTap,
     this.onPlayPause,
   });
@@ -24,6 +25,7 @@ class MiniPlayerInterior extends StatelessWidget {
   final bool isPlaying;
   final bool collaborativeMode;
   final bool collaborativeGuestMode;
+  final bool guestLocalPauseActive;
   final VoidCallback? onTap;
   final VoidCallback? onPlayPause;
 
@@ -41,15 +43,22 @@ class MiniPlayerInterior extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.06)
         : Colors.white.withValues(alpha: 0.2);
     final sessionAccent = collaborativeGuestMode
-        ? const Color(0xFFA5AEBB)
+        ? const Color(0xFFC084FC)
         : collaborativeMode
-            ? const Color(0xFF5FD1FF)
-            : palette.accent;
+        ? const Color(0xFF5FD1FF)
+        : palette.accent;
+    final guestSurface = const Color(0xFF3B1A57).withValues(alpha: 0.72);
     final progressPlayedGlass = Color.alphaBlend(
-      sessionAccent.withValues(alpha: isDark ? 0.28 : 0.22),
+      sessionAccent.withValues(
+        alpha: collaborativeGuestMode ? 0.42 : (isDark ? 0.28 : 0.22),
+      ),
       glassTint,
     );
-    final leadingIcon = isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded;
+    final leadingIcon = collaborativeGuestMode && guestLocalPauseActive
+        ? Icons.volume_off_rounded
+        : isPlaying
+        ? Icons.pause_rounded
+        : Icons.play_arrow_rounded;
     return SizedBox(
       height: height,
       child: Stack(
@@ -115,13 +124,23 @@ class MiniPlayerInterior extends StatelessWidget {
                     child: InkWell(
                       onTap: onPlayPause,
                       customBorder: const CircleBorder(),
-                      child: SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: Icon(
-                          leadingIcon,
-                          size: 28,
-                          color: collaborativeMode ? sessionAccent : palette.textPrimary,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: collaborativeGuestMode
+                              ? guestSurface
+                              : Colors.transparent,
+                        ),
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Icon(
+                            leadingIcon,
+                            size: 28,
+                            color: collaborativeMode
+                                ? sessionAccent
+                                : palette.textPrimary,
+                          ),
                         ),
                       ),
                     ),
@@ -150,13 +169,16 @@ class MiniPlayerInterior extends StatelessWidget {
                               ),
                               if (collaborativeGuestMode)
                                 Text(
-                                  Localizations.localeOf(context).languageCode == 'en'
+                                  Localizations.localeOf(
+                                            context,
+                                          ).languageCode ==
+                                          'en'
                                       ? 'Sync to host'
                                       : 'Синхронизация с хостом',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w500,
-                                    color: palette.textSecondary,
+                                    color: sessionAccent,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -206,6 +228,7 @@ class FloatingMiniPlayer extends StatelessWidget {
     this.isPlaying = true,
     this.collaborativeMode = false,
     this.collaborativeGuestMode = false,
+    this.guestLocalPauseActive = false,
     this.onTap,
     this.onPlayPause,
   });
@@ -217,6 +240,7 @@ class FloatingMiniPlayer extends StatelessWidget {
   final bool isPlaying;
   final bool collaborativeMode;
   final bool collaborativeGuestMode;
+  final bool guestLocalPauseActive;
   final VoidCallback? onTap;
   final VoidCallback? onPlayPause;
 
@@ -231,7 +255,9 @@ class FloatingMiniPlayer extends StatelessWidget {
         ? const Color(0xFF2A2F38).withValues(alpha: 0.56)
         : const Color(0xFFE8EBF0).withValues(alpha: 0.70);
     final glassTint = collaborativeMode
-        ? (collaborativeGuestMode ? guestCollaborativeTint : hostCollaborativeTint)
+        ? (collaborativeGuestMode
+              ? guestCollaborativeTint
+              : hostCollaborativeTint)
         : AppGlass.tint(isDark);
     final borderGlass = AppGlass.border(isDark);
     return Material(
@@ -254,6 +280,7 @@ class FloatingMiniPlayer extends StatelessWidget {
               isPlaying: isPlaying,
               collaborativeMode: collaborativeMode,
               collaborativeGuestMode: collaborativeGuestMode,
+              guestLocalPauseActive: guestLocalPauseActive,
               onTap: onTap,
               onPlayPause: onPlayPause,
             ),

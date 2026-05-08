@@ -14,6 +14,8 @@ class ColistenRoomStateDto {
     this.queueTrackKeys = const [],
     this.positionSeconds = 0,
     this.playing = false,
+    this.shuffleEnabled = false,
+    this.repeatMode = 'off',
     this.controlPauseHostOnly = true,
     this.controlSeekHostOnly = true,
     this.controlShuffleHostOnly = true,
@@ -34,6 +36,8 @@ class ColistenRoomStateDto {
   final List<String> queueTrackKeys;
   final double positionSeconds;
   final bool playing;
+  final bool shuffleEnabled;
+  final String repeatMode;
   final bool controlPauseHostOnly;
   final bool controlSeekHostOnly;
   final bool controlShuffleHostOnly;
@@ -53,19 +57,25 @@ class ColistenRoomStateDto {
       isOpen: j['isOpen'] as bool? ?? false,
       trackId: (j['trackId'] as num?)?.toInt(),
       trackKey: j['trackKey'] as String?,
-      queueTrackIds: q is List ? q.map((e) => (e as num).toInt()).toList() : const [],
+      queueTrackIds: q is List
+          ? q.map((e) => (e as num).toInt()).toList()
+          : const [],
       queueTrackKeys: (j['queueTrackKeys'] is List)
           ? (j['queueTrackKeys'] as List).map((e) => e.toString()).toList()
           : const [],
       positionSeconds: (j['positionSeconds'] as num?)?.toDouble() ?? 0,
       playing: j['playing'] as bool? ?? false,
+      shuffleEnabled: j['shuffleEnabled'] as bool? ?? false,
+      repeatMode: (j['repeatMode'] as String? ?? 'off').trim().toLowerCase(),
       controlPauseHostOnly: j['controlPauseHostOnly'] as bool? ?? true,
       controlSeekHostOnly: j['controlSeekHostOnly'] as bool? ?? true,
       controlShuffleHostOnly: j['controlShuffleHostOnly'] as bool? ?? true,
       controlRepeatHostOnly: j['controlRepeatHostOnly'] as bool? ?? true,
       controlSkipHostOnly: j['controlSkipHostOnly'] as bool? ?? true,
       controlPlaylistHostOnly: j['controlPlaylistHostOnly'] as bool? ?? true,
-      participantIds: p is List ? p.map((e) => (e as num).toInt()).toList() : const [],
+      participantIds: p is List
+          ? p.map((e) => (e as num).toInt()).toList()
+          : const [],
       stateVersion: (j['stateVersion'] as num?)?.toInt() ?? 0,
       wallClockMs: (j['wallClockMs'] as num?)?.toInt() ?? 0,
     );
@@ -124,6 +134,8 @@ class ColistenApi {
     List<String> queueTrackKeys = const [],
     double positionSeconds = 0,
     bool playing = false,
+    bool shuffleEnabled = false,
+    String repeatMode = 'off',
     bool controlPauseHostOnly = true,
     bool controlSeekHostOnly = true,
     bool controlShuffleHostOnly = true,
@@ -132,22 +144,25 @@ class ColistenApi {
     bool controlPlaylistHostOnly = true,
   }) async {
     final dio = await createAuthenticatedDio();
+    final data = <String, dynamic>{
+      'isOpen': isOpen,
+      'queueTrackKeys': queueTrackKeys,
+      'positionSeconds': positionSeconds,
+      'playing': playing,
+      'shuffleEnabled': shuffleEnabled,
+      'repeatMode': repeatMode,
+      'controlPauseHostOnly': controlPauseHostOnly,
+      'controlSeekHostOnly': controlSeekHostOnly,
+      'controlShuffleHostOnly': controlShuffleHostOnly,
+      'controlRepeatHostOnly': controlRepeatHostOnly,
+      'controlSkipHostOnly': controlSkipHostOnly,
+      'controlPlaylistHostOnly': controlPlaylistHostOnly,
+    };
+    if (trackId != null) data['trackId'] = trackId;
+    if (trackKey != null) data['trackKey'] = trackKey;
     final res = await dio.post<Map<String, dynamic>>(
       '/colisten/room',
-      data: <String, dynamic>{
-        'isOpen': isOpen,
-        if (trackId case final value?) 'trackId': value,
-        if (trackKey case final value?) 'trackKey': value,
-        'queueTrackKeys': queueTrackKeys,
-        'positionSeconds': positionSeconds,
-        'playing': playing,
-        'controlPauseHostOnly': controlPauseHostOnly,
-        'controlSeekHostOnly': controlSeekHostOnly,
-        'controlShuffleHostOnly': controlShuffleHostOnly,
-        'controlRepeatHostOnly': controlRepeatHostOnly,
-        'controlSkipHostOnly': controlSkipHostOnly,
-        'controlPlaylistHostOnly': controlPlaylistHostOnly,
-      },
+      data: data,
     );
     final id = res.data?['roomId'] as String?;
     if (id == null || id.isEmpty) {
@@ -164,6 +179,38 @@ class ColistenApi {
     return ColistenRoomStateDto.fromJson(data);
   }
 
+  Future<ColistenRoomStateDto?> pushHostState({
+    required String roomId,
+    int? trackId,
+    String? trackKey,
+    List<int> queueTrackIds = const [],
+    List<String> queueTrackKeys = const [],
+    double positionSeconds = 0,
+    bool playing = false,
+    bool shuffleEnabled = false,
+    String repeatMode = 'off',
+  }) async {
+    final dio = await createAuthenticatedDio();
+    final data = <String, dynamic>{
+      'type': 'host_state',
+      'queueTrackIds': queueTrackIds,
+      'queueTrackKeys': queueTrackKeys,
+      'position': positionSeconds,
+      'playing': playing,
+      'shuffleEnabled': shuffleEnabled,
+      'repeatMode': repeatMode,
+    };
+    if (trackId != null) data['trackId'] = trackId;
+    if (trackKey != null) data['trackKey'] = trackKey;
+    final res = await dio.post<Map<String, dynamic>>(
+      '/colisten/room/$roomId/host-state',
+      data: data,
+    );
+    final body = res.data;
+    if (body == null) return null;
+    return ColistenRoomStateDto.fromJson(body);
+  }
+
   Future<List<OpenColistenRoomDto>> fetchOpenRooms() async {
     final dio = Dio(
       BaseOptions(
@@ -176,7 +223,10 @@ class ColistenApi {
     final data = res.data;
     if (data == null) return [];
     return data
-        .map((e) => OpenColistenRoomDto.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map(
+          (e) =>
+              OpenColistenRoomDto.fromJson(Map<String, dynamic>.from(e as Map)),
+        )
         .toList();
   }
 

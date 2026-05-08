@@ -69,7 +69,9 @@ class ExpandablePlayerDock extends StatelessWidget {
             final blurSigma = u < 0.82
                 ? 0.0
                 : AppGlass.blurSigma *
-                    Curves.easeOut.transform(((u - 0.82) / 0.18).clamp(0.0, 1.0));
+                      Curves.easeOut.transform(
+                        ((u - 0.82) / 0.18).clamp(0.0, 1.0),
+                      );
 
             return Stack(
               fit: StackFit.expand,
@@ -123,12 +125,15 @@ class ExpandablePlayerDock extends StatelessWidget {
                                   child: IgnorePointer(
                                     ignoring: u < 0.22,
                                     child: Opacity(
-                                      opacity:
-                                          ((u - 0.14) / 0.72).clamp(0.0, 1.0),
+                                      opacity: ((u - 0.14) / 0.72).clamp(
+                                        0.0,
+                                        1.0,
+                                      ),
                                       child: FullPlayerDockPanel(
                                         audioPlayerService: audioPlayerService,
                                         onCollapse: onCollapse,
-                                        playlistsRepository: playlistsRepository,
+                                        playlistsRepository:
+                                            playlistsRepository,
                                       ),
                                     ),
                                   ),
@@ -162,7 +167,10 @@ class _DockMiniLayer extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return ListenableBuilder(
-      listenable: Listenable.merge([audioPlayerService, ListeningRoomSession.instance]),
+      listenable: Listenable.merge([
+        audioPlayerService,
+        ListeningRoomSession.instance,
+      ]),
       builder: (context, _) {
         final dur = audioPlayerService.duration;
         final pos = audioPlayerService.position;
@@ -185,10 +193,13 @@ class _DockMiniLayer extends StatelessWidget {
                   trackProgress: progress,
                   isPlaying: audioPlayerService.isPlaying,
                   collaborativeMode: ListeningRoomSession.instance.active,
-                  collaborativeGuestMode: ListeningRoomSession.instance.active &&
+                  collaborativeGuestMode:
+                      ListeningRoomSession.instance.active &&
                       !ListeningRoomSession.instance.isHost,
+                  guestLocalPauseActive:
+                      audioPlayerService.guestLocalPauseActive,
                   onTap: () {},
-                  onPlayPause: () => audioPlayerService.togglePlayPause(),
+                  onPlayPause: () => audioPlayerService.toggleGuestLocalPause(),
                 ),
               ),
             ),
