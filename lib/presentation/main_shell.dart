@@ -611,10 +611,19 @@ class _MainShellState extends State<MainShell>
                                                     .audioPlayerService
                                                     .guestLocalPauseActive,
                                                 onTap: _expandPlayerDock,
-                                                onPlayPause: () {
-                                                  widget.audioPlayerService
-                                                      .toggleGuestLocalPause();
-                                                },
+                                                onPlayPause:
+                                                    ListeningRoomSession
+                                                            .instance
+                                                            .active &&
+                                                        !ListeningRoomSession
+                                                            .instance
+                                                            .canControlPause
+                                                    ? null
+                                                    : () {
+                                                        widget
+                                                            .audioPlayerService
+                                                            .togglePlayPause();
+                                                      },
                                               );
                                             },
                                           ),

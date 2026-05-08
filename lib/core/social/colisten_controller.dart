@@ -34,10 +34,20 @@ class ColistenController {
   AudioPlayerService? _hostAudio;
   bool _hostRestSyncInFlight = false;
   bool _hostPendingRestSync = false;
+  Map<String, dynamic>? _guestPendingCommandPayload;
   int _hostLastRestSyncAtMs = 0;
   int _hostLastWsSyncAtMs = 0;
   String? _hostLastSentSignature;
   int _connectionGeneration = 0;
+  int _hostAppliedRoomVersion = 0;
+  int _hostOutboundBlockers = 0;
+  int _hostSuppressOutboundUntilMs = 0;
+  Future<void> _hostWsApplyChain = Future<void>.value();
+  Future<void> _hostRemoteCommandChain = Future<void>.value();
+  int _hostRemoteCommandSerial = 0;
+  int _hostLocalActionSerial = 0;
+  Map<String, dynamic>? _hostRemoteAuthoritativeOverride;
+  int _hostRemoteAuthoritativeOverrideUntilMs = 0;
 
   bool _isHost = false;
   int _guestLastVersion = 0;
@@ -51,6 +61,12 @@ class ColistenController {
   bool _guestNeedsFirstRealtimeHardSync = false;
   bool _guestSnapshotInFlight = false;
   Completer<void>? _guestFirstRealtimeStateCompleter;
+  int _lastGuestPlayPauseCommandAtMs = 0;
+  int _lastGuestPlayPauseCommandPositionMs = 0;
+  bool? _lastGuestPlayPauseCommandPlaying;
+  bool? _guestPendingPlayPausePlaying;
+  int _guestPendingPlayPauseUntilMs = 0;
+  int _guestCommandSerial = 0;
   String? _roomId;
   final Map<int, Track> _trackCache = <int, Track>{};
   final Map<int, String> _participantNameCache = <int, String>{};
@@ -87,9 +103,19 @@ class ColistenController {
     _hostAudio = null;
     _hostRestSyncInFlight = false;
     _hostPendingRestSync = false;
+    _guestPendingCommandPayload = null;
     _hostLastRestSyncAtMs = 0;
     _hostLastWsSyncAtMs = 0;
     _hostLastSentSignature = null;
+    _hostAppliedRoomVersion = 0;
+    _hostOutboundBlockers = 0;
+    _hostSuppressOutboundUntilMs = 0;
+    _hostWsApplyChain = Future<void>.value();
+    _hostRemoteCommandChain = Future<void>.value();
+    _hostRemoteCommandSerial = 0;
+    _hostLocalActionSerial = 0;
+    _hostRemoteAuthoritativeOverride = null;
+    _hostRemoteAuthoritativeOverrideUntilMs = 0;
     _connectionGeneration++;
     await _sub?.cancel();
     _sub = null;
@@ -107,6 +133,12 @@ class ColistenController {
     _guestNeedsFirstRealtimeHardSync = false;
     _guestSnapshotInFlight = false;
     _guestFirstRealtimeStateCompleter = null;
+    _lastGuestPlayPauseCommandAtMs = 0;
+    _lastGuestPlayPauseCommandPositionMs = 0;
+    _lastGuestPlayPauseCommandPlaying = null;
+    _guestPendingPlayPausePlaying = null;
+    _guestPendingPlayPauseUntilMs = 0;
+    _guestCommandSerial = 0;
     _roomId = null;
     _trackCache.clear();
     _participantNameCache.clear();
@@ -394,8 +426,22 @@ class ColistenController {
       'shuffleEnabled': audio.shuffleEnabled,
       'repeatMode': audio.roomRepeatModeWire,
     };
+    if (_hostAppliedRoomVersion > 0) {
+      payload['baseStateVersion'] = _hostAppliedRoomVersion;
+    }
     if (tid != null) payload['trackId'] = tid;
     if (trackKey != null) payload['trackKey'] = trackKey;
+    return payload;
+  }
+
+  Map<String, dynamic> _hostStatePayloadForSend(
+    AudioPlayerService audio, {
+    required bool explicitAction,
+  }) {
+    final payload = _hostStatePayload(audio);
+    if (explicitAction) {
+      payload['explicitAction'] = true;
+    }
     return payload;
   }
 
@@ -421,9 +467,20 @@ class ColistenController {
     ].join('|');
   }
 
-  void _syncHostStateViaRest(AudioPlayerService audio, {bool force = false}) {
+  void _syncHostStateViaRest(
+    AudioPlayerService audio, {
+    bool force = false,
+    Map<String, dynamic>? payloadOverride,
+  }) {
     final roomId = _roomId;
     if (!_isHost || roomId == null || roomId.isEmpty) return;
+    final payload = payloadOverride == null
+        ? _hostStatePayloadForSend(audio, explicitAction: force)
+        : Map<String, dynamic>.from(payloadOverride);
+    if (force) {
+      payload['explicitAction'] = true;
+    }
+    _applyHostRemoteAuthoritativeOverride(payload);
     if (_hostRestSyncInFlight) {
       if (force) {
         _log('host rest pending room=$roomId');
@@ -436,7 +493,6 @@ class ColistenController {
     _hostRestSyncInFlight = true;
     _hostLastRestSyncAtMs = nowMs;
     _hostPendingRestSync = false;
-    final payload = _hostStatePayload(audio);
     final trackId = (payload['trackId'] as num?)?.toInt();
     final trackKey = payload['trackKey'] as String?;
     final queueTrackIds = ((payload['queueTrackIds'] as List?) ?? const [])
@@ -461,6 +517,8 @@ class ColistenController {
             playing: payload['playing'] as bool? ?? false,
             shuffleEnabled: payload['shuffleEnabled'] as bool? ?? false,
             repeatMode: payload['repeatMode'] as String? ?? 'off',
+            baseStateVersion: (payload['baseStateVersion'] as num?)?.toInt(),
+            explicitAction: payload['explicitAction'] == true,
           )
           .then((state) {
             if (state != null) {
@@ -486,6 +544,9 @@ class ColistenController {
     AudioPlayerService audio, {
     bool forceRest = false,
     bool forceWs = false,
+    Map<String, dynamic>? guestPayloadOverride,
+    Map<String, dynamic>? hostPayloadOverride,
+    bool includeQueueForGuest = false,
   }) {
     if (!_isHost) {
       final roomId = _roomId;
@@ -497,27 +558,45 @@ class ColistenController {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       if (!forceWs && nowMs - _hostLastWsSyncAtMs < 350) return;
       _hostLastWsSyncAtMs = nowMs;
-      final payload = _hostStatePayload(audio);
+      final payload =
+          (guestPayloadOverride == null
+                ? _hostStatePayload(audio)
+                : Map<String, dynamic>.from(guestPayloadOverride))
+            ..['type'] = 'command';
+      if (guestPayloadOverride == null && !includeQueueForGuest) {
+        // Regular command actions (play/pause/seek/skip/shuffle/repeat)
+        // must not mutate playlist implicitly.
+        payload.remove('queueTrackIds');
+        payload.remove('queueTrackKeys');
+      }
       _log(
-        'guest push room=$_roomId trackId=${payload['trackId']} key=${payload['trackKey']} pos=${((payload['position'] as num?)?.toDouble() ?? 0).toStringAsFixed(3)} playing=${payload['playing']} shuffle=${payload['shuffleEnabled']} repeat=${payload['repeatMode']}',
+        'guest command room=$_roomId ws=$forceWs rest=$forceRest trackId=${payload['trackId']} key=${payload['trackKey']} pos=${((payload['position'] as num?)?.toDouble() ?? 0).toStringAsFixed(3)} playing=${payload['playing']} shuffle=${payload['shuffleEnabled']} repeat=${payload['repeatMode']}',
       );
-      _sink(jsonEncode(payload));
-      if (forceRest && !_hostRestSyncInFlight) {
+      if (forceWs) {
+        _sink(jsonEncode(payload));
+      }
+      if (forceRest && _hostRestSyncInFlight) {
+        _guestPendingCommandPayload = Map<String, dynamic>.from(payload);
+        return;
+      }
+      if (forceRest) {
         _hostRestSyncInFlight = true;
         final trackId = (payload['trackId'] as num?)?.toInt();
         final trackKey = payload['trackKey'] as String?;
-        final queueTrackIds = ((payload['queueTrackIds'] as List?) ?? const [])
-            .map((e) => (e as num?)?.toInt())
+        final queueTrackIdsRaw = payload['queueTrackIds'] as List?;
+        final queueTrackKeysRaw = payload['queueTrackKeys'] as List?;
+        final queueTrackIds = queueTrackIdsRaw
+            ?.map((e) => (e as num?)?.toInt())
             .whereType<int>()
             .toList();
-        final queueTrackKeys =
-            ((payload['queueTrackKeys'] as List?) ?? const [])
-                .map((e) => e.toString())
-                .toList();
+        final queueTrackKeys = queueTrackKeysRaw
+            ?.map((e) => e.toString())
+            .toList();
         unawaited(
           ColistenApi()
               .pushHostState(
                 roomId: roomId,
+                messageType: 'command',
                 trackId: trackId,
                 trackKey: trackKey,
                 queueTrackIds: queueTrackIds,
@@ -527,20 +606,53 @@ class ColistenController {
                 shuffleEnabled: payload['shuffleEnabled'] as bool? ?? false,
                 repeatMode: payload['repeatMode'] as String? ?? 'off',
               )
-              .then((state) {
+              .then((state) async {
                 if (state != null) _applyRoomDtoToSession(state);
+                _log('guest rest command ok room=$roomId');
               })
               .catchError((e) {
                 _log('guest rest push error room=$roomId error=$e');
                 return null;
               })
-              .whenComplete(() => _hostRestSyncInFlight = false),
+              .whenComplete(() {
+                _hostRestSyncInFlight = false;
+                final pending = _guestPendingCommandPayload;
+                _guestPendingCommandPayload = null;
+                if (pending != null &&
+                    !_isHost &&
+                    _roomId == roomId &&
+                    ListeningRoomSession.instance.active) {
+                  _pushHostStateNow(
+                    audio,
+                    forceRest: true,
+                    forceWs: false,
+                    guestPayloadOverride: pending,
+                  );
+                }
+              }),
         );
       }
       return;
     }
+    if (_hostOutboundBlockers > 0) {
+      return;
+    }
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final payload = _hostStatePayload(audio);
+    if (!forceRest && !forceWs && nowMs < _hostSuppressOutboundUntilMs) {
+      return;
+    }
+    final payload = _hostStatePayloadForSend(
+      audio,
+      explicitAction: forceRest || forceWs,
+    );
+    _applyHostRemoteAuthoritativeOverride(payload);
+    if (hostPayloadOverride != null) {
+      for (final entry in hostPayloadOverride.entries) {
+        if (entry.value != null) {
+          payload[entry.key] = entry.value;
+        }
+      }
+    }
     final signature = _hostStateSignature(payload);
     if (!forceRest && !forceWs && signature == _hostLastSentSignature) return;
     final hasTrack = payload['trackId'] != null || payload['trackKey'] != null;
@@ -558,7 +670,7 @@ class ColistenController {
       sent = true;
     }
     if (forceRest || nowMs - _hostLastRestSyncAtMs >= 1500) {
-      _syncHostStateViaRest(audio, force: forceRest);
+      _syncHostStateViaRest(audio, force: forceRest, payloadOverride: payload);
       sent = true;
     }
     if (sent) {
@@ -566,19 +678,37 @@ class ColistenController {
     }
   }
 
-  void _scheduleHostStateFollowUps(AudioPlayerService audio) {
-    const delays = <Duration>[
-      Duration(milliseconds: 180),
-      Duration(milliseconds: 650),
-      Duration(milliseconds: 1200),
-    ];
-    for (final delay in delays) {
-      unawaited(
-        Future<void>.delayed(delay, () {
-          if (!_isHost || !ListeningRoomSession.instance.active) return;
-          _pushHostStateNow(audio, forceRest: true, forceWs: true);
-        }),
-      );
+  void _setHostRemoteAuthoritativeOverride(Map<String, dynamic> command) {
+    final override = _authoritativeRemoteAckPayload(command);
+    if (override.isEmpty) return;
+    _hostRemoteAuthoritativeOverride = override;
+    _hostRemoteAuthoritativeOverrideUntilMs =
+        DateTime.now().millisecondsSinceEpoch + 2200;
+  }
+
+  void _setHostAuthoritativeOverride(
+    Map<String, dynamic> override, {
+    int durationMs = 2200,
+  }) {
+    if (override.isEmpty) return;
+    _hostRemoteAuthoritativeOverride = Map<String, dynamic>.from(override);
+    _hostRemoteAuthoritativeOverrideUntilMs =
+        DateTime.now().millisecondsSinceEpoch + durationMs;
+  }
+
+  void _applyHostRemoteAuthoritativeOverride(Map<String, dynamic> payload) {
+    final override = _hostRemoteAuthoritativeOverride;
+    if (override == null) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs >= _hostRemoteAuthoritativeOverrideUntilMs) {
+      _hostRemoteAuthoritativeOverride = null;
+      _hostRemoteAuthoritativeOverrideUntilMs = 0;
+      return;
+    }
+    for (final entry in override.entries) {
+      if (entry.value != null) {
+        payload[entry.key] = entry.value;
+      }
     }
   }
 
@@ -643,9 +773,250 @@ class ColistenController {
   void _onHostStateMessage(String raw) {
     try {
       final j = jsonDecode(raw) as Map<String, dynamic>;
+      if (j['type'] == 'remote_command') {
+        _onHostRemoteCommand(j);
+        return;
+      }
       if (j['type'] != 'state') return;
       _applySessionState(j);
+      final ver = (j['stateVersion'] as num?)?.toInt() ?? 0;
+      if (ver <= 0) return;
+      if (ver <= _hostAppliedRoomVersion) return;
+      final audio = _hostAudio;
+      if (audio == null) return;
+      final generation = _connectionGeneration;
+      _hostOutboundBlockers++;
+      _hostSuppressOutboundUntilMs =
+          DateTime.now().millisecondsSinceEpoch + 1800;
+      _hostWsApplyChain = _hostWsApplyChain.then((_) async {
+        try {
+          if (_connectionGeneration != generation || !_isHost) return;
+          if (ver <= _hostAppliedRoomVersion) return;
+          await _applyRoomPlaybackPayload(
+            j,
+            audio,
+            applyGeneration: generation,
+            forceTrackReload: false,
+            forcePositionSync: true,
+            guestTimelineHints: false,
+          );
+          if (_connectionGeneration != generation || !_isHost) return;
+          _hostAppliedRoomVersion = ver;
+          // Give inbound authoritative state a brief head start so host ticker
+          // cannot immediately overwrite a successfully applied guest command.
+          _hostSuppressOutboundUntilMs =
+              DateTime.now().millisecondsSinceEpoch + 1800;
+        } catch (e) {
+          _log('host ws apply error room=$_roomId v=$ver error=$e');
+        } finally {
+          if (_hostOutboundBlockers > 0) _hostOutboundBlockers--;
+        }
+      });
     } catch (_) {}
+  }
+
+  void _onHostRemoteCommand(Map<String, dynamic> j) {
+    final audio = _hostAudio;
+    final roomId = _roomId;
+    if (!_isHost || audio == null || roomId == null || roomId.isEmpty) return;
+    final generation = _connectionGeneration;
+    _log(
+      'host remote command room=$roomId sender=${j['senderUserId']} trackId=${j['trackId']} key=${j['trackKey']} pos=${j['positionSeconds'] ?? j['position']} playing=${j['playing']} shuffle=${j['shuffleEnabled']} repeat=${j['repeatMode']}',
+    );
+    final remoteSerial = ++_hostRemoteCommandSerial;
+    final localActionSerialAtReceipt = _hostLocalActionSerial;
+    _hostRemoteCommandChain = _hostRemoteCommandChain.then((_) async {
+      if (!_isCurrentRemoteCommand(
+        generation: generation,
+        remoteSerial: remoteSerial,
+        localActionSerialAtReceipt: localActionSerialAtReceipt,
+      )) {
+        _log('host remote command dropped stale-before-apply room=$roomId');
+        return;
+      }
+      _hostOutboundBlockers++;
+      _hostSuppressOutboundUntilMs =
+          DateTime.now().millisecondsSinceEpoch + 2200;
+      _setHostRemoteAuthoritativeOverride(j);
+      try {
+        if (_connectionGeneration != generation || !_isHost) return;
+        await _applyRemoteCommandPayload(
+          j,
+          audio,
+          generation: generation,
+          remoteSerial: remoteSerial,
+          localActionSerialAtReceipt: localActionSerialAtReceipt,
+        );
+        if (!_isCurrentRemoteCommand(
+              generation: generation,
+              remoteSerial: remoteSerial,
+              localActionSerialAtReceipt: localActionSerialAtReceipt,
+            ) ||
+            _roomId != roomId) {
+          _log('host remote command dropped stale-after-apply room=$roomId');
+          return;
+        }
+        _hostSuppressOutboundUntilMs =
+            DateTime.now().millisecondsSinceEpoch + 1800;
+      } catch (e) {
+        _log('host remote command error room=$roomId error=$e');
+      } finally {
+        if (_hostOutboundBlockers > 0) _hostOutboundBlockers--;
+      }
+      if (_isCurrentRemoteCommand(
+            generation: generation,
+            remoteSerial: remoteSerial,
+            localActionSerialAtReceipt: localActionSerialAtReceipt,
+          ) &&
+          _roomId == roomId) {
+        _pushHostStateNow(
+          audio,
+          forceRest: true,
+          forceWs: true,
+          hostPayloadOverride: _authoritativeRemoteAckPayload(j),
+        );
+      }
+    });
+  }
+
+  Map<String, dynamic> _authoritativeRemoteAckPayload(
+    Map<String, dynamic> command,
+  ) {
+    final ack = <String, dynamic>{};
+    for (final key in <String>[
+      'position',
+      'positionSeconds',
+      'playing',
+      'shuffleEnabled',
+      'repeatMode',
+      'trackId',
+      'trackKey',
+      'queueTrackIds',
+      'queueTrackKeys',
+    ]) {
+      if (command.containsKey(key) && command[key] != null) {
+        ack[key] = command[key];
+      }
+    }
+    return ack;
+  }
+
+  bool _isCurrentRemoteCommand({
+    required int generation,
+    required int remoteSerial,
+    required int localActionSerialAtReceipt,
+  }) {
+    return _connectionGeneration == generation &&
+        _isHost &&
+        remoteSerial == _hostRemoteCommandSerial &&
+        localActionSerialAtReceipt == _hostLocalActionSerial;
+  }
+
+  Future<void> _applyRemoteCommandPayload(
+    Map<String, dynamic> j,
+    AudioPlayerService audio, {
+    required int generation,
+    required int remoteSerial,
+    required int localActionSerialAtReceipt,
+  }) async {
+    final payload = Map<String, dynamic>.from(_hostStatePayload(audio));
+    for (final key in <String>[
+      'trackId',
+      'trackKey',
+      'queueTrackIds',
+      'queueTrackKeys',
+      'position',
+      'positionSeconds',
+      'playing',
+      'shuffleEnabled',
+      'repeatMode',
+    ]) {
+      if (j.containsKey(key) && j[key] != null) {
+        payload[key] = j[key];
+      }
+    }
+    payload['type'] = 'state';
+    final hasTrackCommand =
+        j['trackId'] != null ||
+        (j['trackKey'] is String && (j['trackKey'] as String).isNotEmpty);
+    final hasQueueCommand =
+        (j['queueTrackIds'] is List &&
+            (j['queueTrackIds'] as List).isNotEmpty) ||
+        (j['queueTrackKeys'] is List &&
+            (j['queueTrackKeys'] as List).isNotEmpty);
+    if (!hasTrackCommand && !hasQueueCommand) {
+      await _applyLightweightRemoteCommand(
+        j,
+        audio,
+        generation: generation,
+        remoteSerial: remoteSerial,
+        localActionSerialAtReceipt: localActionSerialAtReceipt,
+      );
+      return;
+    }
+    await _applyRoomPlaybackPayload(
+      payload,
+      audio,
+      applyGeneration: generation,
+      forceTrackReload: hasTrackCommand,
+      forcePositionSync: j['position'] != null || j['positionSeconds'] != null,
+      guestTimelineHints: false,
+    );
+  }
+
+  Future<void> _applyLightweightRemoteCommand(
+    Map<String, dynamic> j,
+    AudioPlayerService audio, {
+    required int generation,
+    required int remoteSerial,
+    required int localActionSerialAtReceipt,
+  }) async {
+    final pos = ((j['positionSeconds'] as num?) ?? (j['position'] as num?))
+        ?.toDouble();
+    final playing = j['playing'] as bool?;
+    final shuffleEnabled = j['shuffleEnabled'] as bool?;
+    final repeatMode = (j['repeatMode'] as String?)?.trim().toLowerCase();
+    _log(
+      'host remote lightweight room=$_roomId pos=${pos?.toStringAsFixed(3)} playing=$playing shuffle=$shuffleEnabled repeat=$repeatMode',
+    );
+    if (playing == false) {
+      await audio.pauseFromRoomSync();
+      if (!_isCurrentRemoteCommand(
+        generation: generation,
+        remoteSerial: remoteSerial,
+        localActionSerialAtReceipt: localActionSerialAtReceipt,
+      )) {
+        return;
+      }
+    }
+    if (pos != null) {
+      await audio.seekFromRoomSync(
+        Duration(milliseconds: (pos * 1000).round()),
+      );
+      if (!_isCurrentRemoteCommand(
+        generation: generation,
+        remoteSerial: remoteSerial,
+        localActionSerialAtReceipt: localActionSerialAtReceipt,
+      )) {
+        return;
+      }
+    }
+    if (shuffleEnabled != null || repeatMode != null) {
+      await audio.applyRoomPlaybackModes(
+        shuffleEnabled: shuffleEnabled,
+        repeatMode: repeatMode,
+      );
+      if (!_isCurrentRemoteCommand(
+        generation: generation,
+        remoteSerial: remoteSerial,
+        localActionSerialAtReceipt: localActionSerialAtReceipt,
+      )) {
+        return;
+      }
+    }
+    if (playing == true) {
+      await audio.playFromRoomSync();
+    }
   }
 
   Future<void> _handleKickedFromRoom(AudioPlayerService audio) async {
@@ -704,27 +1075,17 @@ class ColistenController {
     } catch (_) {}
   }
 
-  Future<void> _applyGuestState(
+  Future<void> _applyRoomPlaybackPayload(
     Map<String, dynamic> j,
     AudioPlayerService audio, {
-    int? generation,
+    required int applyGeneration,
     bool forceTrackReload = false,
     bool forcePositionSync = false,
+    required bool guestTimelineHints,
   }) async {
-    final applyGeneration = generation ?? _connectionGeneration;
     if (_connectionGeneration != applyGeneration) return;
     if (!ListeningRoomSession.instance.active) return;
-    final version = (j['stateVersion'] as num?)?.toInt() ?? 0;
-    if (version > 0 &&
-        version <= _guestAppliedVersion &&
-        !forceTrackReload &&
-        !forcePositionSync) {
-      return;
-    }
-    _applySessionState(j);
-    // Как только получили и применили состояние комнаты, убираем "Connecting...":
-    // дальнейшие доп.снапшоты могут идти в фоне, но пользователь уже синхронизируется.
-    ListeningRoomSession.instance.setJoining(false);
+
     final tid = (j['trackId'] as num?)?.toInt();
     final trackKey = (j['trackKey'] as String?)?.trim();
     final queueIds = ((j['queueTrackIds'] as List?) ?? const [])
@@ -743,15 +1104,16 @@ class ColistenController {
     final playing = j['playing'] as bool? ?? false;
     final shuffleEnabled = j['shuffleEnabled'] as bool?;
     final repeatMode = (j['repeatMode'] as String?)?.trim().toLowerCase();
+    final roleTag = guestTimelineHints ? 'guest' : 'host';
     _log(
-      'guest apply room=$_roomId trackId=$tid key=$trackKey pos=${pos.toStringAsFixed(3)} playing=$playing forceReload=$forceTrackReload',
+      '$roleTag playback room=$_roomId trackId=$tid key=$trackKey pos=${pos.toStringAsFixed(3)} playing=$playing forceReload=$forceTrackReload',
     );
-    _guestTargetPositionSeconds = pos;
-    _guestTargetPlaying = playing;
-    // Не используем wallClockMs удалённого устройства для расчёта target:
-    // часы на разных телефонах могут расходиться на секунды.
-    // Якоримся на локальном времени получения state.
-    _guestTargetAnchorLocalMs = DateTime.now().millisecondsSinceEpoch;
+    final anchorLocalMs = DateTime.now().millisecondsSinceEpoch;
+    if (guestTimelineHints) {
+      _guestTargetPositionSeconds = pos;
+      _guestTargetPlaying = playing;
+      _guestTargetAnchorLocalMs = anchorLocalMs;
+    }
     final effectiveQueueKeys = queueKeys.isNotEmpty
         ? queueKeys
         : queueIds.map((id) => 'srv:$id').toList();
@@ -793,7 +1155,7 @@ class ColistenController {
               effectiveTrackKey ||
           queueMismatch;
       _log(
-        'guest track decision key=$effectiveTrackKey reload=$needTrackReload queueMismatch=$queueMismatch currentKey=${TracksApi().trackKeyForPaths(assetPath: audio.currentTrack?.assetPath ?? '', audioFilePath: audio.currentTrack?.audioFilePath)}',
+        '$roleTag track decision key=$effectiveTrackKey reload=$needTrackReload queueMismatch=$queueMismatch currentKey=${TracksApi().trackKeyForPaths(assetPath: audio.currentTrack?.assetPath ?? '', audioFilePath: audio.currentTrack?.audioFilePath)}',
       );
       if (needTrackReload) {
         final queue = roomQueueKeys.isEmpty ? [tr] : roomQueue;
@@ -810,19 +1172,17 @@ class ColistenController {
       }
     }
     final seekTargetSeconds = () {
-      if (!playing || _guestTargetAnchorLocalMs <= 0) return pos;
+      if (!playing || anchorLocalMs <= 0) return pos;
       final nowMs = DateTime.now().millisecondsSinceEpoch;
-      final elapsedMs = (nowMs - _guestTargetAnchorLocalMs).clamp(0, 15000);
+      final elapsedMs = (nowMs - anchorLocalMs).clamp(0, 15000);
       return pos + (elapsedMs / 1000.0);
     }();
     final seekPos = Duration(milliseconds: (seekTargetSeconds * 1000).round());
     final currentMs = audio.position.inMilliseconds;
     final targetMs = seekPos.inMilliseconds;
     final signedDiffMs = targetMs - currentMs;
-    final hardSyncNow = _guestNeedsInitialHardSync;
+    final hardSyncNow = guestTimelineHints && _guestNeedsInitialHardSync;
     final needForwardHardSeek = signedDiffMs >= 1400;
-    // Назад корректируем только при действительно большом уходе,
-    // чтобы не загонять плеер в "пилу" с постоянными микро-откатами.
     final needBackwardHardSeek = signedDiffMs <= -3000;
     final shouldSeek = playing
         ? forcePositionSync ||
@@ -832,7 +1192,7 @@ class ColistenController {
               needBackwardHardSeek
         : forcePositionSync || hardSyncNow || trackWasReloaded;
     _log(
-      'guest seek decision targetMs=$targetMs currentMs=$currentMs signedDiffMs=$signedDiffMs shouldSeek=$shouldSeek reloaded=$trackWasReloaded',
+      '$roleTag seek decision targetMs=$targetMs currentMs=$currentMs signedDiffMs=$signedDiffMs shouldSeek=$shouldSeek reloaded=$trackWasReloaded',
     );
     if (shouldSeek) {
       await _seekGuestToTarget(
@@ -843,7 +1203,9 @@ class ColistenController {
         playing: playing,
       );
       if (_connectionGeneration != applyGeneration) return;
-      _guestNeedsInitialHardSync = false;
+      if (guestTimelineHints) {
+        _guestNeedsInitialHardSync = false;
+      }
     }
     await audio.applyRoomPlaybackModes(
       shuffleEnabled: shuffleEnabled,
@@ -851,12 +1213,16 @@ class ColistenController {
     );
     if (playing) {
       await audio.playFromRoomSync();
-      await _guestTightSync(audio);
+      if (guestTimelineHints) {
+        await _guestTightSync(audio);
+      }
     } else {
       await audio.pauseFromRoomSync();
     }
     final needsPostSettleSeek =
-        playing && (forcePositionSync || hardSyncNow || trackWasReloaded);
+        guestTimelineHints &&
+        playing &&
+        (forcePositionSync || hardSyncNow || trackWasReloaded);
     if (needsPostSettleSeek) {
       await _postSettleGuestSeek(
         audio: audio,
@@ -864,11 +1230,48 @@ class ColistenController {
         generation: applyGeneration,
       );
     }
+  }
+
+  Future<void> _applyGuestState(
+    Map<String, dynamic> j,
+    AudioPlayerService audio, {
+    int? generation,
+    bool forceTrackReload = false,
+    bool forcePositionSync = false,
+  }) async {
+    final applyGeneration = generation ?? _connectionGeneration;
+    if (_connectionGeneration != applyGeneration) return;
+    if (!ListeningRoomSession.instance.active) return;
+    final version = (j['stateVersion'] as num?)?.toInt() ?? 0;
+    if (version > 0 &&
+        version <= _guestAppliedVersion &&
+        !forceTrackReload &&
+        !forcePositionSync) {
+      return;
+    }
+    _applySessionState(j);
+    // Как только получили и применили состояние комнаты, убираем "Connecting...":
+    // дальнейшие доп.снапшоты могут идти в фоне, но пользователь уже синхронизируется.
+    ListeningRoomSession.instance.setJoining(false);
+    await _applyRoomPlaybackPayload(
+      j,
+      audio,
+      applyGeneration: applyGeneration,
+      forceTrackReload: forceTrackReload,
+      forcePositionSync: forcePositionSync,
+      guestTimelineHints: true,
+    );
+    if (_connectionGeneration != applyGeneration) return;
     if (version > _guestAppliedVersion) {
       _guestAppliedVersion = version;
     }
     if (version > _guestLastVersion) {
       _guestLastVersion = version;
+    }
+    final pendingPlaying = _guestPendingPlayPausePlaying;
+    if (pendingPlaying != null && j['playing'] == pendingPlaying) {
+      _guestPendingPlayPausePlaying = null;
+      _guestPendingPlayPauseUntilMs = 0;
     }
   }
 
@@ -1111,11 +1514,11 @@ class ColistenController {
       jsonEncode(<String, dynamic>{
         'type': 'update_settings',
         'privateRoom': privateRoom,
-        'controlPauseHostOnly': pauseHostOnly,
-        'controlSeekHostOnly': seekHostOnly,
-        'controlShuffleHostOnly': shuffleHostOnly,
-        'controlRepeatHostOnly': repeatHostOnly,
-        'controlSkipHostOnly': skipHostOnly,
+        'controlPauseHostOnly': true,
+        'controlSeekHostOnly': true,
+        'controlShuffleHostOnly': true,
+        'controlRepeatHostOnly': true,
+        'controlSkipHostOnly': true,
         'controlPlaylistHostOnly': playlistHostOnly,
       }),
     );
@@ -1135,8 +1538,161 @@ class ColistenController {
     if (_isHost || !ListeningRoomSession.instance.active) return;
   }
 
-  void pushHostState(AudioPlayerService audio) {
-    _pushHostStateNow(audio, forceRest: true, forceWs: true);
+  void sendGuestPlayPauseCommand(
+    AudioPlayerService audio, {
+    required bool playing,
+  }) {
+    if (_isHost || !ListeningRoomSession.instance.active) return;
+    final payload = _hostStatePayload(audio);
+    final positionSeconds = (payload['position'] as num?)?.toDouble() ?? 0;
+    final positionMs = (positionSeconds * 1000).round();
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final pendingPlaying = _guestPendingPlayPausePlaying;
+    if (pendingPlaying != null &&
+        pendingPlaying != playing &&
+        nowMs < _guestPendingPlayPauseUntilMs) {
+      _log(
+        'guest command playpause dropped pending-opposite room=$_roomId playing=$playing pending=$pendingPlaying pos=${positionSeconds.toStringAsFixed(3)}',
+      );
+      return;
+    }
+    final isDuplicateBounce =
+        _lastGuestPlayPauseCommandPlaying != null &&
+        _lastGuestPlayPauseCommandPlaying != playing &&
+        nowMs - _lastGuestPlayPauseCommandAtMs <= 1800 &&
+        (positionMs - _lastGuestPlayPauseCommandPositionMs).abs() <= 1000;
+    if (isDuplicateBounce) {
+      _log(
+        'guest command playpause dropped bounce room=$_roomId playing=$playing pos=${positionSeconds.toStringAsFixed(3)}',
+      );
+      return;
+    }
+    _lastGuestPlayPauseCommandAtMs = nowMs;
+    _lastGuestPlayPauseCommandPositionMs = positionMs;
+    _lastGuestPlayPauseCommandPlaying = playing;
+    _guestPendingPlayPausePlaying = playing;
+    _guestPendingPlayPauseUntilMs = nowMs + 2600;
+    final cmd = <String, dynamic>{
+      'type': 'command',
+      'playing': playing,
+      'position': positionSeconds,
+      'trackId': payload['trackId'],
+      'trackKey': payload['trackKey'],
+    };
+    _log(
+      'guest command playpause room=$_roomId playing=$playing trackId=${cmd['trackId']} key=${cmd['trackKey']} pos=${(cmd['position'] as double).toStringAsFixed(3)}',
+    );
+    final roomId = _roomId;
+    final generation = _connectionGeneration;
+    final serial = ++_guestCommandSerial;
+    _pushHostStateNow(
+      audio,
+      forceRest: false,
+      forceWs: true,
+      guestPayloadOverride: cmd,
+    );
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 650), () {
+        if (_isHost ||
+            _connectionGeneration != generation ||
+            _roomId != roomId ||
+            !ListeningRoomSession.instance.active ||
+            serial != _guestCommandSerial ||
+            _guestPendingPlayPausePlaying != playing) {
+          return;
+        }
+        _log(
+          'guest command playpause rest fallback room=$roomId playing=$playing pos=${positionSeconds.toStringAsFixed(3)}',
+        );
+        _pushHostStateNow(
+          audio,
+          forceRest: true,
+          forceWs: false,
+          guestPayloadOverride: cmd,
+        );
+      }),
+    );
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 1700), () {
+        if (_isHost ||
+            _connectionGeneration != generation ||
+            _roomId != roomId ||
+            !ListeningRoomSession.instance.active ||
+            serial != _guestCommandSerial ||
+            _guestPendingPlayPausePlaying != playing) {
+          return;
+        }
+        _log(
+          'guest command playpause rest retry room=$roomId playing=$playing pos=${positionSeconds.toStringAsFixed(3)}',
+        );
+        _pushHostStateNow(
+          audio,
+          forceRest: true,
+          forceWs: true,
+          guestPayloadOverride: cmd,
+        );
+      }),
+    );
+  }
+
+  void _scheduleHostStateFollowUps(
+    AudioPlayerService audio, {
+    Map<String, dynamic>? hostPayloadOverride,
+  }) {
+    const delays = <Duration>[
+      Duration(milliseconds: 180),
+      Duration(milliseconds: 650),
+      Duration(milliseconds: 1200),
+    ];
+    for (final delay in delays) {
+      unawaited(
+        Future<void>.delayed(delay, () {
+          if (!_isHost || !ListeningRoomSession.instance.active) return;
+          _pushHostStateNow(
+            audio,
+            forceRest: true,
+            forceWs: true,
+            hostPayloadOverride: hostPayloadOverride,
+          );
+        }),
+      );
+    }
+  }
+
+  void pushHostPlayPauseState(
+    AudioPlayerService audio, {
+    required bool playing,
+  }) {
+    if (!_isHost) return;
+    _hostLocalActionSerial++;
+    final payload = _hostStatePayload(audio);
+    final override = <String, dynamic>{
+      'playing': playing,
+      'position': payload['position'],
+    };
+    _setHostAuthoritativeOverride(override);
+    _pushHostStateNow(
+      audio,
+      forceRest: true,
+      forceWs: true,
+      hostPayloadOverride: override,
+    );
+    _scheduleHostStateFollowUps(audio, hostPayloadOverride: override);
+  }
+
+  void pushHostState(
+    AudioPlayerService audio, {
+    bool includeQueueForGuest = false,
+  }) {
+    if (_isHost) {
+      _hostLocalActionSerial++;
+    }
+    _pushHostStateNow(
+      audio,
+      forceRest: true,
+      forceWs: true,
+      includeQueueForGuest: includeQueueForGuest,
+    );
     if (!_isHost) return;
     _scheduleHostStateFollowUps(audio);
   }

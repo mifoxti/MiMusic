@@ -323,18 +323,9 @@ class FullPlayerDockPanel extends StatelessWidget {
                                   isPlaying: isPlaying,
                                   onPressed:
                                       roomActive && !roomSession.canControlPause
-                                      ? (guestMode
-                                            ? audioPlayerService
-                                                  .toggleGuestLocalPause
-                                            : null)
+                                      ? null
                                       : audioPlayerService.togglePlayPause,
-                                  iconOverride:
-                                      guestMode && !roomSession.canControlPause
-                                      ? (audioPlayerService
-                                                .guestLocalPauseActive
-                                            ? Icons.volume_off_rounded
-                                            : Icons.volume_up_rounded)
-                                      : null,
+                                  iconOverride: null,
                                   foregroundColor: roomActive
                                       ? roomAccent
                                       : palette.textPrimary,
@@ -659,7 +650,10 @@ void _showPlayerQueueSheet({
               ),
             ),
             child: ListenableBuilder(
-              listenable: roomActive ? roomSession : audioPlayerService,
+              listenable: Listenable.merge([
+                audioPlayerService,
+                if (roomActive) roomSession,
+              ]),
               builder: (context, _) {
                 final queue = audioPlayerService.activeQueue;
                 final canEditQueue = roomActive
@@ -1390,111 +1384,6 @@ void _showRoomManageSheet({
                                       roomSession.playlistHostOnly,
                                 );
                               },
-                            ),
-                            _roomPermissionTile(
-                              context: context,
-                              palette: palette,
-                              title:
-                                  Localizations.localeOf(
-                                        context,
-                                      ).languageCode ==
-                                      'en'
-                                  ? 'Pause / resume'
-                                  : 'Пауза / продолжить',
-                              value: roomSession.pauseHostOnly,
-                              onChanged: (v) => applyRoomSettings(
-                                privateRoom: roomSession.privateRoom,
-                                pauseHostOnly: v,
-                                seekHostOnly: roomSession.seekHostOnly,
-                                shuffleHostOnly: roomSession.shuffleHostOnly,
-                                repeatHostOnly: roomSession.repeatHostOnly,
-                                skipHostOnly: roomSession.skipHostOnly,
-                                playlistHostOnly: roomSession.playlistHostOnly,
-                              ),
-                            ),
-                            _roomPermissionTile(
-                              context: context,
-                              palette: palette,
-                              title:
-                                  Localizations.localeOf(
-                                        context,
-                                      ).languageCode ==
-                                      'en'
-                                  ? 'Seek progress bar'
-                                  : 'Перемотка трека',
-                              value: roomSession.seekHostOnly,
-                              onChanged: (v) => applyRoomSettings(
-                                privateRoom: roomSession.privateRoom,
-                                pauseHostOnly: roomSession.pauseHostOnly,
-                                seekHostOnly: v,
-                                shuffleHostOnly: roomSession.shuffleHostOnly,
-                                repeatHostOnly: roomSession.repeatHostOnly,
-                                skipHostOnly: roomSession.skipHostOnly,
-                                playlistHostOnly: roomSession.playlistHostOnly,
-                              ),
-                            ),
-                            _roomPermissionTile(
-                              context: context,
-                              palette: palette,
-                              title:
-                                  Localizations.localeOf(
-                                        context,
-                                      ).languageCode ==
-                                      'en'
-                                  ? 'Shuffle queue'
-                                  : 'Перемешивание очереди',
-                              value: roomSession.shuffleHostOnly,
-                              onChanged: (v) => applyRoomSettings(
-                                privateRoom: roomSession.privateRoom,
-                                pauseHostOnly: roomSession.pauseHostOnly,
-                                seekHostOnly: roomSession.seekHostOnly,
-                                shuffleHostOnly: v,
-                                repeatHostOnly: roomSession.repeatHostOnly,
-                                skipHostOnly: roomSession.skipHostOnly,
-                                playlistHostOnly: roomSession.playlistHostOnly,
-                              ),
-                            ),
-                            _roomPermissionTile(
-                              context: context,
-                              palette: palette,
-                              title:
-                                  Localizations.localeOf(
-                                        context,
-                                      ).languageCode ==
-                                      'en'
-                                  ? 'Repeat mode'
-                                  : 'Режим повтора',
-                              value: roomSession.repeatHostOnly,
-                              onChanged: (v) => applyRoomSettings(
-                                privateRoom: roomSession.privateRoom,
-                                pauseHostOnly: roomSession.pauseHostOnly,
-                                seekHostOnly: roomSession.seekHostOnly,
-                                shuffleHostOnly: roomSession.shuffleHostOnly,
-                                repeatHostOnly: v,
-                                skipHostOnly: roomSession.skipHostOnly,
-                                playlistHostOnly: roomSession.playlistHostOnly,
-                              ),
-                            ),
-                            _roomPermissionTile(
-                              context: context,
-                              palette: palette,
-                              title:
-                                  Localizations.localeOf(
-                                        context,
-                                      ).languageCode ==
-                                      'en'
-                                  ? 'Skip tracks'
-                                  : 'Переключение треков',
-                              value: roomSession.skipHostOnly,
-                              onChanged: (v) => applyRoomSettings(
-                                privateRoom: roomSession.privateRoom,
-                                pauseHostOnly: roomSession.pauseHostOnly,
-                                seekHostOnly: roomSession.seekHostOnly,
-                                shuffleHostOnly: roomSession.shuffleHostOnly,
-                                repeatHostOnly: roomSession.repeatHostOnly,
-                                skipHostOnly: v,
-                                playlistHostOnly: roomSession.playlistHostOnly,
-                              ),
                             ),
                             _roomPermissionTile(
                               context: context,

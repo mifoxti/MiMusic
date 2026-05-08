@@ -284,14 +284,20 @@ class AudioPlayerService extends ChangeNotifier {
       );
       final room = ListeningRoomSession.instance;
       if (room.active && room.canEditQueue) {
-        ColistenController.instance.pushHostState(this);
+        ColistenController.instance.pushHostState(
+          this,
+          includeQueueForGuest: true,
+        );
       }
       return;
     }
     await _applyQueueKeepingCurrent(nextQueue);
     final room = ListeningRoomSession.instance;
     if (room.active && room.canEditQueue) {
-      ColistenController.instance.pushHostState(this);
+      ColistenController.instance.pushHostState(
+        this,
+        includeQueueForGuest: true,
+      );
     }
   }
 
@@ -312,7 +318,10 @@ class AudioPlayerService extends ChangeNotifier {
     await _applyQueueKeepingCurrent(updated);
     final room = ListeningRoomSession.instance;
     if (room.active && room.canEditQueue) {
-      ColistenController.instance.pushHostState(this);
+      ColistenController.instance.pushHostState(
+        this,
+        includeQueueForGuest: true,
+      );
     }
   }
 
@@ -324,14 +333,20 @@ class AudioPlayerService extends ChangeNotifier {
       await playTrack(track, queue: updated, leaveListeningRoomSession: false);
       final room = ListeningRoomSession.instance;
       if (room.active && room.canEditQueue) {
-        ColistenController.instance.pushHostState(this);
+        ColistenController.instance.pushHostState(
+          this,
+          includeQueueForGuest: true,
+        );
       }
       return;
     }
     await _applyQueueKeepingCurrent(updated);
     final room = ListeningRoomSession.instance;
     if (room.active && room.canEditQueue) {
-      ColistenController.instance.pushHostState(this);
+      ColistenController.instance.pushHostState(
+        this,
+        includeQueueForGuest: true,
+      );
     }
   }
 
@@ -373,51 +388,55 @@ class AudioPlayerService extends ChangeNotifier {
     final room = ListeningRoomSession.instance;
     if (room.active && !room.canControlPause) return;
     ColistenController.instance.onGuestManualPlayPauseToggle(this);
-    if (_handler.playbackState.value.playing) {
+    final targetPlaying = !_handler.playbackState.value.playing;
+    if (!targetPlaying) {
       await _handler.pause();
     } else {
       await _handler.play();
     }
     if (room.active && room.canControlPause) {
-      ColistenController.instance.pushHostState(this);
+      if (room.isHost) {
+        ColistenController.instance.pushHostPlayPauseState(
+          this,
+          playing: targetPlaying,
+        );
+      } else {
+        ColistenController.instance.sendGuestPlayPauseCommand(
+          this,
+          playing: targetPlaying,
+        );
+      }
     }
     notifyListeners();
   }
 
   Future<void> toggleGuestLocalPause() async {
     final room = ListeningRoomSession.instance;
-    if (!room.active || room.isHost || room.canControlPause) {
+    if (!room.active || room.isHost) {
       await togglePlayPause();
       return;
     }
-    if (_guestLocalPauseActive) {
-      _guestLocalPauseActive = false;
-      notifyListeners();
-      await ColistenController.instance.forceGuestSnapshotSync(
-        this,
-        forceTrackReload: false,
-        forcePositionSync: true,
-      );
-      return;
-    }
-    _guestLocalPauseActive = true;
-    await _handler.pause();
-    notifyListeners();
+    return;
   }
 
   Future<void> play() async {
+    final room = ListeningRoomSession.instance;
+    if (room.active && !room.canControlPause) return;
     await _handler.play();
     notifyListeners();
   }
 
   Future<void> pause() async {
+    final room = ListeningRoomSession.instance;
+    if (room.active && !room.canControlPause) return;
     await _handler.pause();
     notifyListeners();
   }
 
   Future<void> seek(Duration position) async {
-    await _handler.seek(position);
     final room = ListeningRoomSession.instance;
+    if (room.active && !room.canControlSeek) return;
+    await _handler.seek(position);
     if (room.active && room.canControlSeek) {
       ColistenController.instance.pushHostState(this);
     }
@@ -430,6 +449,7 @@ class AudioPlayerService extends ChangeNotifier {
     await _handler.customAction('roomSyncSeek', {
       'positionSeconds': position.inMilliseconds / 1000.0,
     });
+    _position = position;
     notifyListeners();
   }
 
@@ -437,12 +457,14 @@ class AudioPlayerService extends ChangeNotifier {
     if (!ListeningRoomSession.instance.active) return;
     if (_guestLocalPauseActive) return;
     await _handler.customAction('roomSyncPlay');
+    _isPlaying = true;
     notifyListeners();
   }
 
   Future<void> pauseFromRoomSync() async {
     if (!ListeningRoomSession.instance.active) return;
     await _handler.customAction('roomSyncPause');
+    _isPlaying = false;
     notifyListeners();
   }
 
@@ -465,16 +487,18 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> skipToNext() async {
-    await _handler.skipToNext();
     final room = ListeningRoomSession.instance;
+    if (room.active && !room.canControlSkip) return;
+    await _handler.skipToNext();
     if (room.active && room.canControlSkip) {
       ColistenController.instance.pushHostState(this);
     }
   }
 
   Future<void> skipToPrevious() async {
-    await _handler.skipToPrevious();
     final room = ListeningRoomSession.instance;
+    if (room.active && !room.canControlSkip) return;
+    await _handler.skipToPrevious();
     if (room.active && room.canControlSkip) {
       ColistenController.instance.pushHostState(this);
     }
@@ -515,8 +539,9 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> setShuffleEnabled(bool enabled) async {
-    await _handler.setShuffleEnabled(enabled);
     final room = ListeningRoomSession.instance;
+    if (room.active && !room.canControlShuffle) return;
+    await _handler.setShuffleEnabled(enabled);
     if (room.active && room.canControlShuffle) {
       ColistenController.instance.pushHostState(this);
     }
@@ -528,8 +553,9 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> cycleLoopMode() async {
-    await _handler.cycleLoopMode();
     final room = ListeningRoomSession.instance;
+    if (room.active && !room.canControlRepeat) return;
+    await _handler.cycleLoopMode();
     if (room.active && room.canControlRepeat) {
       ColistenController.instance.pushHostState(this);
     }

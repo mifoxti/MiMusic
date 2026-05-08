@@ -41,6 +41,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   StreamSubscription<Duration?>? _durationSub;
   StreamSubscription<bool>? _shuffleModeSub;
   StreamSubscription<LoopMode>? _loopModeSub;
+
   /// На web [positionStream] часто почти не эмитит во время воспроизведения — UI не получает прогресс.
   Timer? _webPositionPoll;
 
@@ -50,14 +51,18 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _concatenatingSourceUsed = false;
   final Set<String> _likedPaths = {};
   final Set<String> _dislikedPaths = {};
+
   /// Уведомляет UI об изменении списка избранных (path).
-  final ValueNotifier<Set<String>> likedPathsNotifier = ValueNotifier<Set<String>>({});
+  final ValueNotifier<Set<String>> likedPathsNotifier =
+      ValueNotifier<Set<String>>({});
+
   /// Пути с дизлайком (не показывать в реках / скрыть из избранного).
   final ValueNotifier<Set<String>> dislikedPathsNotifier =
       ValueNotifier<Set<String>>({});
   final ValueNotifier<bool> shuffleModeNotifier = ValueNotifier<bool>(false);
-  final ValueNotifier<LoopMode> loopModeNotifier =
-      ValueNotifier<LoopMode>(LoopMode.off);
+  final ValueNotifier<LoopMode> loopModeNotifier = ValueNotifier<LoopMode>(
+    LoopMode.off,
+  );
 
   void _initPlayer() {
     if (kIsWeb || !isAndroid) {
@@ -83,7 +88,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   void _listenToPlayer() {
     _playerStateSub = _player.playerStateStream.listen(_onPlayerStateChanged);
     _positionSub = _player.positionStream.listen(_onPositionChanged);
-    _sequenceStateSub = _player.sequenceStateStream.listen(_onSequenceStateChanged);
+    _sequenceStateSub = _player.sequenceStateStream.listen(
+      _onSequenceStateChanged,
+    );
     _durationSub = _player.durationStream.listen(_onDurationResolved);
     _shuffleModeSub = _player.shuffleModeEnabledStream.listen((enabled) {
       shuffleModeNotifier.value = enabled;
@@ -95,11 +102,13 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void _onRoomSessionChanged() {
     final current = playbackState.value;
-    playbackState.add(current.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-    ));
+    playbackState.add(
+      current.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+      ),
+    );
   }
 
   void _onDurationResolved(Duration? d) {
@@ -112,25 +121,29 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void _onPlayerStateChanged(PlayerState state) {
     final processingState = _mapProcessingState(state.processingState);
-    playbackState.add(playbackState.value.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-      processingState: processingState,
-      playing: state.playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-    ));
-    _syncWebPositionPoll();
-    if (state.processingState == ProcessingState.completed) {
-      _stopWebPositionPoll();
-      playbackState.add(playbackState.value.copyWith(
-        processingState: AudioProcessingState.completed,
-        playing: false,
+    playbackState.add(
+      playbackState.value.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
         androidCompactActionIndices: _compactIndices,
-      ));
+        processingState: processingState,
+        playing: state.playing,
+        updatePosition: _player.position,
+        bufferedPosition: _player.bufferedPosition,
+      ),
+    );
+    _syncWebPositionPoll();
+    if (state.processingState == ProcessingState.completed) {
+      _stopWebPositionPoll();
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.completed,
+          playing: false,
+          controls: _currentControls(),
+          systemActions: _systemActions,
+          androidCompactActionIndices: _compactIndices,
+        ),
+      );
     }
   }
 
@@ -173,11 +186,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   List<MediaControl> _currentControls() {
     final playing = _player.playing;
     final playPause = playing ? MediaControl.pause : MediaControl.play;
-    final controls = <MediaControl>[
-      _dislikeControl,
-      playPause,
-      _likeControl,
-    ];
+    final controls = <MediaControl>[_dislikeControl, playPause, _likeControl];
     if (_canUseSkipControls) {
       controls.insert(1, MediaControl.skipToPrevious);
       controls.insert(3, MediaControl.skipToNext);
@@ -199,26 +208,32 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   void _onPositionChanged(Duration position) {
     if (!_player.playing) return;
     if (kIsWeb) return;
-    playbackState.add(playbackState.value.copyWith(
-      updatePosition: position,
-      systemActions: _systemActions,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        updatePosition: position,
+        systemActions: _systemActions,
+      ),
+    );
   }
 
   void _syncWebPositionPoll() {
     if (!kIsWeb) return;
     if (_player.playing) {
-      _webPositionPoll ??= Timer.periodic(const Duration(milliseconds: 200), (_) {
+      _webPositionPoll ??= Timer.periodic(const Duration(milliseconds: 200), (
+        _,
+      ) {
         if (!_player.playing) {
           _stopWebPositionPoll();
           return;
         }
         final v = playbackState.value;
-        playbackState.add(v.copyWith(
-          updatePosition: _player.position,
-          bufferedPosition: _player.bufferedPosition,
-          systemActions: _systemActions,
-        ));
+        playbackState.add(
+          v.copyWith(
+            updatePosition: _player.position,
+            bufferedPosition: _player.bufferedPosition,
+            systemActions: _systemActions,
+          ),
+        );
       });
     } else {
       _stopWebPositionPoll();
@@ -232,26 +247,32 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
+    if (_roomGuest && !ListeningRoomSession.instance.canControlPause) return;
     await _player.play();
-    playbackState.add(playbackState.value.copyWith(
-      playing: true,
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-      updatePosition: _player.position,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        playing: true,
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+        updatePosition: _player.position,
+      ),
+    );
   }
 
   @override
   Future<void> pause() async {
+    if (_roomGuest && !ListeningRoomSession.instance.canControlPause) return;
     await _player.pause();
-    playbackState.add(playbackState.value.copyWith(
-      playing: false,
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-      updatePosition: _player.position,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        playing: false,
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+        updatePosition: _player.position,
+      ),
+    );
   }
 
   @override
@@ -260,23 +281,27 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     await _player.stop();
     _concatenatingSourceUsed = false;
     mediaItem.add(null);
-    playbackState.add(playbackState.value.copyWith(
-      processingState: AudioProcessingState.idle,
-      playing: false,
-      controls: [],
-      updatePosition: Duration.zero,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.idle,
+        playing: false,
+        controls: [],
+        updatePosition: Duration.zero,
+      ),
+    );
   }
 
   @override
   Future<void> seek(Duration position) async {
     if (!_canUseSeekControl) return;
     await _player.seek(position);
-    playbackState.add(playbackState.value.copyWith(
-      updatePosition: position,
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        updatePosition: position,
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+      ),
+    );
   }
 
   @override
@@ -308,10 +333,12 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_queue.isEmpty) return;
     if (_player.position.inSeconds > 3) {
       await _player.seek(Duration.zero);
-      playbackState.add(playbackState.value.copyWith(
-        updatePosition: Duration.zero,
-        systemActions: _systemActions,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          updatePosition: Duration.zero,
+          systemActions: _systemActions,
+        ),
+      );
       return;
     }
     if (_useConcatenatingSource && _queueIndex > 0) {
@@ -323,10 +350,12 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_queueIndex <= 0) {
       _queueIndex = 0;
       await _player.seek(Duration.zero);
-      playbackState.add(playbackState.value.copyWith(
-        updatePosition: Duration.zero,
-        systemActions: _systemActions,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          updatePosition: Duration.zero,
+          systemActions: _systemActions,
+        ),
+      );
       return;
     }
     _queueIndex--;
@@ -366,20 +395,24 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       artUri: t['artUri'] as String?,
     );
     final duration = _player.duration ?? Duration.zero;
-    mediaItem.add(MediaItem(
-      id: mediaId,
-      title: t['title'] as String? ?? '',
-      artist: t['artist'] as String? ?? '',
-      duration: duration,
-      artUri: coverUri,
-    ));
-    playbackState.add(playbackState.value.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-    ));
+    mediaItem.add(
+      MediaItem(
+        id: mediaId,
+        title: t['title'] as String? ?? '',
+        artist: t['artist'] as String? ?? '',
+        duration: duration,
+        artUri: coverUri,
+      ),
+    );
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+        updatePosition: _player.position,
+        bufferedPosition: _player.bufferedPosition,
+      ),
+    );
     _recordListeningHistoryFromQueue();
   }
 
@@ -427,17 +460,16 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     likedPathsNotifier.value = Set.from(_likedPaths);
     dislikedPathsNotifier.value = Set.from(_dislikedPaths);
-    playbackState.add(playbackState.value.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+      ),
+    );
   }
 
-  void _setLikePath({
-    required String path,
-    required bool liked,
-  }) {
+  void _setLikePath({required String path, required bool liked}) {
     if (path.isEmpty) return;
     if (liked) {
       _likedPaths.add(path);
@@ -447,11 +479,13 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     likedPathsNotifier.value = Set.from(_likedPaths);
     dislikedPathsNotifier.value = Set.from(_dislikedPaths);
-    playbackState.add(playbackState.value.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+      ),
+    );
   }
 
   void _replaceLikedPaths(Set<String> next) {
@@ -461,11 +495,13 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _dislikedPaths.removeWhere(_likedPaths.contains);
     likedPathsNotifier.value = Set.from(_likedPaths);
     dislikedPathsNotifier.value = Set.from(_dislikedPaths);
-    playbackState.add(playbackState.value.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+      ),
+    );
   }
 
   void _toggleDislikeCurrent() {
@@ -479,11 +515,13 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     likedPathsNotifier.value = Set.from(_likedPaths);
     dislikedPathsNotifier.value = Set.from(_dislikedPaths);
-    playbackState.add(playbackState.value.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+      ),
+    );
   }
 
   void _removeLike([String? path]) {
@@ -492,11 +530,13 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       _likedPaths.remove(p);
       likedPathsNotifier.value = Set.from(_likedPaths);
     }
-    playbackState.add(playbackState.value.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+      ),
+    );
   }
 
   /// Перемешивание очереди (только при очереди из нескольких треков).
@@ -528,10 +568,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     return false;
   }
 
-  Future<Uri?> _coverUriFromPath({
-    String? artPath,
-    String? artUri,
-  }) async {
+  Future<Uri?> _coverUriFromPath({String? artPath, String? artUri}) async {
     if (artUri != null && artUri.isNotEmpty) {
       return Uri.tryParse(artUri);
     }
@@ -597,14 +634,16 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       artUri: coverUri,
     );
     mediaItem.add(item);
-    playbackState.add(playbackState.value.copyWith(
-      controls: _currentControls(),
-      systemActions: _systemActions,
-      androidCompactActionIndices: _compactIndices,
-      processingState: AudioProcessingState.loading,
-      playing: false,
-      updatePosition: Duration.zero,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
+        processingState: AudioProcessingState.loading,
+        playing: false,
+        updatePosition: Duration.zero,
+      ),
+    );
 
     try {
       if (queue != null && queue.length > 1) {
@@ -626,33 +665,39 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       }
       await _applyEqualizerFromSettings();
       final duration = _player.duration ?? Duration.zero;
-      mediaItem.add(MediaItem(
-        id: item.id,
-        title: item.title,
-        artist: item.artist,
-        duration: duration,
-        artUri: coverUri,
-      ));
+      mediaItem.add(
+        MediaItem(
+          id: item.id,
+          title: item.title,
+          artist: item.artist,
+          duration: duration,
+          artUri: coverUri,
+        ),
+      );
       if (autoPlay) {
         await _player.play();
       }
-      playbackState.add(playbackState.value.copyWith(
-        controls: _currentControls(),
-        systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
-        processingState: AudioProcessingState.ready,
-        playing: autoPlay,
-        updatePosition: _player.position,
-        bufferedPosition: _player.bufferedPosition,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          controls: _currentControls(),
+          systemActions: _systemActions,
+          androidCompactActionIndices: _compactIndices,
+          processingState: AudioProcessingState.ready,
+          playing: autoPlay,
+          updatePosition: _player.position,
+          bufferedPosition: _player.bufferedPosition,
+        ),
+      );
       _recordListeningHistoryFromQueue();
     } catch (e) {
-      playbackState.add(playbackState.value.copyWith(
-        processingState: AudioProcessingState.error,
-        playing: false,
-        systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.error,
+          playing: false,
+          systemActions: _systemActions,
+          androidCompactActionIndices: _compactIndices,
+        ),
+      );
       rethrow;
     }
   }
@@ -688,7 +733,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         } else if (i == 0) {
           gain += preamp;
         }
-        await bands[i].setGain(gain.clamp(params.minDecibels, params.maxDecibels));
+        await bands[i].setGain(
+          gain.clamp(params.minDecibels, params.maxDecibels),
+        );
       }
     } catch (_) {}
   }
@@ -698,7 +745,10 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (repo == null) return;
     try {
       final settings = await repo.getSettings();
-      await _syncAndroidEqualizer(settings.equalizerGains, settings.equalizerPreamp);
+      await _syncAndroidEqualizer(
+        settings.equalizerGains,
+        settings.equalizerPreamp,
+      );
     } catch (_) {}
   }
 
@@ -712,7 +762,10 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
     switch (name) {
       case 'playAsset':
         final path = extras?['path'] as String? ?? '';
@@ -722,7 +775,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         final queueList = extras?['queue'];
         List<Map<String, dynamic>>? queue;
         if (queueList is List) {
-          queue = queueList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          queue = queueList
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
         }
         await _playAsset(
           path: path,
@@ -772,32 +827,38 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         if (seconds != null) {
           final position = Duration(milliseconds: (seconds * 1000).round());
           await _player.seek(position);
-          playbackState.add(playbackState.value.copyWith(
-            updatePosition: position,
-            systemActions: _systemActions,
-            androidCompactActionIndices: _compactIndices,
-          ));
+          playbackState.add(
+            playbackState.value.copyWith(
+              updatePosition: position,
+              systemActions: _systemActions,
+              androidCompactActionIndices: _compactIndices,
+            ),
+          );
         }
         break;
       case 'roomSyncPlay':
         await _player.play();
-        playbackState.add(playbackState.value.copyWith(
-          playing: true,
-          controls: _currentControls(),
-          systemActions: _systemActions,
-          androidCompactActionIndices: _compactIndices,
-          updatePosition: _player.position,
-        ));
+        playbackState.add(
+          playbackState.value.copyWith(
+            playing: true,
+            controls: _currentControls(),
+            systemActions: _systemActions,
+            androidCompactActionIndices: _compactIndices,
+            updatePosition: _player.position,
+          ),
+        );
         break;
       case 'roomSyncPause':
         await _player.pause();
-        playbackState.add(playbackState.value.copyWith(
-          playing: false,
-          controls: _currentControls(),
-          systemActions: _systemActions,
-          androidCompactActionIndices: _compactIndices,
-          updatePosition: _player.position,
-        ));
+        playbackState.add(
+          playbackState.value.copyWith(
+            playing: false,
+            controls: _currentControls(),
+            systemActions: _systemActions,
+            androidCompactActionIndices: _compactIndices,
+            updatePosition: _player.position,
+          ),
+        );
         break;
       default:
         return super.customAction(name, extras);

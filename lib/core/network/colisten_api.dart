@@ -181,30 +181,39 @@ class ColistenApi {
 
   Future<ColistenRoomStateDto?> pushHostState({
     required String roomId,
+    String messageType = 'host_state',
     int? trackId,
     String? trackKey,
-    List<int> queueTrackIds = const [],
-    List<String> queueTrackKeys = const [],
+    List<int>? queueTrackIds,
+    List<String>? queueTrackKeys,
     double positionSeconds = 0,
     bool playing = false,
     bool shuffleEnabled = false,
     String repeatMode = 'off',
+    int? baseStateVersion,
+    bool explicitAction = false,
+    CancelToken? cancelToken,
   }) async {
     final dio = await createAuthenticatedDio();
     final data = <String, dynamic>{
-      'type': 'host_state',
-      'queueTrackIds': queueTrackIds,
-      'queueTrackKeys': queueTrackKeys,
+      'type': messageType,
       'position': positionSeconds,
       'playing': playing,
       'shuffleEnabled': shuffleEnabled,
       'repeatMode': repeatMode,
     };
+    if (queueTrackIds != null) data['queueTrackIds'] = queueTrackIds;
+    if (queueTrackKeys != null) data['queueTrackKeys'] = queueTrackKeys;
     if (trackId != null) data['trackId'] = trackId;
     if (trackKey != null) data['trackKey'] = trackKey;
+    if (baseStateVersion != null && baseStateVersion > 0) {
+      data['baseStateVersion'] = baseStateVersion;
+    }
+    if (explicitAction) data['explicitAction'] = true;
     final res = await dio.post<Map<String, dynamic>>(
       '/colisten/room/$roomId/host-state',
       data: data,
+      cancelToken: cancelToken,
     );
     final body = res.data;
     if (body == null) return null;

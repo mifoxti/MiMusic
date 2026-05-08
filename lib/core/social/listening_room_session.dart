@@ -47,11 +47,11 @@ class ListeningRoomSession extends ChangeNotifier {
   bool get joining => _joining;
   bool get isHost =>
       _hostUsername.isNotEmpty && _hostUsername == _currentUsername;
-  bool get canControlPause => isHost || !_pauseHostOnly;
-  bool get canControlSeek => isHost || !_seekHostOnly;
-  bool get canControlShuffle => isHost || !_shuffleHostOnly;
-  bool get canControlRepeat => isHost || !_repeatHostOnly;
-  bool get canControlSkip => isHost || !_skipHostOnly;
+  bool get canControlPause => isHost;
+  bool get canControlSeek => isHost;
+  bool get canControlShuffle => isHost;
+  bool get canControlRepeat => isHost;
+  bool get canControlSkip => isHost;
   bool get canEditQueue => isHost || !_playlistHostOnly;
 
   void start({
@@ -77,11 +77,11 @@ class ListeningRoomSession extends ChangeNotifier {
     _participantIds = const [];
     _participantNames = const {};
     _privateRoom = privateRoom;
-    _pauseHostOnly = pauseHostOnly;
-    _seekHostOnly = seekHostOnly;
-    _shuffleHostOnly = shuffleHostOnly;
-    _repeatHostOnly = repeatHostOnly;
-    _skipHostOnly = skipHostOnly;
+    _pauseHostOnly = true;
+    _seekHostOnly = true;
+    _shuffleHostOnly = true;
+    _repeatHostOnly = true;
+    _skipHostOnly = true;
     _playlistHostOnly = playlistHostOnly;
     _selectedPlaylists = List<String>.from(selectedPlaylists);
     _queue = List<Track>.from(queue);
@@ -98,11 +98,11 @@ class ListeningRoomSession extends ChangeNotifier {
     required bool playlistHostOnly,
   }) {
     _privateRoom = privateRoom;
-    _pauseHostOnly = pauseHostOnly;
-    _seekHostOnly = seekHostOnly;
-    _shuffleHostOnly = shuffleHostOnly;
-    _repeatHostOnly = repeatHostOnly;
-    _skipHostOnly = skipHostOnly;
+    _pauseHostOnly = true;
+    _seekHostOnly = true;
+    _shuffleHostOnly = true;
+    _repeatHostOnly = true;
+    _skipHostOnly = true;
     _playlistHostOnly = playlistHostOnly;
     notifyListeners();
   }
@@ -136,22 +136,22 @@ class ListeningRoomSession extends ChangeNotifier {
         listEquals(_participantIds, ids) &&
         mapEquals(_participantNames, names) &&
         _privateRoom == privateRoom &&
-        _pauseHostOnly == pauseHostOnly &&
-        _seekHostOnly == seekHostOnly &&
-        _shuffleHostOnly == shuffleHostOnly &&
-        _repeatHostOnly == repeatHostOnly &&
-        _skipHostOnly == skipHostOnly &&
+        _pauseHostOnly &&
+        _seekHostOnly &&
+        _shuffleHostOnly &&
+        _repeatHostOnly &&
+        _skipHostOnly &&
         _playlistHostOnly == playlistHostOnly;
     if (unchanged) return;
     _listeners = nextListeners;
     _participantIds = ids;
     _participantNames = names;
     _privateRoom = privateRoom;
-    _pauseHostOnly = pauseHostOnly;
-    _seekHostOnly = seekHostOnly;
-    _shuffleHostOnly = shuffleHostOnly;
-    _repeatHostOnly = repeatHostOnly;
-    _skipHostOnly = skipHostOnly;
+    _pauseHostOnly = true;
+    _seekHostOnly = true;
+    _shuffleHostOnly = true;
+    _repeatHostOnly = true;
+    _skipHostOnly = true;
     _playlistHostOnly = playlistHostOnly;
     notifyListeners();
   }

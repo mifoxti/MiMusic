@@ -199,7 +199,11 @@ class _DockMiniLayer extends StatelessWidget {
                   guestLocalPauseActive:
                       audioPlayerService.guestLocalPauseActive,
                   onTap: () {},
-                  onPlayPause: () => audioPlayerService.toggleGuestLocalPause(),
+                  onPlayPause:
+                      ListeningRoomSession.instance.active &&
+                          !ListeningRoomSession.instance.canControlPause
+                      ? null
+                      : () => audioPlayerService.togglePlayPause(),
                 ),
               ),
             ),

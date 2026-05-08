@@ -37,11 +37,6 @@ class ListeningRoomPage extends StatefulWidget {
 class _ListeningRoomPageState extends State<ListeningRoomPage>
     with TickerProviderStateMixin {
   _RoomType _roomType = _RoomType.private;
-  _PermissionMode _pauseControl = _PermissionMode.hostOnly;
-  _PermissionMode _seekControl = _PermissionMode.hostOnly;
-  _PermissionMode _shuffleControl = _PermissionMode.hostOnly;
-  _PermissionMode _repeatControl = _PermissionMode.hostOnly;
-  _PermissionMode _skipControl = _PermissionMode.hostOnly;
   _PermissionMode _playlistControl = _PermissionMode.hostOnly;
 
   final Set<int> _selectedFriendIds = {};
@@ -189,7 +184,9 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
   }
 
   void _clearSelectionVisibleTracks() {
-    final visible = _visibleTracksForCurrentTab().map((e) => e.assetPath).toSet();
+    final visible = _visibleTracksForCurrentTab()
+        .map((e) => e.assetPath)
+        .toSet();
     if (visible.isEmpty) return;
     setState(() {
       _selectedTrackPaths.removeWhere(visible.contains);
@@ -198,8 +195,9 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
 
   /// Очередь комнаты: выбранные треки + текущий трек хоста (если его не выбрали вручную).
   List<Track> _queueTracksFromSelection() {
-    final selected =
-        _allTracks.where((e) => _selectedTrackPaths.contains(e.assetPath)).toList();
+    final selected = _allTracks
+        .where((e) => _selectedTrackPaths.contains(e.assetPath))
+        .toList();
     final current = widget.audioPlayerService?.currentTrack;
     if (current == null) return selected;
     final exists = selected.any((t) => t.assetPath == current.assetPath);
@@ -220,15 +218,17 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
     }
     final nick = acc.nickname.trim().isEmpty ? 'user' : acc.nickname;
     final queueTrackKeys = queue
-        .map((t) => TracksApi().trackKeyForPaths(
-              assetPath: t.assetPath,
-              audioFilePath: t.audioFilePath,
-            ))
+        .map(
+          (t) => TracksApi().trackKeyForPaths(
+            assetPath: t.assetPath,
+            audioFilePath: t.audioFilePath,
+          ),
+        )
         .toList();
     if (service != null && queue.isNotEmpty) {
       final current = service.currentTrack;
-      final currentInQueue = current != null &&
-          queue.any((t) => t.assetPath == current.assetPath);
+      final currentInQueue =
+          current != null && queue.any((t) => t.assetPath == current.assetPath);
       if (!currentInQueue) {
         await service.playTrack(
           queue.first,
@@ -252,7 +252,9 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
             assetPath: current.assetPath,
             audioFilePath: current.audioFilePath,
           );
-    final pos = service == null ? 0.0 : service.position.inMilliseconds / 1000.0;
+    final pos = service == null
+        ? 0.0
+        : service.position.inMilliseconds / 1000.0;
     final playing = service?.isPlaying ?? false;
     final shuffleEnabled = service?.shuffleEnabled ?? false;
     final repeatMode = service?.roomRepeatModeWire ?? 'off';
@@ -267,18 +269,18 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
         playing: playing,
         shuffleEnabled: shuffleEnabled,
         repeatMode: repeatMode,
-        controlPauseHostOnly: _pauseControl == _PermissionMode.hostOnly,
-        controlSeekHostOnly: _seekControl == _PermissionMode.hostOnly,
-        controlShuffleHostOnly: _shuffleControl == _PermissionMode.hostOnly,
-        controlRepeatHostOnly: _repeatControl == _PermissionMode.hostOnly,
-        controlSkipHostOnly: _skipControl == _PermissionMode.hostOnly,
+        controlPauseHostOnly: true,
+        controlSeekHostOnly: true,
+        controlShuffleHostOnly: true,
+        controlRepeatHostOnly: true,
+        controlSkipHostOnly: true,
         controlPlaylistHostOnly: _playlistControl == _PermissionMode.hostOnly,
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.t('common.errorLoading'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.t('common.errorLoading'))));
       return;
     }
     final playlistTitles = _playlists
@@ -292,18 +294,21 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
       hostUsername: nick,
       currentUsername: nick,
       privateRoom: _roomType == _RoomType.private,
-      pauseHostOnly: _pauseControl == _PermissionMode.hostOnly,
-      seekHostOnly: _seekControl == _PermissionMode.hostOnly,
-      shuffleHostOnly: _shuffleControl == _PermissionMode.hostOnly,
-      repeatHostOnly: _repeatControl == _PermissionMode.hostOnly,
-      skipHostOnly: _skipControl == _PermissionMode.hostOnly,
+      pauseHostOnly: true,
+      seekHostOnly: true,
+      shuffleHostOnly: true,
+      repeatHostOnly: true,
+      skipHostOnly: true,
       playlistHostOnly: _playlistControl == _PermissionMode.hostOnly,
       selectedPlaylists: playlistTitles,
       queue: queue,
     );
     if (service != null) {
       try {
-        await ColistenController.instance.connectHost(roomId: roomId, audio: service);
+        await ColistenController.instance.connectHost(
+          roomId: roomId,
+          audio: service,
+        );
       } catch (_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -360,21 +365,32 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _sectionTitle(context, isEn ? '1. Room type' : '1. Тип комнаты'),
+                  _sectionTitle(
+                    context,
+                    isEn ? '1. Room type' : '1. Тип комнаты',
+                  ),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
                       ChoiceChip(
-                        label: Text(isEn ? 'Private (friends only)' : 'Приватная (только друзья)'),
+                        label: Text(
+                          isEn
+                              ? 'Private (friends only)'
+                              : 'Приватная (только друзья)',
+                        ),
                         selected: _roomType == _RoomType.private,
                         onSelected: (v) {
                           if (v) setState(() => _roomType = _RoomType.private);
                         },
                       ),
                       ChoiceChip(
-                        label: Text(isEn ? 'Open (anyone can join)' : 'Открытая (вступает кто хочет)'),
+                        label: Text(
+                          isEn
+                              ? 'Open (anyone can join)'
+                              : 'Открытая (вступает кто хочет)',
+                        ),
                         selected: _roomType == _RoomType.open,
                         onSelected: (v) {
                           if (v) setState(() => _roomType = _RoomType.open);
@@ -391,41 +407,26 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _sectionTitle(context, isEn ? '2. Control permissions' : '2. Тип управления'),
+                  _sectionTitle(
+                    context,
+                    isEn ? '2. Control permissions' : '2. Тип управления',
+                  ),
                   const SizedBox(height: 10),
-                  _permissionRow(
-                    context,
-                    label: isEn ? 'Pause / resume' : 'Пауза / продолжить',
-                    value: _pauseControl,
-                    onChanged: (v) => setState(() => _pauseControl = v),
+                  Text(
+                    isEn
+                        ? 'Guests can only edit the playback queue when allowed below. Playback, seeking, shuffle, repeat, and track skipping stay host-only.'
+                        : 'Гости могут только редактировать очередь воспроизведения, если это разрешено ниже. Проигрывание, перемотка, шафл, повтор и переключение треков доступны только хосту.',
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 13,
+                    ),
                   ),
+                  const SizedBox(height: 8),
                   _permissionRow(
                     context,
-                    label: isEn ? 'Seek progress bar' : 'Перемотка трека',
-                    value: _seekControl,
-                    onChanged: (v) => setState(() => _seekControl = v),
-                  ),
-                  _permissionRow(
-                    context,
-                    label: isEn ? 'Shuffle queue' : 'Перемешивание очереди',
-                    value: _shuffleControl,
-                    onChanged: (v) => setState(() => _shuffleControl = v),
-                  ),
-                  _permissionRow(
-                    context,
-                    label: isEn ? 'Repeat mode' : 'Режим повтора',
-                    value: _repeatControl,
-                    onChanged: (v) => setState(() => _repeatControl = v),
-                  ),
-                  _permissionRow(
-                    context,
-                    label: isEn ? 'Skip tracks' : 'Переключение треков',
-                    value: _skipControl,
-                    onChanged: (v) => setState(() => _skipControl = v),
-                  ),
-                  _permissionRow(
-                    context,
-                    label: isEn ? 'Edit playlist queue' : 'Редактирование очереди',
+                    label: isEn
+                        ? 'Edit playlist queue'
+                        : 'Редактирование очереди',
                     value: _playlistControl,
                     onChanged: (v) => setState(() => _playlistControl = v),
                   ),
@@ -438,12 +439,20 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _sectionTitle(context, isEn ? '3. Invite friends' : '3. Приглашение друзей'),
+                  _sectionTitle(
+                    context,
+                    isEn ? '3. Invite friends' : '3. Приглашение друзей',
+                  ),
                   const SizedBox(height: 10),
                   _serverFriends.isEmpty
                       ? Text(
-                          isEn ? 'Log in and add friends to invite them.' : 'Войдите и добавьте друзей для приглашений.',
-                          style: TextStyle(color: palette.textSecondary, fontSize: 13),
+                          isEn
+                              ? 'Log in and add friends to invite them.'
+                              : 'Войдите и добавьте друзей для приглашений.',
+                          style: TextStyle(
+                            color: palette.textSecondary,
+                            fontSize: 13,
+                          ),
                         )
                       : Wrap(
                           spacing: 8,
@@ -474,7 +483,10 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _sectionTitle(context, isEn ? '4. Queue content' : '4. Наполнение очереди'),
+                  _sectionTitle(
+                    context,
+                    isEn ? '4. Queue content' : '4. Наполнение очереди',
+                  ),
                   const SizedBox(height: 10),
                   Text(
                     isEn ? 'Playlists' : 'Плейлисты',
@@ -548,9 +560,15 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _queueTracksFromSelection().isEmpty ? null : _createRoom,
+              onPressed: _queueTracksFromSelection().isEmpty
+                  ? null
+                  : _createRoom,
               icon: const Icon(Icons.headphones_rounded),
-              label: Text(isEn ? 'Create room and open player' : 'Создать комнату и открыть плеер'),
+              label: Text(
+                isEn
+                    ? 'Create room and open player'
+                    : 'Создать комнату и открыть плеер',
+              ),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
@@ -571,9 +589,7 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
       decoration: BoxDecoration(
         color: palette.cardBackground.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        border: Border.all(
-          color: palette.textPrimary.withValues(alpha: 0.12),
-        ),
+        border: Border.all(color: palette.textPrimary.withValues(alpha: 0.12)),
       ),
       child: TabBar(
         controller: controller,
@@ -611,8 +627,8 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
         child: Text(
           mineTab
               ? (isEn
-                  ? 'All playlists are on the «Liked» tab, or create a new one.'
-                  : 'Все плейлисты на вкладке «С лайком» или создайте новый.')
+                    ? 'All playlists are on the «Liked» tab, or create a new one.'
+                    : 'Все плейлисты на вкладке «С лайком» или создайте новый.')
               : context.t('listeningRoom.likedPlaylistsHint'),
           textAlign: TextAlign.center,
           style: TextStyle(color: palette.textMuted, fontSize: 13),
@@ -675,7 +691,9 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
             ),
             Expanded(
               child: TextButton(
-                onPressed: visible.isEmpty ? null : _clearSelectionVisibleTracks,
+                onPressed: visible.isEmpty
+                    ? null
+                    : _clearSelectionVisibleTracks,
                 child: Text(context.t('listeningRoom.clearTrackSelection')),
               ),
             ),
@@ -723,11 +741,15 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
             fillColor: palette.cardBackground.withValues(alpha: 0.35),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: palette.textMuted.withValues(alpha: 0.35)),
+              borderSide: BorderSide(
+                color: palette.textMuted.withValues(alpha: 0.35),
+              ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: palette.textMuted.withValues(alpha: 0.35)),
+              borderSide: BorderSide(
+                color: palette.textMuted.withValues(alpha: 0.35),
+              ),
             ),
           ),
         ),
@@ -742,7 +764,9 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
             ),
             Expanded(
               child: TextButton(
-                onPressed: visible.isEmpty ? null : _clearSelectionVisibleTracks,
+                onPressed: visible.isEmpty
+                    ? null
+                    : _clearSelectionVisibleTracks,
                 child: Text(context.t('listeningRoom.clearTrackSelection')),
               ),
             ),
