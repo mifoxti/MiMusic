@@ -11,6 +11,7 @@ import '../../core/l10n/app_localization.dart';
 import '../../core/network/colisten_api.dart';
 import '../../core/network/friends_api.dart';
 import '../../core/network/tracks_api.dart';
+import '../../core/player/full_player_visibility.dart';
 import '../../core/player/player_dock_host.dart';
 import '../../core/social/colisten_controller.dart';
 import '../../core/social/listening_room_session.dart';
@@ -57,10 +58,14 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
   String _trackSearchQuery = '';
 
   List<FriendRemoteDto> _serverFriends = const [];
+  bool _creatingRoom = false;
 
   @override
   void initState() {
     super.initState();
+    if (FullPlayerVisibility.open.value) {
+      PlayerDockHost.collapse();
+    }
     _playlistTabController = TabController(length: 2, vsync: this);
     _trackTabController = TabController(length: 2, vsync: this);
     _playlistTabController.addListener(_tabIndexListener);
@@ -205,135 +210,215 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
     return [current, ...selected];
   }
 
-  Future<void> _createRoom() async {
-    final queue = _queueTracksFromSelection();
-    final service = widget.audioPlayerService;
-    final acc = await AuthSessionStore.readAccount();
-    if (acc == null || acc.sessionToken.trim().isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.t('friends.loginToFriend'))),
+  Track _primaryTrackForRoom(
+    AudioPlayerService? service,
+    List<Track> queue,
+  ) {
+    final current = service?.currentTrack;
+    if (current != null &&
+        queue.any((t) => t.assetPath == current.assetPath)) {
+      return current;
+    }
+    return queue.first;
+  }
+
+  Future<void> _syncLocalPlayerQueue(
+    AudioPlayerService service,
+    List<Track> queue,
+  ) async {
+    if (queue.isEmpty) return;
+    final current = service.currentTrack;
+    final currentInQueue =
+        current != null && queue.any((t) => t.assetPath == current.assetPath);
+    if (!currentInQueue) {
+      await service.playTrack(
+        queue.first,
+        queue: queue,
+        leaveListeningRoomSession: false,
+        autoPlay: service.isPlaying,
       );
       return;
     }
-    final nick = acc.nickname.trim().isEmpty ? 'user' : acc.nickname;
-    final queueTrackKeys = queue
-        .map(
-          (t) => TracksApi().trackKeyForPaths(
-            assetPath: t.assetPath,
-            audioFilePath: t.audioFilePath,
-          ),
-        )
-        .toList();
-    if (service != null && queue.isNotEmpty) {
-      final current = service.currentTrack;
-      final currentInQueue =
-          current != null && queue.any((t) => t.assetPath == current.assetPath);
-      if (!currentInQueue) {
-        await service.playTrack(
-          queue.first,
-          queue: queue,
-          leaveListeningRoomSession: false,
+    await service.replaceQueueFromRoomSync(queue);
+  }
+
+  Future<void> _bootstrapCreatedRoom({
+    required String roomId,
+    required List<Track> queue,
+    required AudioPlayerService? service,
+    required List<int> inviteUserIds,
+  }) async {
+    if (!ListeningRoomSession.instance.active) return;
+    if (service == null) {
+      debugPrint('[colisten] bootstrap skipped: no AudioPlayerService');
+      return;
+    }
+    try {
+      await ColistenController.instance
+          .connectHost(roomId: roomId, audio: service)
+          .timeout(const Duration(seconds: 12));
+      debugPrint('[colisten] bootstrap connectHost ok room=$roomId');
+    } catch (e) {
+      debugPrint('[colisten] bootstrap connectHost failed room=$roomId: $e');
+      return;
+    }
+    if (queue.isNotEmpty) {
+      try {
+        await _syncLocalPlayerQueue(service, queue).timeout(
+          const Duration(seconds: 12),
         );
-      } else {
-        await service.replaceQueueFromRoomSync(queue);
+        ColistenController.instance.pushHostState(service);
+      } catch (e) {
+        debugPrint('[colisten] bootstrap queue sync failed room=$roomId: $e');
       }
     }
-    final current = service?.currentTrack;
-    final tid = current == null
-        ? null
-        : TracksApi().resolveServerTrackId(
-            assetPath: current.assetPath,
-            audioFilePath: current.audioFilePath,
-          );
-    final trackKey = current == null
-        ? null
-        : TracksApi().trackKeyForPaths(
-            assetPath: current.assetPath,
-            audioFilePath: current.audioFilePath,
-          );
-    final pos = service == null
-        ? 0.0
-        : service.position.inMilliseconds / 1000.0;
-    final playing = service?.isPlaying ?? false;
-    final shuffleEnabled = service?.shuffleEnabled ?? false;
-    final repeatMode = service?.roomRepeatModeWire ?? 'off';
-    String roomId;
+    if (inviteUserIds.isEmpty) return;
     try {
-      roomId = await ColistenApi().createRoom(
-        isOpen: _roomType == _RoomType.open,
-        trackId: tid,
-        trackKey: trackKey,
-        queueTrackKeys: queueTrackKeys,
-        positionSeconds: pos,
-        playing: playing,
-        shuffleEnabled: shuffleEnabled,
-        repeatMode: repeatMode,
-        controlPauseHostOnly: true,
-        controlSeekHostOnly: true,
-        controlShuffleHostOnly: true,
-        controlRepeatHostOnly: true,
-        controlSkipHostOnly: true,
-        controlPlaylistHostOnly: _playlistControl == _PermissionMode.hostOnly,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.t('common.errorLoading'))));
-      return;
+      await ColistenApi()
+          .inviteUsers(roomId: roomId, userIds: inviteUserIds)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('[colisten] bootstrap invite failed room=$roomId: $e');
     }
-    final playlistTitles = _playlists
-        .where((p) => _selectedPlaylistIds.contains(p.id))
-        .map((p) => p.title)
-        .toList();
-    final listeners = <String>[nick];
-    ListeningRoomSession.instance.start(
-      roomTitle: _roomType == _RoomType.private ? 'Private room' : 'Open room',
-      listeners: listeners,
-      hostUsername: nick,
-      currentUsername: nick,
-      privateRoom: _roomType == _RoomType.private,
-      pauseHostOnly: true,
-      seekHostOnly: true,
-      shuffleHostOnly: true,
-      repeatHostOnly: true,
-      skipHostOnly: true,
-      playlistHostOnly: _playlistControl == _PermissionMode.hostOnly,
-      selectedPlaylists: playlistTitles,
-      queue: queue,
-    );
-    if (service != null) {
-      try {
-        await ColistenController.instance.connectHost(
-          roomId: roomId,
-          audio: service,
-        );
-      } catch (_) {
+  }
+
+  Future<void> _createRoom() async {
+    if (_creatingRoom) return;
+    _creatingRoom = true;
+    if (mounted) setState(() {});
+
+    try {
+      final queue = _queueTracksFromSelection();
+      if (queue.isEmpty) return;
+
+      final service = widget.audioPlayerService;
+      final acc = await AuthSessionStore.readAccount();
+      if (acc == null || acc.sessionToken.trim().isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.t('common.errorLoading'))),
+          SnackBar(content: Text(context.t('friends.loginToFriend'))),
         );
+        return;
       }
-    }
-    if (_selectedFriendIds.isNotEmpty) {
-      try {
-        await ColistenApi().inviteUsers(
+
+      final nick = acc.nickname.trim().isEmpty ? 'user' : acc.nickname;
+      final primary = _primaryTrackForRoom(service, queue);
+      final queueTrackKeys = queue
+          .map(
+            (t) => TracksApi().trackKeyForPaths(
+              assetPath: t.assetPath,
+              audioFilePath: t.audioFilePath,
+            ),
+          )
+          .toList();
+      final tid = TracksApi().resolveServerTrackId(
+        assetPath: primary.assetPath,
+        audioFilePath: primary.audioFilePath,
+      );
+      final trackKey = TracksApi().trackKeyForPaths(
+        assetPath: primary.assetPath,
+        audioFilePath: primary.audioFilePath,
+      );
+      final pos = service == null
+          ? 0.0
+          : service.position.inMilliseconds / 1000.0;
+      final playing = service?.isPlaying ?? false;
+      final shuffleEnabled = service?.shuffleEnabled ?? false;
+      final repeatMode = service?.roomRepeatModeWire ?? 'off';
+
+      final roomId = await ColistenApi()
+          .createRoom(
+            isOpen: _roomType == _RoomType.open,
+            trackId: tid,
+            trackKey: trackKey,
+            queueTrackKeys: queueTrackKeys,
+            positionSeconds: pos,
+            playing: playing,
+            shuffleEnabled: shuffleEnabled,
+            repeatMode: repeatMode,
+            controlPauseHostOnly: true,
+            controlSeekHostOnly: true,
+            controlShuffleHostOnly: true,
+            controlRepeatHostOnly: true,
+            controlSkipHostOnly: true,
+            controlPlaylistHostOnly:
+                _playlistControl == _PermissionMode.hostOnly,
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final playlistTitles = _playlists
+          .where((p) => _selectedPlaylistIds.contains(p.id))
+          .map((p) => p.title)
+          .toList();
+      ListeningRoomSession.instance.start(
+        roomTitle: _roomType == _RoomType.private ? 'Private room' : 'Open room',
+        listeners: <String>[nick],
+        hostUsername: nick,
+        currentUsername: nick,
+        privateRoom: _roomType == _RoomType.private,
+        pauseHostOnly: true,
+        seekHostOnly: true,
+        shuffleHostOnly: true,
+        repeatHostOnly: true,
+        skipHostOnly: true,
+        playlistHostOnly: _playlistControl == _PermissionMode.hostOnly,
+        selectedPlaylists: playlistTitles,
+        queue: queue,
+      );
+
+      final inviteIds = _selectedFriendIds.toList();
+      if (!mounted) return;
+      _creatingRoom = false;
+      setState(() {});
+      Navigator.of(context).pop();
+      PlayerDockHost.expand();
+
+      unawaited(
+        _bootstrapCreatedRoom(
           roomId: roomId,
-          userIds: _selectedFriendIds.toList(),
-        );
-      } catch (_) {}
+          queue: queue,
+          service: service,
+          inviteUserIds: inviteIds,
+        ),
+      );
+    } on TimeoutException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('common.errorLoading'))),
+      );
+    } catch (e) {
+      debugPrint('[colisten] create room failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('common.errorLoading'))),
+      );
+    } finally {
+      _creatingRoom = false;
+      if (mounted) setState(() {});
     }
-    if (!mounted) return;
-    Navigator.of(context).pop();
-    PlayerDockHost.expand();
+  }
+
+  void _leaveWizard() {
+    if (FullPlayerVisibility.open.value) {
+      PlayerDockHost.collapse();
+    }
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     final isEn = Localizations.localeOf(context).languageCode == 'en';
-    return Container(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _leaveWizard();
+      },
+      child: Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -353,7 +438,7 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded),
             tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-            onPressed: () => Navigator.maybePop(context),
+            onPressed: _leaveWizard,
           ),
           title: Text(isEn ? 'Listening together' : 'Совместное прослушивание'),
         ),
@@ -560,10 +645,16 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _queueTracksFromSelection().isEmpty
+              onPressed: _queueTracksFromSelection().isEmpty || _creatingRoom
                   ? null
                   : _createRoom,
-              icon: const Icon(Icons.headphones_rounded),
+              icon: _creatingRoom
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.headphones_rounded),
               label: Text(
                 isEn
                     ? 'Create room and open player'
@@ -576,6 +667,7 @@ class _ListeningRoomPageState extends State<ListeningRoomPage>
           ],
         ),
       ),
+    ),
     );
   }
 

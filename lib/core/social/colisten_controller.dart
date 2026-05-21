@@ -28,7 +28,11 @@ class ColistenController {
   StreamSubscription<dynamic>? _sub;
   Timer? _hostTimer;
   Timer? _hostSnapshotTimer;
-  Timer? _guestTimer;
+  Timer? _guestPollTimer;
+  Timer? _guestApplyDebounceTimer;
+  Map<String, dynamic>? _guestPendingApplyState;
+  int _guestPendingApplyGeneration = 0;
+  bool? _guestLastKnownPlaying;
   Timer? _guestSnapshotTimer;
   void Function()? _hostListener;
   AudioPlayerService? _hostAudio;
@@ -37,29 +41,54 @@ class ColistenController {
   Map<String, dynamic>? _guestPendingCommandPayload;
   int _hostLastRestSyncAtMs = 0;
   int _hostLastWsSyncAtMs = 0;
+  int _hostLastPlayPausePushAtMs = 0;
+  bool? _hostLastPlayPausePushedPlaying;
+  static const int _guestMaxInterpolationMs = 1500;
+  static const int _guestWsSnapshotSilenceMs = 20000;
+  static const int _guestPollIntervalMs = 800;
+  static const int _guestPollWsSilenceMs = 1200;
+  static const int _guestForcedRestSyncMs = 1500;
+  bool _guestBootstrapComplete = false;
+  Map<String, dynamic>? _guestCoalescedState;
+  bool _guestCoalesceFlushScheduled = false;
+  Timer? _guestForcedRestTimer;
+  Map<String, dynamic>? _guestPendingInitialState;
+  int _guestPendingInitialVersion = 0;
+  final List<String> _guestWsBootstrapBuffer = <String>[];
+  bool _guestWsBootstrapDone = false;
+  Future<void> _guestWsApplyChain = Future<void>.value();
+  Future<void> _guestTransportApplyChain = Future<void>.value();
   String? _hostLastSentSignature;
   int _connectionGeneration = 0;
   int _hostAppliedRoomVersion = 0;
   int _hostOutboundBlockers = 0;
   int _hostSuppressOutboundUntilMs = 0;
+  int _hostListenerMutedUntilMs = 0;
+  Timer? _hostRestDebounceTimer;
+  Map<String, dynamic>? _hostRestDebouncePayload;
+  AudioPlayerService? _hostRestDebounceAudio;
+  int _guestLastWsStateAtMs = 0;
+  int _guestHostPausedAtMs = 0;
+  int _guestWsConnectedAtMs = 0;
   Future<void> _hostWsApplyChain = Future<void>.value();
   Future<void> _hostRemoteCommandChain = Future<void>.value();
   int _hostRemoteCommandSerial = 0;
   int _hostLocalActionSerial = 0;
   Map<String, dynamic>? _hostRemoteAuthoritativeOverride;
   int _hostRemoteAuthoritativeOverrideUntilMs = 0;
+  Future<void>? _connectInFlight;
+  bool _guestBootstrapApplyInFlight = false;
+  Map<String, dynamic>? _guestDeferredRoomState;
 
   bool _isHost = false;
-  int _guestLastVersion = 0;
+  int _guestLastSeenVersion = 0;
   int _guestAppliedVersion = 0;
-  Future<void> _guestApplyChain = Future<void>.value();
+  int _guestLastControlSeq = 0;
   double _guestTargetPositionSeconds = 0;
   bool _guestTargetPlaying = false;
   int _guestTargetAnchorLocalMs = 0;
-  int _guestLastTightSeekAtMs = 0;
   bool _guestNeedsInitialHardSync = false;
   bool _guestNeedsFirstRealtimeHardSync = false;
-  bool _guestSnapshotInFlight = false;
   Completer<void>? _guestFirstRealtimeStateCompleter;
   int _lastGuestPlayPauseCommandAtMs = 0;
   int _lastGuestPlayPauseCommandPositionMs = 0;
@@ -67,10 +96,57 @@ class ColistenController {
   bool? _guestPendingPlayPausePlaying;
   int _guestPendingPlayPauseUntilMs = 0;
   int _guestCommandSerial = 0;
+  String? _guestLastAppliedPlaybackSig;
+  double? _guestLastTransportPositionSeconds;
   String? _roomId;
   final Map<int, Track> _trackCache = <int, Track>{};
   final Map<int, String> _participantNameCache = <int, String>{};
   Map<String, Track>? _localTrackCacheByAssetPath;
+
+  bool _guestServerPlayingChanged(bool serverPlaying) =>
+      _guestLastKnownPlaying != serverPlaying;
+
+  bool _guestEngineMatchesServer(bool serverPlaying, AudioPlayerService audio) =>
+      serverPlaying == audio.engineIsPlaying;
+
+  bool _guestEngineDrifted(AudioPlayerService audio) {
+    if (audio.currentTrack == null) return false;
+    if (_guestLastKnownPlaying == null) return false;
+    return !_guestEngineMatchesServer(_guestLastKnownPlaying!, audio);
+  }
+
+  bool _guestNeedsTransportSync(
+    Map<String, dynamic> j,
+    AudioPlayerService audio,
+  ) {
+    final playing = j['playing'] as bool? ?? false;
+    return _guestControlSeqAdvanced(j) ||
+        _guestServerPlayingChanged(playing) ||
+        !_guestEngineMatchesServer(playing, audio);
+  }
+
+  Future<void> _applyGuestServerPlaying(
+    AudioPlayerService audio, {
+    required bool serverPlaying,
+  }) async {
+    if (_guestEngineMatchesServer(serverPlaying, audio)) {
+      _guestLastKnownPlaying = serverPlaying;
+      return;
+    }
+    if (serverPlaying) {
+      await audio.playFromRoomSync();
+    } else {
+      await audio.pauseFromRoomSync();
+      _guestHostPausedAtMs = DateTime.now().millisecondsSinceEpoch;
+    }
+    if (_guestEngineMatchesServer(serverPlaying, audio)) {
+      _guestLastKnownPlaying = serverPlaying;
+    } else {
+      _log(
+        'guest transport engine drift room=$_roomId wantPlaying=$serverPlaying engine=${audio.engineIsPlaying}',
+      );
+    }
+  }
 
   static String wsUrl(String roomId, String token) {
     final b = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -85,6 +161,15 @@ class ColistenController {
     debugPrint('[colisten] $message');
   }
 
+  /// Сервер (kotlinx.serialization) может не слать `type` при encodeDefaults=false.
+  static bool _isRoomStatePayload(Map<String, dynamic> j) {
+    final type = (j['type'] as String?)?.trim() ?? '';
+    if (type == 'state') return true;
+    if (type.isNotEmpty) return false;
+    return j['stateVersion'] != null &&
+        (j['roomId'] != null || j['trackId'] != null || j['trackKey'] != null);
+  }
+
   bool get isConnected => _channel != null;
 
   Future<void> disconnect() async {
@@ -92,8 +177,15 @@ class ColistenController {
     _hostTimer = null;
     _hostSnapshotTimer?.cancel();
     _hostSnapshotTimer = null;
-    _guestTimer?.cancel();
-    _guestTimer = null;
+    _guestPollTimer?.cancel();
+    _guestPollTimer = null;
+    _guestForcedRestTimer?.cancel();
+    _guestForcedRestTimer = null;
+    _guestCoalescedState = null;
+    _guestCoalesceFlushScheduled = false;
+    _guestApplyDebounceTimer?.cancel();
+    _guestApplyDebounceTimer = null;
+    _guestPendingApplyState = null;
     _guestSnapshotTimer?.cancel();
     _guestSnapshotTimer = null;
     if (_hostListener != null && _hostAudio != null) {
@@ -110,6 +202,14 @@ class ColistenController {
     _hostAppliedRoomVersion = 0;
     _hostOutboundBlockers = 0;
     _hostSuppressOutboundUntilMs = 0;
+    _hostListenerMutedUntilMs = 0;
+    _hostRestDebounceTimer?.cancel();
+    _hostRestDebounceTimer = null;
+    _hostRestDebouncePayload = null;
+    _hostRestDebounceAudio = null;
+    _guestLastWsStateAtMs = 0;
+    _guestHostPausedAtMs = 0;
+    _guestWsConnectedAtMs = 0;
     _hostWsApplyChain = Future<void>.value();
     _hostRemoteCommandChain = Future<void>.value();
     _hostRemoteCommandSerial = 0;
@@ -117,21 +217,23 @@ class ColistenController {
     _hostRemoteAuthoritativeOverride = null;
     _hostRemoteAuthoritativeOverrideUntilMs = 0;
     _connectionGeneration++;
-    await _sub?.cancel();
+    try {
+      await _sub?.cancel().timeout(const Duration(seconds: 2));
+    } catch (_) {}
     _sub = null;
-    await _channel?.sink.close();
+    try {
+      await _channel?.sink.close().timeout(const Duration(seconds: 2));
+    } catch (_) {}
     _channel = null;
     _isHost = false;
-    _guestLastVersion = 0;
+    _guestLastSeenVersion = 0;
     _guestAppliedVersion = 0;
-    _guestApplyChain = Future<void>.value();
+    _guestLastControlSeq = 0;
     _guestTargetPositionSeconds = 0;
     _guestTargetPlaying = false;
     _guestTargetAnchorLocalMs = 0;
-    _guestLastTightSeekAtMs = 0;
     _guestNeedsInitialHardSync = false;
     _guestNeedsFirstRealtimeHardSync = false;
-    _guestSnapshotInFlight = false;
     _guestFirstRealtimeStateCompleter = null;
     _lastGuestPlayPauseCommandAtMs = 0;
     _lastGuestPlayPauseCommandPositionMs = 0;
@@ -139,6 +241,18 @@ class ColistenController {
     _guestPendingPlayPausePlaying = null;
     _guestPendingPlayPauseUntilMs = 0;
     _guestCommandSerial = 0;
+    _guestLastAppliedPlaybackSig = null;
+    _guestLastTransportPositionSeconds = null;
+    _guestLastKnownPlaying = null;
+    _guestWsBootstrapBuffer.clear();
+    _guestWsBootstrapDone = false;
+    _guestBootstrapComplete = false;
+    _guestPendingInitialState = null;
+    _guestPendingInitialVersion = 0;
+    _guestBootstrapApplyInFlight = false;
+    _guestDeferredRoomState = null;
+    _guestWsApplyChain = Future<void>.value();
+    _guestTransportApplyChain = Future<void>.value();
     _roomId = null;
     _trackCache.clear();
     _participantNameCache.clear();
@@ -150,63 +264,87 @@ class ColistenController {
     required String roomId,
     required AudioPlayerService audio,
   }) async {
+    while (_connectInFlight != null) {
+      try {
+        await _connectInFlight;
+      } catch (_) {}
+    }
+    final connectCompleter = Completer<void>();
+    _connectInFlight = connectCompleter.future;
+    try {
+      await _connectGuestImpl(roomId: roomId, audio: audio);
+    } finally {
+      if (!connectCompleter.isCompleted) connectCompleter.complete();
+      if (identical(_connectInFlight, connectCompleter.future)) {
+        _connectInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _connectGuestImpl({
+    required String roomId,
+    required AudioPlayerService audio,
+  }) async {
+    if (!_isHost &&
+        _roomId == roomId &&
+        _channel != null &&
+        _guestBootstrapComplete &&
+        ListeningRoomSession.instance.active) {
+      _log('guest reconnect skipped already room=$roomId');
+      await forceGuestSnapshotSync(audio);
+      return;
+    }
     await disconnect();
-    final generation = ++_connectionGeneration;
+    if (!ListeningRoomSession.instance.active) return;
+    final generation = _connectionGeneration;
     final acc = await AuthSessionStore.readAccount();
     final token = acc?.sessionToken.trim() ?? '';
     if (token.isEmpty) throw StateError('Not logged in');
     _isHost = false;
     _roomId = roomId;
-    _guestLastVersion = 0;
+    _guestLastSeenVersion = 0;
     _guestNeedsInitialHardSync = true;
     _guestNeedsFirstRealtimeHardSync = true;
     _guestFirstRealtimeStateCompleter = Completer<void>();
     ListeningRoomSession.instance.setJoining(true);
-    _log('guest connect start room=$roomId');
+    _log('guest connect start room=$roomId gen=$generation');
     var initialBootstrapOk = false;
+    try {
+    _guestWsBootstrapDone = false;
+    _guestBootstrapComplete = false;
+    _guestWsBootstrapBuffer.clear();
     final uri = Uri.parse(wsUrl(roomId, token));
     _channel = WebSocketChannel.connect(uri);
+    _guestWsConnectedAtMs = DateTime.now().millisecondsSinceEpoch;
+    // Подписка до ready: иначе теряем snapshot сразу после join на сервере.
     _sub = _channel!.stream.listen(
       (raw) {
-        if (raw is! String) return;
-        _onGuestMessage(raw, audio);
+        if (raw is! String) {
+          _log('guest ws recv non-string room=$roomId type=${raw.runtimeType}');
+          return;
+        }
+        if (!_guestWsBootstrapDone) {
+          _bufferGuestWsDuringBootstrap(raw, roomId);
+          return;
+        }
+        _enqueueGuestWsMessage(raw, audio, generation);
       },
       onError: (Object e, StackTrace st) {
         _log('guest ws error room=$roomId error=$e');
+        _scheduleGuestWsReconnect(roomId, audio, generation);
       },
       onDone: () {
         _log('guest ws done room=$roomId');
+        _scheduleGuestWsReconnect(roomId, audio, generation);
       },
+      cancelOnError: false,
     );
-    _guestTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
-      unawaited(_guestTightSync(audio));
-    });
-    _guestSnapshotTimer = Timer.periodic(const Duration(milliseconds: 700), (
-      _,
-    ) {
-      if (_isHost ||
-          _roomId != roomId ||
-          !ListeningRoomSession.instance.active) {
-        return;
-      }
-      if (_guestSnapshotInFlight) return;
-      _guestSnapshotInFlight = true;
-      unawaited(
-        _refreshGuestSnapshot(
-              roomId,
-              audio,
-              generation: generation,
-              delayMs: 0,
-              forceTrackReload: false,
-              forcePositionSync: false,
-            )
-            .timeout(const Duration(seconds: 3))
-            .catchError(
-              (e) => _log('guest snapshot error room=$roomId error=$e'),
-            )
-            .whenComplete(() => _guestSnapshotInFlight = false),
-      );
-    });
+    try {
+      await _channel!.ready.timeout(const Duration(seconds: 10));
+      _log('guest ws ready room=$roomId');
+    } catch (e) {
+      _log('guest ws ready timeout room=$roomId error=$e');
+    }
     try {
       try {
         final initial = await ColistenApi().getRoomState(roomId);
@@ -214,58 +352,18 @@ class ColistenController {
           'guest initial state room=$roomId v=${initial.stateVersion} trackId=${initial.trackId} key=${initial.trackKey} pos=${initial.positionSeconds.toStringAsFixed(3)} playing=${initial.playing} queue=${initial.queueTrackKeys.length}/${initial.queueTrackIds.length}',
         );
         if (initial.stateVersion > _guestAppliedVersion) {
-          await _applyGuestState(
-            <String, dynamic>{
-              'stateVersion': initial.stateVersion,
-              'isOpen': initial.isOpen,
-              'trackId': initial.trackId,
-              'trackKey': initial.trackKey,
-              'queueTrackIds': initial.queueTrackIds,
-              'queueTrackKeys': initial.queueTrackKeys,
-              'positionSeconds': initial.positionSeconds,
-              'playing': initial.playing,
-              'shuffleEnabled': initial.shuffleEnabled,
-              'repeatMode': initial.repeatMode,
-              'controlPauseHostOnly': initial.controlPauseHostOnly,
-              'controlSeekHostOnly': initial.controlSeekHostOnly,
-              'controlShuffleHostOnly': initial.controlShuffleHostOnly,
-              'controlRepeatHostOnly': initial.controlRepeatHostOnly,
-              'controlSkipHostOnly': initial.controlSkipHostOnly,
-              'controlPlaylistHostOnly': initial.controlPlaylistHostOnly,
-              'participantIds': initial.participantIds,
-              'wallClockMs': initial.wallClockMs,
-            },
-            audio,
-            generation: generation,
-            forceTrackReload: true,
-            forcePositionSync: true,
-          );
+          _guestPendingInitialState = _roomStateMapFromDto(initial);
+          _guestPendingInitialVersion = initial.stateVersion;
+          _guestLastControlSeq = initial.controlSeq;
           initialBootstrapOk = true;
         }
       } catch (_) {}
-      if (!initialBootstrapOk) {
-        await forceGuestSnapshotSync(
-          audio,
-          forceTrackReload: true,
-          forcePositionSync: true,
-        );
-        await _refreshGuestSnapshot(
-          roomId,
-          audio,
-          generation: generation,
-          delayMs: 150,
-          forceTrackReload: true,
-          forcePositionSync: true,
-        );
-        _scheduleGuestPostConnectSnapshots(roomId, audio, generation);
-      } else {
-        _scheduleGuestPostConnectSnapshots(
-          roomId,
-          audio,
-          generation,
-          forcePositionSync: false,
-        );
-      }
+      _finishGuestBootstrap(
+        roomId: roomId,
+        audio: audio,
+        generation: generation,
+        initialBootstrapOk: initialBootstrapOk,
+      );
       final firstRealtime = _guestFirstRealtimeStateCompleter;
       if (firstRealtime != null && !firstRealtime.isCompleted) {
         try {
@@ -274,33 +372,318 @@ class ColistenController {
           );
         } catch (_) {}
       }
+      if (_guestLastWsStateAtMs == 0) {
+        unawaited(
+          _guestPollRoomState(
+            roomId,
+            audio,
+            generation,
+            forceApply: true,
+          ),
+        );
+      }
     } finally {
       ListeningRoomSession.instance.setJoining(false);
     }
+    } catch (e) {
+      _log('guest connect failed room=$roomId gen=$generation error=$e');
+      if (_connectionGeneration == generation && !_isHost) {
+        await disconnect();
+      }
+      rethrow;
+    }
   }
 
-  void _scheduleGuestPostConnectSnapshots(
-    String roomId,
-    AudioPlayerService audio,
-    int generation, {
-    bool forcePositionSync = true,
+  void _bufferGuestWsDuringBootstrap(String raw, String roomId) {
+    _guestWsBootstrapBuffer.add(raw);
+    if (_guestWsBootstrapBuffer.length > 8) {
+      final latest = _latestGuestBootstrapMessage(_guestWsBootstrapBuffer);
+      _guestWsBootstrapBuffer.clear();
+      if (latest != null) {
+        _guestWsBootstrapBuffer.add(latest);
+      }
+    }
+    _log(
+      'guest ws buffered during bootstrap room=$roomId len=${_guestWsBootstrapBuffer.length}',
+    );
+  }
+
+  String? _latestGuestBootstrapMessage(List<String> rawMessages) {
+    String? bestRaw;
+    var bestVersion = -1;
+    var bestControlSeq = -1;
+    for (final raw in rawMessages) {
+      try {
+        final j = jsonDecode(raw) as Map<String, dynamic>;
+        if (!_isRoomStatePayload(j)) continue;
+        final ver = _stateVersionFromJson(j);
+        final cs = _guestControlSeqFrom(j);
+        if (ver > bestVersion ||
+            (ver == bestVersion && cs >= bestControlSeq)) {
+          bestVersion = ver;
+          bestControlSeq = cs;
+          bestRaw = raw;
+        }
+      } catch (_) {}
+    }
+    return bestRaw;
+  }
+
+  void _finishGuestBootstrap({
+    required String roomId,
+    required AudioPlayerService audio,
+    required int generation,
+    required bool initialBootstrapOk,
   }) {
-    // На слабой сети / девайсах первый join/state может быть устаревшим.
-    // Берём несколько контрольных снимков, чтобы гарантированно дойти
-    // до актуального тайминга хоста в первый заход.
-    const delaysMs = <int>[450, 1200, 2300];
-    for (final delay in delaysMs) {
-      unawaited(
-        _refreshGuestSnapshot(
-          roomId,
+    _guestWsBootstrapDone = true;
+    final dropped = _guestWsBootstrapBuffer.length;
+    final latestRaw = _latestGuestBootstrapMessage(_guestWsBootstrapBuffer);
+    _guestWsBootstrapBuffer.clear();
+
+    Map<String, dynamic>? latestMap;
+    var latestVer = 0;
+    var latestCs = 0;
+    if (latestRaw != null) {
+      try {
+        latestMap = jsonDecode(latestRaw) as Map<String, dynamic>;
+        latestVer = _stateVersionFromJson(latestMap);
+        latestCs = _guestControlSeqFrom(latestMap);
+      } catch (_) {}
+    }
+
+    final pendingInitial = _guestPendingInitialState;
+    final pendingInitialVer = _guestPendingInitialVersion;
+    _guestPendingInitialState = null;
+    _guestPendingInitialVersion = 0;
+
+    final useLatestWs = latestMap != null &&
+        latestVer > 0 &&
+        latestVer >= pendingInitialVer;
+
+    if (useLatestWs) {
+      if (latestCs > _guestLastControlSeq) {
+        _guestLastControlSeq = latestCs;
+      }
+      _log(
+        'guest bootstrap apply latest-ws room=$roomId droppedBuffered=$dropped v=$latestVer cs=$latestCs restV=$pendingInitialVer',
+      );
+      _runGuestBootstrapApply(
+        roomId: roomId,
+        audio: audio,
+        generation: generation,
+        label: 'bootstrap-ws',
+        apply: () => _applyGuestState(
+          latestMap!,
           audio,
           generation: generation,
-          delayMs: delay,
-          forceTrackReload: false,
-          forcePositionSync: forcePositionSync,
+          forceTrackReload: true,
+          forcePositionSync: true,
+        ),
+      );
+    } else if (pendingInitial != null && pendingInitialVer > _guestAppliedVersion) {
+      _log(
+        'guest bootstrap apply initial-rest room=$roomId v=$pendingInitialVer',
+      );
+      _runGuestBootstrapApply(
+        roomId: roomId,
+        audio: audio,
+        generation: generation,
+        label: 'bootstrap-rest',
+        apply: () => _applyGuestState(
+          pendingInitial,
+          audio,
+          generation: generation,
+          forceTrackReload: true,
+          forcePositionSync: true,
+        ),
+      );
+    } else if (!initialBootstrapOk) {
+      _log('guest bootstrap no snapshot room=$roomId, REST fallback');
+      _runGuestBootstrapApply(
+        roomId: roomId,
+        audio: audio,
+        generation: generation,
+        label: 'bootstrap-fallback',
+        apply: () => forceGuestSnapshotSync(
+          audio,
+          forceTrackReload: true,
+          forcePositionSync: true,
         ),
       );
     }
+    _guestBootstrapComplete = true;
+    ListeningRoomSession.instance.setJoining(false);
+    _guestPollTimer = Timer.periodic(
+      const Duration(milliseconds: _guestPollIntervalMs),
+      (_) {
+        unawaited(_guestPollRoomState(roomId, audio, generation));
+      },
+    );
+    _guestForcedRestTimer = Timer.periodic(
+      const Duration(milliseconds: _guestForcedRestSyncMs),
+      (_) {
+        unawaited(_guestForcedRestSync(roomId, audio, generation));
+      },
+    );
+  }
+
+  void _runGuestBootstrapApply({
+    required String roomId,
+    required AudioPlayerService audio,
+    required int generation,
+    required String label,
+    required Future<void> Function() apply,
+  }) {
+    _guestBootstrapApplyInFlight = true;
+    unawaited(() async {
+      try {
+        if (_connectionGeneration != generation ||
+            _isHost ||
+            _roomId != roomId ||
+            !ListeningRoomSession.instance.active) {
+          return;
+        }
+        await apply();
+        if (_connectionGeneration != generation) return;
+        _log('guest bootstrap apply done room=$roomId label=$label');
+      } catch (e) {
+        _log('guest bootstrap apply error room=$roomId label=$label error=$e');
+      } finally {
+        if (_connectionGeneration != generation) {
+          _guestBootstrapApplyInFlight = false;
+          return;
+        }
+        _guestBootstrapApplyInFlight = false;
+        final deferred = _guestDeferredRoomState;
+        _guestDeferredRoomState = null;
+        if (deferred != null) {
+          _log(
+            'guest bootstrap flush deferred room=$roomId v=${_stateVersionFromJson(deferred)}',
+          );
+          _enqueueGuestApply(
+            generation,
+            () => _applyGuestStateFromWire(
+              deferred,
+              audio,
+              generation: generation,
+            ),
+            debugLabel: 'deferred-after-bootstrap',
+          );
+        }
+        unawaited(
+          _guestPollRoomState(
+            roomId,
+            audio,
+            generation,
+            forceApply: true,
+          ),
+        );
+      }
+    }());
+  }
+
+  void _scheduleGuestWsReconnect(
+    String roomId,
+    AudioPlayerService audio,
+    int generation,
+  ) {
+    if (_isHost ||
+        _connectionGeneration != generation ||
+        _roomId != roomId ||
+        !ListeningRoomSession.instance.active) {
+      return;
+    }
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 400), () async {
+        if (_isHost ||
+            _connectionGeneration != generation ||
+            _roomId != roomId ||
+            !ListeningRoomSession.instance.active) {
+          return;
+        }
+        _log('guest ws reconnect room=$roomId');
+        try {
+          final acc = await AuthSessionStore.readAccount();
+          final token = acc?.sessionToken.trim() ?? '';
+          if (token.isEmpty) return;
+          try {
+            await _sub?.cancel();
+          } catch (_) {}
+          _sub = null;
+          try {
+            await _channel?.sink.close();
+          } catch (_) {}
+          _channel = null;
+          final uri = Uri.parse(wsUrl(roomId, token));
+          _channel = WebSocketChannel.connect(uri);
+          _guestWsConnectedAtMs = DateTime.now().millisecondsSinceEpoch;
+          _sub = _channel!.stream.listen(
+            (raw) {
+              if (raw is! String) return;
+              _enqueueGuestWsMessage(raw, audio, generation);
+            },
+            onError: (Object e, StackTrace st) {
+              _log('guest ws reconnect error room=$roomId error=$e');
+            },
+            onDone: () {
+              _log('guest ws reconnect done room=$roomId');
+            },
+            cancelOnError: false,
+          );
+          await _channel!.ready.timeout(const Duration(seconds: 8));
+          _log('guest ws reconnect ready room=$roomId');
+        } catch (e) {
+          _log('guest ws reconnect failed room=$roomId error=$e');
+        }
+        await _guestPollRoomState(
+          roomId,
+          audio,
+          generation,
+          forceApply: true,
+        );
+      }),
+    );
+  }
+
+  Future<void> _guestForcedRestSync(
+    String roomId,
+    AudioPlayerService audio,
+    int generation, {
+    bool forceApply = false,
+  }) async {
+    if (!_guestBootstrapComplete ||
+        _connectionGeneration != generation ||
+        _isHost ||
+        _roomId != roomId ||
+        !ListeningRoomSession.instance.active) {
+      return;
+    }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final localEngineDrift = _guestEngineDrifted(audio);
+    if (!forceApply &&
+        !localEngineDrift &&
+        _guestLastWsStateAtMs > 0 &&
+        nowMs - _guestLastWsStateAtMs < _guestPollWsSilenceMs) {
+      return;
+    }
+    await _guestPollRoomState(
+      roomId,
+      audio,
+      generation,
+      forceApply: forceApply || localEngineDrift,
+    );
+  }
+
+  void _enqueueGuestWsMessage(
+    String raw,
+    AudioPlayerService audio,
+    int generation,
+  ) {
+    _enqueueGuestApply(
+      generation,
+      () => _handleGuestMessage(raw, audio, generation),
+      debugLabel: 'ws',
+    );
   }
 
   Future<void> _refreshGuestSnapshot(
@@ -316,38 +699,28 @@ class ColistenController {
     if (_isHost || _roomId != roomId || !ListeningRoomSession.instance.active) {
       return;
     }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (!forceTrackReload && !forcePositionSync) {
+      final wsSilent = _guestLastWsStateAtMs == 0 ||
+          nowMs - _guestLastWsStateAtMs >= _guestWsSnapshotSilenceMs;
+      if (!wsSilent) return;
+    }
     try {
       final state = await ColistenApi().getRoomState(roomId);
       _log(
         'guest snapshot room=$roomId v=${state.stateVersion} trackId=${state.trackId} key=${state.trackKey} pos=${state.positionSeconds.toStringAsFixed(3)} playing=${state.playing}',
       );
       if (state.stateVersion <= _guestAppliedVersion) return;
-      await _applyGuestState(
-        <String, dynamic>{
-          'stateVersion': state.stateVersion,
-          'isOpen': state.isOpen,
-          'trackId': state.trackId,
-          'trackKey': state.trackKey,
-          'queueTrackIds': state.queueTrackIds,
-          'queueTrackKeys': state.queueTrackKeys,
-          'positionSeconds': state.positionSeconds,
-          'playing': state.playing,
-          'shuffleEnabled': state.shuffleEnabled,
-          'repeatMode': state.repeatMode,
-          'controlPauseHostOnly': state.controlPauseHostOnly,
-          'controlSeekHostOnly': state.controlSeekHostOnly,
-          'controlShuffleHostOnly': state.controlShuffleHostOnly,
-          'controlRepeatHostOnly': state.controlRepeatHostOnly,
-          'controlSkipHostOnly': state.controlSkipHostOnly,
-          'controlPlaylistHostOnly': state.controlPlaylistHostOnly,
-          'participantIds': state.participantIds,
-          'wallClockMs': state.wallClockMs,
-        },
-        audio,
-        generation: generation,
-        forceTrackReload: forceTrackReload,
-        forcePositionSync: forcePositionSync,
-      );
+      await _runOnGuestApplyChain(generation, () async {
+        if (state.stateVersion <= _guestAppliedVersion) return;
+        await _applyGuestState(
+          _roomStateMapFromDto(state),
+          audio,
+          generation: generation,
+          forceTrackReload: forceTrackReload,
+          forcePositionSync: forcePositionSync,
+        );
+      });
     } catch (_) {}
   }
 
@@ -369,60 +742,71 @@ class ColistenController {
       _log(
         'guest force snapshot room=$roomId v=${state.stateVersion} trackId=${state.trackId} key=${state.trackKey} pos=${state.positionSeconds.toStringAsFixed(3)} playing=${state.playing} forceReload=$forceTrackReload',
       );
+      final engineDrift = !_guestEngineMatchesServer(state.playing, audio);
       if (state.stateVersion <= _guestAppliedVersion &&
           !forceTrackReload &&
-          !forcePositionSync) {
+          !forcePositionSync &&
+          !engineDrift) {
         return;
       }
-      await _applyGuestState(
-        <String, dynamic>{
-          'stateVersion': state.stateVersion,
-          'isOpen': state.isOpen,
-          'trackId': state.trackId,
-          'trackKey': state.trackKey,
-          'queueTrackIds': state.queueTrackIds,
-          'queueTrackKeys': state.queueTrackKeys,
-          'positionSeconds': state.positionSeconds,
-          'playing': state.playing,
-          'shuffleEnabled': state.shuffleEnabled,
-          'repeatMode': state.repeatMode,
-          'controlPauseHostOnly': state.controlPauseHostOnly,
-          'controlSeekHostOnly': state.controlSeekHostOnly,
-          'controlShuffleHostOnly': state.controlShuffleHostOnly,
-          'controlRepeatHostOnly': state.controlRepeatHostOnly,
-          'controlSkipHostOnly': state.controlSkipHostOnly,
-          'controlPlaylistHostOnly': state.controlPlaylistHostOnly,
-          'participantIds': state.participantIds,
-          'wallClockMs': state.wallClockMs,
-        },
-        audio,
-        generation: generation,
-        forceTrackReload: forceTrackReload,
-        forcePositionSync: forcePositionSync,
-      );
+      await _runOnGuestApplyChain(generation, () async {
+        if (state.stateVersion <= _guestAppliedVersion &&
+            !forceTrackReload &&
+            !forcePositionSync &&
+            !engineDrift) {
+          return;
+        }
+        await _applyGuestState(
+          _roomStateMapFromDto(state),
+          audio,
+          generation: generation,
+          forceTrackReload: forceTrackReload,
+          forcePositionSync: forcePositionSync,
+        );
+      });
     } catch (_) {}
   }
 
-  Map<String, dynamic> _hostStatePayload(AudioPlayerService audio) {
+  ({int? trackId, String? trackKey}) _resolveHostTrackFields(
+    AudioPlayerService audio,
+  ) {
+    final api = TracksApi();
+    final playablePath = audio.currentPlayablePath?.trim() ?? '';
+    if (playablePath.isNotEmpty) {
+      final fromPath = api.parseServerTrackId(playablePath);
+      if (fromPath != null) {
+        return (trackId: fromPath, trackKey: 'srv:$fromPath');
+      }
+      final key = api.trackKeyForPaths(
+        assetPath: playablePath,
+        audioFilePath: playablePath,
+      );
+      if (key.isNotEmpty) return (trackId: null, trackKey: key);
+    }
     final current = audio.currentTrack;
-    final tid = current == null
-        ? null
-        : TracksApi().resolveServerTrackId(
-            assetPath: current.assetPath,
-            audioFilePath: current.audioFilePath,
-          );
-    final trackKey = current == null
-        ? null
-        : TracksApi().trackKeyForPaths(
-            assetPath: current.assetPath,
-            audioFilePath: current.audioFilePath,
-          );
+    if (current == null) return (trackId: null, trackKey: null);
+    return (
+      trackId: api.resolveServerTrackId(
+        assetPath: current.assetPath,
+        audioFilePath: current.audioFilePath,
+      ),
+      trackKey: api.trackKeyForPaths(
+        assetPath: current.assetPath,
+        audioFilePath: current.audioFilePath,
+      ),
+    );
+  }
+
+  Map<String, dynamic> _hostStatePayload(AudioPlayerService audio) {
+    final resolved = _resolveHostTrackFields(audio);
+    final tid = resolved.trackId;
+    final trackKey = resolved.trackKey;
     final payload = <String, dynamic>{
       'type': 'host_state',
       'queueTrackIds': _queueTrackIdsFromAudio(audio),
       'queueTrackKeys': _queueTrackKeysFromAudio(audio),
-      'position': audio.position.inMilliseconds / 1000.0,
-      'playing': audio.isPlaying,
+      'position': audio.enginePosition.inMilliseconds / 1000.0,
+      'playing': audio.engineIsPlaying,
       'shuffleEnabled': audio.shuffleEnabled,
       'repeatMode': audio.roomRepeatModeWire,
     };
@@ -443,6 +827,229 @@ class ColistenController {
       payload['explicitAction'] = true;
     }
     return payload;
+  }
+
+  bool _payloadHasTransport(Map<String, dynamic> payload) =>
+      payload.containsKey('playing') || payload.containsKey('position');
+
+  bool _canSendHostWs(Map<String, dynamic> payload, {required bool forceWs}) {
+    final hasTrack =
+        payload['trackId'] != null ||
+        (payload['trackKey'] is String &&
+            (payload['trackKey'] as String).isNotEmpty);
+    final hasQueue =
+        ((payload['queueTrackIds'] as List?)?.isNotEmpty ?? false) ||
+        ((payload['queueTrackKeys'] as List?)?.isNotEmpty ?? false);
+    final explicit = payload['explicitAction'] == true;
+    return hasTrack || hasQueue || (explicit && _payloadHasTransport(payload));
+  }
+
+  int _guestControlSeqFrom(Map<String, dynamic> j) =>
+      (j['controlSeq'] as num?)?.toInt() ?? 0;
+
+  bool _guestControlSeqAdvanced(Map<String, dynamic> j) =>
+      _guestControlSeqFrom(j) > _guestLastControlSeq;
+
+  int _stateVersionFromJson(Map<String, dynamic> j) =>
+      (j['stateVersion'] as num?)?.toInt() ?? 0;
+
+  /// Устаревший snapshot: отклоняем по stateVersion и controlSeq (важно для play/pause).
+  bool _guestIncomingStateIsObsolete(Map<String, dynamic> j) {
+    final ver = _stateVersionFromJson(j);
+    final cs = _guestControlSeqFrom(j);
+    if (ver > 0 && ver < _guestAppliedVersion) return true;
+    if (cs > 0 && cs < _guestLastControlSeq) return true;
+    return false;
+  }
+
+  void _enqueueGuestTransportApply(
+    int generation,
+    Future<void> Function() apply, {
+    String? debugLabel,
+  }) {
+    _guestTransportApplyChain = _guestTransportApplyChain.then((_) async {
+      if (_connectionGeneration != generation ||
+          _isHost ||
+          !ListeningRoomSession.instance.active) {
+        return;
+      }
+      try {
+        await apply();
+      } catch (e) {
+        _log(
+          'guest transport apply error room=$_roomId label=${debugLabel ?? "transport"} error=$e',
+        );
+      }
+    });
+  }
+
+  void _enqueueGuestApply(
+    int generation,
+    Future<void> Function() apply, {
+    String? debugLabel,
+  }) {
+    _guestWsApplyChain = _guestWsApplyChain.then((_) async {
+      if (_connectionGeneration != generation) {
+        _log(
+          'guest apply dropped generation room=$_roomId label=${debugLabel ?? "apply"} gen=$generation current=$_connectionGeneration',
+        );
+        return;
+      }
+      if (_isHost) {
+        _log(
+          'guest apply dropped isHost room=$_roomId label=${debugLabel ?? "apply"}',
+        );
+        return;
+      }
+      if (!ListeningRoomSession.instance.active) {
+        _log(
+          'guest apply dropped inactive room=$_roomId label=${debugLabel ?? "apply"}',
+        );
+        return;
+      }
+      try {
+        await apply();
+      } catch (e) {
+        _log(
+          'guest apply error room=$_roomId label=${debugLabel ?? "apply"} error=$e',
+        );
+      }
+    });
+  }
+
+  void _coalesceGuestRoomState(
+    Map<String, dynamic> j,
+    AudioPlayerService audio,
+    int generation,
+  ) {
+    if (_guestBootstrapApplyInFlight) {
+      final incomingVer = _stateVersionFromJson(j);
+      final deferredVer = _guestDeferredRoomState == null
+          ? -1
+          : _stateVersionFromJson(_guestDeferredRoomState!);
+      if (incomingVer >= deferredVer) {
+        _guestDeferredRoomState = j;
+      }
+      _log(
+        'guest ws defer full apply during bootstrap room=$_roomId v=$incomingVer',
+      );
+      return;
+    }
+    final incomingVer = _stateVersionFromJson(j);
+    final incomingCs = _guestControlSeqFrom(j);
+    final current = _guestCoalescedState;
+    if (current != null) {
+      final curVer = _stateVersionFromJson(current);
+      final curCs = _guestControlSeqFrom(current);
+      if (incomingVer < curVer ||
+          (incomingVer == curVer && incomingCs < curCs)) {
+        return;
+      }
+    }
+    _guestCoalescedState = j;
+    if (_guestCoalesceFlushScheduled) return;
+    _guestCoalesceFlushScheduled = true;
+    _enqueueGuestApply(
+      generation,
+      () => _flushCoalescedGuestState(audio, generation),
+      debugLabel: 'coalesced',
+    );
+  }
+
+  Future<void> _flushCoalescedGuestState(
+    AudioPlayerService audio,
+    int generation,
+  ) async {
+    _guestCoalesceFlushScheduled = false;
+    while (_guestCoalescedState != null) {
+      final j = _guestCoalescedState!;
+      _guestCoalescedState = null;
+      await _applyGuestStateFromWire(j, audio, generation: generation);
+      if (_connectionGeneration != generation) return;
+    }
+  }
+
+  void _markGuestWsApplied(int version) {
+    if (version > 0) {
+      _guestLastWsStateAtMs = DateTime.now().millisecondsSinceEpoch;
+    }
+  }
+
+  Future<void> _runOnGuestApplyChain(
+    int generation,
+    Future<void> Function() apply,
+  ) {
+    final done = Completer<void>();
+    _enqueueGuestApply(
+      generation,
+      () async {
+        try {
+          await apply();
+        } finally {
+          if (!done.isCompleted) done.complete();
+        }
+      },
+    );
+    return done.future;
+  }
+
+  Map<String, dynamic> _roomStateMapFromDto(ColistenRoomStateDto state) =>
+      <String, dynamic>{
+        'stateVersion': state.stateVersion,
+        'controlSeq': state.controlSeq,
+        'isOpen': state.isOpen,
+        'trackId': state.trackId,
+        'trackKey': state.trackKey,
+        'queueTrackIds': state.queueTrackIds,
+        'queueTrackKeys': state.queueTrackKeys,
+        'positionSeconds': state.positionSeconds,
+        'playing': state.playing,
+        'shuffleEnabled': state.shuffleEnabled,
+        'repeatMode': state.repeatMode,
+        'controlPauseHostOnly': state.controlPauseHostOnly,
+        'controlSeekHostOnly': state.controlSeekHostOnly,
+        'controlShuffleHostOnly': state.controlShuffleHostOnly,
+        'controlRepeatHostOnly': state.controlRepeatHostOnly,
+        'controlSkipHostOnly': state.controlSkipHostOnly,
+        'controlPlaylistHostOnly': state.controlPlaylistHostOnly,
+        'participantIds': state.participantIds,
+        'wallClockMs': state.wallClockMs,
+      };
+
+  /// Дискретная команда хоста: WS `command` + короткий REST-ack (второй broadcast с controlSeq).
+  void _pushHostControlPacket(
+    AudioPlayerService audio, {
+    Map<String, dynamic>? overrides,
+  }) {
+    if (!_isHost) return;
+    // Не подмешивать override от прошлой команды — иначе гость получает
+    // предыдущее playing/position (отставание ровно на одно действие).
+    _hostRemoteAuthoritativeOverride = null;
+    _hostRemoteAuthoritativeOverrideUntilMs = 0;
+    final payload = _hostStatePayloadForSend(audio, explicitAction: true);
+    payload['type'] = 'command';
+    if (overrides != null) {
+      for (final entry in overrides.entries) {
+        if (entry.value != null) {
+          payload[entry.key] = entry.value;
+        }
+      }
+    }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    _hostLastWsSyncAtMs = nowMs;
+    _hostLastSentSignature = _hostStateSignature(payload);
+    _log(
+      'host control packet room=$_roomId trackId=${payload['trackId']} key=${payload['trackKey']} pos=${((payload['position'] as num?)?.toDouble() ?? 0).toStringAsFixed(3)} playing=${payload['playing']}',
+    );
+    if (_canSendHostWs(payload, forceWs: true)) {
+      _sink(jsonEncode(payload));
+    }
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 50), () {
+        if (!_isHost || !ListeningRoomSession.instance.active) return;
+        _syncHostStateViaRest(audio, force: true, payloadOverride: payload);
+      }),
+    );
   }
 
   String _hostStateSignature(Map<String, dynamic> payload) {
@@ -485,11 +1092,13 @@ class ColistenController {
       if (force) {
         _log('host rest pending room=$roomId');
         _hostPendingRestSync = true;
+        _hostRestDebouncePayload = Map<String, dynamic>.from(payload);
+        _hostRestDebounceAudio = audio;
       }
       return;
     }
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    if (!force && nowMs - _hostLastRestSyncAtMs < 1500) return;
+    if (!force && nowMs - _hostLastRestSyncAtMs < 1200) return;
     _hostRestSyncInFlight = true;
     _hostLastRestSyncAtMs = nowMs;
     _hostPendingRestSync = false;
@@ -509,6 +1118,7 @@ class ColistenController {
       ColistenApi()
           .pushHostState(
             roomId: roomId,
+            messageType: (payload['type'] as String?) ?? 'host_state',
             trackId: trackId,
             trackKey: trackKey,
             queueTrackIds: queueTrackIds,
@@ -523,6 +1133,7 @@ class ColistenController {
           .then((state) {
             if (state != null) {
               _applyRoomDtoToSession(state);
+              _noteHostRoomVersion(state.stateVersion);
             }
             _log('host rest ok room=$roomId');
           })
@@ -534,10 +1145,35 @@ class ColistenController {
             _hostRestSyncInFlight = false;
             if (_hostPendingRestSync && _isHost && _roomId == roomId) {
               _hostPendingRestSync = false;
-              _syncHostStateViaRest(audio, force: true);
+              final pendingAudio = _hostRestDebounceAudio ?? audio;
+              final pendingPayload = _hostRestDebouncePayload;
+              _hostRestDebouncePayload = null;
+              _hostRestDebounceAudio = null;
+              _syncHostStateViaRest(
+                pendingAudio,
+                force: true,
+                payloadOverride: pendingPayload,
+              );
             }
           }),
     );
+  }
+
+  void _scheduleDebouncedHostRest(
+    AudioPlayerService audio,
+    Map<String, dynamic> payload,
+  ) {
+    _hostRestDebounceAudio = audio;
+    _hostRestDebouncePayload = Map<String, dynamic>.from(payload);
+    _hostRestDebounceTimer?.cancel();
+    _hostRestDebounceTimer = Timer(const Duration(milliseconds: 350), () {
+      final a = _hostRestDebounceAudio;
+      final p = _hostRestDebouncePayload;
+      if (a == null || p == null || !_isHost || !ListeningRoomSession.instance.active) {
+        return;
+      }
+      _syncHostStateViaRest(a, force: true, payloadOverride: p);
+    });
   }
 
   void _pushHostStateNow(
@@ -556,7 +1192,7 @@ class ColistenController {
         return;
       }
       final nowMs = DateTime.now().millisecondsSinceEpoch;
-      if (!forceWs && nowMs - _hostLastWsSyncAtMs < 350) return;
+      if (!forceWs && nowMs - _hostLastWsSyncAtMs < 120) return;
       _hostLastWsSyncAtMs = nowMs;
       final payload =
           (guestPayloadOverride == null
@@ -607,7 +1243,12 @@ class ColistenController {
                 repeatMode: payload['repeatMode'] as String? ?? 'off',
               )
               .then((state) async {
-                if (state != null) _applyRoomDtoToSession(state);
+                if (state != null) {
+                  _applyRoomDtoToSession(state);
+                  if (_isHost) {
+                    _noteHostRoomVersion(state.stateVersion);
+                  }
+                }
                 _log('guest rest command ok room=$roomId');
               })
               .catchError((e) {
@@ -634,7 +1275,10 @@ class ColistenController {
       }
       return;
     }
-    if (_hostOutboundBlockers > 0) {
+    if (_hostOutboundBlockers > 0 && !forceRest && !forceWs) {
+      _log(
+        'host push blocked room=$_roomId blockers=$_hostOutboundBlockers forceRest=$forceRest forceWs=$forceWs',
+      );
       return;
     }
     final nowMs = DateTime.now().millisecondsSinceEpoch;
@@ -662,15 +1306,17 @@ class ColistenController {
     _log(
       'host push room=$_roomId ws=${_channel != null} hasTrack=$hasTrack hasQueue=$hasQueue trackId=${payload['trackId']} key=${payload['trackKey']} pos=${((payload['position'] as num?)?.toDouble() ?? 0).toStringAsFixed(3)} playing=${payload['playing']} shuffle=${payload['shuffleEnabled']} repeat=${payload['repeatMode']}',
     );
-    final shouldSendWs = forceWs || nowMs - _hostLastWsSyncAtMs >= 700;
+    final shouldSendWs = forceWs || nowMs - _hostLastWsSyncAtMs >= 280;
     var sent = false;
-    if ((hasTrack || hasQueue) && shouldSendWs) {
+    if (_canSendHostWs(payload, forceWs: forceWs) && shouldSendWs) {
       _hostLastWsSyncAtMs = nowMs;
       _sink(jsonEncode(payload));
       sent = true;
     }
-    if (forceRest || nowMs - _hostLastRestSyncAtMs >= 1500) {
-      _syncHostStateViaRest(audio, force: forceRest, payloadOverride: payload);
+    // REST только для явных действий (play/pause/очередь). Иначе гость получает
+    // устаревшие snapshot с промежуточными stateVersion и «отстаёт» на секунды.
+    if (forceRest) {
+      _syncHostStateViaRest(audio, force: true, payloadOverride: payload);
       sent = true;
     }
     if (sent) {
@@ -716,8 +1362,40 @@ class ColistenController {
     required String roomId,
     required AudioPlayerService audio,
   }) async {
+    if (_isHost &&
+        _roomId == roomId &&
+        _channel != null &&
+        ListeningRoomSession.instance.active) {
+      _log('host reconnect skipped already room=$roomId');
+      _pushHostStateNow(audio, forceRest: true, forceWs: true);
+      return;
+    }
+    while (_connectInFlight != null) {
+      try {
+        await _connectInFlight;
+      } catch (_) {}
+    }
+    final connectCompleter = Completer<void>();
+    _connectInFlight = connectCompleter.future;
+    try {
+      await _connectHostImpl(roomId: roomId, audio: audio);
+    } finally {
+      if (!connectCompleter.isCompleted) connectCompleter.complete();
+      if (identical(_connectInFlight, connectCompleter.future)) {
+        _connectInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _connectHostImpl({
+    required String roomId,
+    required AudioPlayerService audio,
+  }) async {
     await disconnect();
-    ++_connectionGeneration;
+    if (!ListeningRoomSession.instance.active) {
+      _log('host connect aborted: room session inactive room=$roomId');
+      return;
+    }
     final acc = await AuthSessionStore.readAccount();
     final token = acc?.sessionToken.trim() ?? '';
     if (token.isEmpty) throw StateError('Not logged in');
@@ -737,24 +1415,30 @@ class ColistenController {
       onDone: () {
         _log('host ws done room=$roomId');
       },
+      cancelOnError: false,
     );
-
-    void listener() {
-      if (!_isHost) return;
-      _pushHostStateNow(audio);
+    try {
+      await _channel!.ready.timeout(const Duration(seconds: 10));
+      _log('host ws ready room=$roomId');
+    } catch (e) {
+      _log('host ws ready timeout room=$roomId error=$e');
     }
 
-    _hostListener = listener;
-    audio.addListener(listener);
-    listener();
+    _hostListener = null;
 
-    _hostTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (!_isHost) return;
-      listener();
-    });
+    // Позицию на сервер пушим только при явных действиях (pause/seek/skip),
+    // не раз в секунду — иначе гости захлёбываются очередью apply.
     _hostSnapshotTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_refreshHostSessionSnapshot(roomId));
     });
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    if (!_isHost || _roomId != roomId || !ListeningRoomSession.instance.active) {
+      return;
+    }
+    _hostListenerMutedUntilMs =
+        DateTime.now().millisecondsSinceEpoch + 800;
+    _pushHostStateNow(audio, forceRest: true, forceWs: true);
+    _log('host connect ready room=$roomId');
   }
 
   Future<void> _refreshHostSessionSnapshot(String roomId) async {
@@ -777,7 +1461,7 @@ class ColistenController {
         _onHostRemoteCommand(j);
         return;
       }
-      if (j['type'] != 'state') return;
+      if (!_isRoomStatePayload(j)) return;
       _applySessionState(j);
       final ver = (j['stateVersion'] as num?)?.toInt() ?? 0;
       if (ver <= 0) return;
@@ -792,13 +1476,10 @@ class ColistenController {
         try {
           if (_connectionGeneration != generation || !_isHost) return;
           if (ver <= _hostAppliedRoomVersion) return;
-          await _applyRoomPlaybackPayload(
+          await _applyHostInboundRoomState(
             j,
             audio,
             applyGeneration: generation,
-            forceTrackReload: false,
-            forcePositionSync: true,
-            guestTimelineHints: false,
           );
           if (_connectionGeneration != generation || !_isHost) return;
           _hostAppliedRoomVersion = ver;
@@ -1035,44 +1716,437 @@ class ColistenController {
     }
   }
 
-  void _onGuestMessage(String raw, AudioPlayerService audio) {
-    final generation = _connectionGeneration;
-    if (!ListeningRoomSession.instance.active) {
-      unawaited(disconnect());
+  Future<void> _handleGuestMessage(
+    String raw,
+    AudioPlayerService audio,
+    int generation,
+  ) async {
+    if (_connectionGeneration != generation ||
+        _isHost ||
+        _roomId == null ||
+        !ListeningRoomSession.instance.active) {
       return;
     }
     try {
       final j = jsonDecode(raw) as Map<String, dynamic>;
       if (j['type'] == 'kicked') {
-        unawaited(_handleKickedFromRoom(audio));
+        await _handleKickedFromRoom(audio);
         return;
       }
-      if (j['type'] != 'state') return;
-      final ver = (j['stateVersion'] as num?)?.toInt() ?? 0;
-      if (ver <= _guestLastVersion) return;
-      _guestLastVersion = ver;
+      if (!_isRoomStatePayload(j)) {
+        final msgType = (j['type'] as String?)?.trim() ?? '';
+        _log('guest ws ignore type=$msgType room=$_roomId');
+        return;
+      }
+      final ver = _stateVersionFromJson(j);
+      if (_guestIncomingStateIsObsolete(j)) {
+        _log(
+          'guest ws skip obsolete v=$ver applied=$_guestAppliedVersion cs=${_guestControlSeqFrom(j)} lastCs=$_guestLastControlSeq',
+        );
+        return;
+      }
+      if (ver > 0 && ver < _guestLastSeenVersion) {
+        _log('guest ws skip stale v=$ver seen=$_guestLastSeenVersion');
+        return;
+      }
+      final playing = j['playing'] as bool? ?? false;
+      final playingChanged = _guestServerPlayingChanged(playing);
+      final enginePlayingDrift = !_guestEngineMatchesServer(playing, audio);
+      final needsTrackReload = _guestNeedsTrackReload(j, audio);
+      final queueMismatch = _guestNeedsQueueSync(j, audio);
+      final controlAdvanced = _guestControlSeqAdvanced(j);
+      final pos = _interpolatePositionSeconds(j);
+      final posDiffMs =
+          ((pos * 1000).round() - audio.position.inMilliseconds).abs();
+      final positionMeaningful = posDiffMs >= 180;
       _log(
-        'guest ws state room=$_roomId v=$ver trackId=${j['trackId']} key=${j['trackKey']} pos=${j['positionSeconds'] ?? j['position']} playing=${j['playing']}',
+        'guest ws state room=$_roomId v=$ver cs=${_guestControlSeqFrom(j)} trackId=${j['trackId']} key=${j['trackKey']} pos=${j['positionSeconds'] ?? j['position']} playing=$playing reload=$needsTrackReload queue=$queueMismatch ctrl=$controlAdvanced',
       );
-      _guestApplyChain = _guestApplyChain.then((_) async {
-        if (_connectionGeneration != generation) return;
-        if (ver <= _guestAppliedVersion) return;
-        final forceRealtimePositionSync = _guestNeedsFirstRealtimeHardSync;
+      final needsApply = ver > _guestAppliedVersion ||
+          controlAdvanced ||
+          playingChanged ||
+          enginePlayingDrift ||
+          needsTrackReload ||
+          queueMismatch ||
+          positionMeaningful;
+      if (!needsApply) {
+        if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
+        _log(
+          'guest ws skip noop room=$_roomId v=$ver applied=$_guestAppliedVersion cs=${_guestControlSeqFrom(j)}',
+        );
+        return;
+      }
+      final transportOnly = audio.currentTrack != null &&
+          !needsTrackReload &&
+          !queueMismatch &&
+          _guestNeedsTransportSync(j, audio);
+      if (transportOnly) {
+        final stateCopy = Map<String, dynamic>.from(j);
+        _enqueueGuestTransportApply(
+          generation,
+          () => _applyGuestTransportFromWs(
+            stateCopy,
+            audio,
+            generation,
+            ver,
+          ),
+          debugLabel: 'ws-transport',
+        );
+        if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
+        _completeGuestFirstRealtimeIfNeeded();
+        return;
+      }
+      _coalesceGuestRoomState(j, audio, generation);
+      if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
+      _completeGuestFirstRealtimeIfNeeded();
+    } catch (e) {
+      _log('guest ws parse error room=$_roomId error=$e');
+    }
+  }
+
+  Future<void> _applyGuestStateFromWire(
+    Map<String, dynamic> j,
+    AudioPlayerService audio, {
+    required int generation,
+  }) async {
+    final ver = _stateVersionFromJson(j);
+    final playing = j['playing'] as bool? ?? false;
+    final playingChanged = _guestServerPlayingChanged(playing);
+    final enginePlayingDrift = !_guestEngineMatchesServer(playing, audio);
+    final needsTrackReload = _guestNeedsTrackReload(j, audio);
+    final queueMismatch = _guestNeedsQueueSync(j, audio);
+    final controlAdvanced = _guestControlSeqAdvanced(j);
+    final pos = _interpolatePositionSeconds(j);
+    final posDiffMs =
+        ((pos * 1000).round() - audio.position.inMilliseconds).abs();
+    final positionMeaningful = posDiffMs >= 180;
+    final transportOnly = audio.currentTrack != null &&
+        !needsTrackReload &&
+        !queueMismatch &&
+        (controlAdvanced || playingChanged || enginePlayingDrift);
+    if (transportOnly) {
+      await _applyGuestTransportFromWs(j, audio, generation, ver);
+      if (_connectionGeneration != generation) return;
+      return;
+    }
+    _guestApplyDebounceTimer?.cancel();
+    _guestPendingApplyState = null;
+    await _applyGuestState(
+      j,
+      audio,
+      generation: generation,
+      forcePositionSync:
+          positionMeaningful ||
+          _guestNeedsInitialHardSync ||
+          controlAdvanced ||
+          playingChanged ||
+          enginePlayingDrift ||
+          queueMismatch,
+      forceTrackReload: needsTrackReload || queueMismatch,
+    );
+    if (_connectionGeneration != generation) return;
+    if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
+    _markGuestWsApplied(ver);
+  }
+
+  Future<void> _applyGuestTransportFromWs(
+    Map<String, dynamic> j,
+    AudioPlayerService audio,
+    int generation,
+    int ver,
+  ) async {
+    if (_connectionGeneration != generation) return;
+    if (_guestIncomingStateIsObsolete(j)) {
+      _log(
+        'guest transport skip obsolete v=$ver applied=$_guestAppliedVersion cs=${_guestControlSeqFrom(j)} lastCs=$_guestLastControlSeq',
+      );
+      return;
+    }
+    _applySessionState(j);
+    final playing = j['playing'] as bool? ?? false;
+    final pos = _interpolatePositionSeconds(j);
+    final hasLoadedTrack = audio.currentTrack != null;
+    if (!hasLoadedTrack) {
+      _log('guest ws transport defer until track loaded v=$ver');
+      _scheduleGuestStateApply(j, audio, generation: generation);
+      return;
+    }
+    final lastTransportPos = _guestLastTransportPositionSeconds;
+    final serverPositionChanged = lastTransportPos == null ||
+        (lastTransportPos - pos).abs() >= 0.2;
+    await _applyGuestServerPlaying(audio, serverPlaying: playing);
+    final targetMs = (pos * 1000).round();
+    final diffMs = (targetMs - audio.position.inMilliseconds).abs();
+    final seekThresholdMs = playing ? 280 : 180;
+    if (serverPositionChanged || diffMs >= seekThresholdMs) {
+      await audio.seekFromRoomSync(Duration(milliseconds: targetMs));
+    }
+    if (_connectionGeneration != generation) return;
+    final controlSeq = _guestControlSeqFrom(j);
+    if (controlSeq > _guestLastControlSeq) {
+      _guestLastControlSeq = controlSeq;
+    }
+    _commitGuestTransportApply(j, ver);
+    _markGuestWsApplied(ver);
+    _log(
+      'guest transport apply v=$ver cs=$controlSeq playing=$playing pos=${pos.toStringAsFixed(3)} diffMs=$diffMs',
+    );
+  }
+
+  void _completeGuestFirstRealtimeIfNeeded() {
+    _guestNeedsFirstRealtimeHardSync = false;
+    final firstRealtime = _guestFirstRealtimeStateCompleter;
+    if (firstRealtime != null && !firstRealtime.isCompleted) {
+      firstRealtime.complete();
+    }
+  }
+
+  String? _guestIncomingTrackKey(Map<String, dynamic> j) {
+    final trackKey = (j['trackKey'] as String?)?.trim();
+    if (trackKey != null && trackKey.isNotEmpty) return trackKey;
+    final tid = (j['trackId'] as num?)?.toInt();
+    if (tid != null && tid > 0) return 'srv:$tid';
+    return null;
+  }
+
+  bool _guestNeedsTrackReload(
+    Map<String, dynamic> j,
+    AudioPlayerService audio,
+  ) {
+    final incomingTrackKey = _guestIncomingTrackKey(j);
+    if (incomingTrackKey == null) return false;
+    final currentTrackKey = TracksApi().trackKeyForPaths(
+      assetPath: audio.currentTrack?.assetPath ?? '',
+      audioFilePath: audio.currentTrack?.audioFilePath,
+    );
+    return incomingTrackKey != currentTrackKey;
+  }
+
+  bool _guestNeedsQueueSync(
+    Map<String, dynamic> j,
+    AudioPlayerService audio,
+  ) {
+    final queueKeys = ((j['queueTrackKeys'] as List?) ?? const [])
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (queueKeys.isEmpty) return false;
+    final currentQueueKeys = audio.activeQueue
+        .map(
+          (t) => TracksApi().trackKeyForPaths(
+            assetPath: t.assetPath,
+            audioFilePath: t.audioFilePath,
+          ),
+        )
+        .toList();
+    return !_sameStringList(currentQueueKeys, queueKeys);
+  }
+
+  bool _guestNeedsFullStateApply(
+    Map<String, dynamic> j,
+    AudioPlayerService audio,
+  ) =>
+      _guestNeedsTrackReload(j, audio) || _guestNeedsQueueSync(j, audio);
+
+  void _scheduleGuestStateApply(
+    Map<String, dynamic> j,
+    AudioPlayerService audio, {
+    required int generation,
+  }) {
+    _guestPendingApplyState = j;
+    _guestPendingApplyGeneration = generation;
+    _guestApplyDebounceTimer?.cancel();
+    final delayMs = _guestControlSeqFrom(j) > _guestLastControlSeq ? 0 : 60;
+    _guestApplyDebounceTimer = Timer(Duration(milliseconds: delayMs), () {
+      unawaited(_flushGuestPendingApply(audio));
+    });
+  }
+
+  Future<void> _flushGuestPendingApply(AudioPlayerService audio) async {
+    final j = _guestPendingApplyState;
+    final generation = _guestPendingApplyGeneration;
+    if (j == null ||
+        _connectionGeneration != generation ||
+        !ListeningRoomSession.instance.active) {
+      return;
+    }
+    _guestPendingApplyState = null;
+    final ver = (j['stateVersion'] as num?)?.toInt() ?? 0;
+    final needsTrackReload = _guestNeedsTrackReload(j, audio);
+    if (ver <= _guestAppliedVersion && !needsTrackReload) return;
+    final pos = _interpolatePositionSeconds(j);
+    final diffMs =
+        ((pos * 1000).round() - audio.position.inMilliseconds).abs();
+    final playing = j['playing'] as bool? ?? false;
+    final playingChanged = _guestServerPlayingChanged(playing);
+    await _applyGuestState(
+      j,
+      audio,
+      generation: generation,
+      forcePositionSync:
+          _guestNeedsInitialHardSync ||
+          diffMs >= 900 ||
+          playingChanged,
+      forceTrackReload: needsTrackReload,
+    );
+    if (_connectionGeneration != generation) return;
+    _completeGuestFirstRealtimeIfNeeded();
+  }
+
+  void _commitGuestTransportApply(Map<String, dynamic> j, int version) {
+    final playing = j['playing'] as bool? ?? false;
+    final pos = _interpolatePositionSeconds(j);
+    _guestTargetPositionSeconds = pos;
+    _guestTargetPlaying = playing;
+    _guestTargetAnchorLocalMs =
+        (j['wallClockMs'] as num?)?.toInt() ??
+        DateTime.now().millisecondsSinceEpoch;
+    _applySessionState(j);
+    if (version > _guestAppliedVersion) {
+      _guestAppliedVersion = version;
+    }
+    _guestLastAppliedPlaybackSig = _roomPlaybackSignature(j);
+    _guestLastTransportPositionSeconds = pos;
+    _guestLastKnownPlaying = playing;
+    _guestNeedsInitialHardSync = false;
+  }
+
+  Future<void> _guestPollRoomState(
+    String roomId,
+    AudioPlayerService audio,
+    int generation, {
+    bool forceApply = false,
+  }) async {
+    if (!_guestBootstrapComplete ||
+        _connectionGeneration != generation ||
+        _isHost ||
+        _roomId != roomId ||
+        !ListeningRoomSession.instance.active) {
+      return;
+    }
+    final bootstrapInFlight = _guestBootstrapApplyInFlight;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final localEngineDrift = _guestEngineDrifted(audio);
+    if (!forceApply &&
+        !localEngineDrift &&
+        _guestLastWsStateAtMs > 0 &&
+        nowMs - _guestLastWsStateAtMs < _guestPollWsSilenceMs) {
+      return;
+    }
+    try {
+      final state = await ColistenApi()
+          .getRoomState(roomId)
+          .timeout(const Duration(seconds: 2));
+      if (_connectionGeneration != generation) return;
+      final map = _roomStateMapFromDto(state);
+      if (_guestIncomingStateIsObsolete(map)) {
+        _log(
+          'guest poll skip obsolete room=$roomId v=${state.stateVersion} applied=$_guestAppliedVersion cs=${state.controlSeq} lastCs=$_guestLastControlSeq',
+        );
+        return;
+      }
+      final controlAdvanced = state.controlSeq > _guestLastControlSeq;
+      final engineDrift = !_guestEngineMatchesServer(state.playing, audio);
+      final playingChanged = _guestServerPlayingChanged(state.playing);
+      final trackReload = _guestNeedsTrackReload(map, audio);
+      final queueMismatch = _guestNeedsQueueSync(map, audio);
+      final posDiffMs =
+          ((state.positionSeconds * 1000).round() -
+                  audio.position.inMilliseconds)
+              .abs();
+      final needsApply = forceApply ||
+          state.stateVersion > _guestAppliedVersion ||
+          controlAdvanced ||
+          engineDrift ||
+          playingChanged ||
+          trackReload ||
+          queueMismatch ||
+          posDiffMs >= 350;
+      if (!needsApply) return;
+      _log(
+        'guest poll apply room=$roomId v=${state.stateVersion} pos=${state.positionSeconds.toStringAsFixed(3)} playing=${state.playing} force=$forceApply drift=$engineDrift wsAgoMs=${_guestLastWsStateAtMs == 0 ? -1 : nowMs - _guestLastWsStateAtMs}',
+      );
+      final transportOnly = audio.currentTrack != null &&
+          !trackReload &&
+          !queueMismatch &&
+          (controlAdvanced || engineDrift || playingChanged);
+      if (transportOnly) {
+        await _applyGuestTransportFromWs(
+          map,
+          audio,
+          generation,
+          state.stateVersion,
+        );
+      } else if (bootstrapInFlight) {
+        final incomingVer = state.stateVersion;
+        final deferredVer = _guestDeferredRoomState == null
+            ? -1
+            : _stateVersionFromJson(_guestDeferredRoomState!);
+        if (incomingVer >= deferredVer) {
+          _guestDeferredRoomState = map;
+        }
+        _log(
+          'guest poll defer full apply during bootstrap room=$roomId v=${state.stateVersion}',
+        );
+      } else {
         await _applyGuestState(
-          j,
+          map,
           audio,
           generation: generation,
-          forcePositionSync: forceRealtimePositionSync,
+          forcePositionSync:
+              forceApply ||
+              controlAdvanced ||
+              engineDrift ||
+              playingChanged ||
+              trackReload ||
+              posDiffMs >= 900,
+          forceTrackReload: trackReload || queueMismatch,
         );
-        if (_connectionGeneration != generation) return;
-        _guestNeedsFirstRealtimeHardSync = false;
-        final firstRealtime = _guestFirstRealtimeStateCompleter;
-        if (firstRealtime != null && !firstRealtime.isCompleted) {
-          firstRealtime.complete();
-        }
-        _guestAppliedVersion = ver;
-      });
-    } catch (_) {}
+      }
+      if (_connectionGeneration != generation) return;
+      _markGuestWsApplied(state.stateVersion);
+    } catch (e) {
+      _log('guest poll error room=$roomId error=$e');
+    }
+  }
+
+  /// Хост не подстраивает play/pause/seek под WS `state` (эхо своих же апдейтов).
+  /// С сервера подтягиваем только очередь, если гость её изменил.
+  Future<void> _applyHostInboundRoomState(
+    Map<String, dynamic> j,
+    AudioPlayerService audio, {
+    required int applyGeneration,
+  }) async {
+    if (_connectionGeneration != applyGeneration || !_isHost) return;
+    final queueKeys = ((j['queueTrackKeys'] as List?) ?? const [])
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final queueIds = ((j['queueTrackIds'] as List?) ?? const [])
+        .map((e) => (e as num?)?.toInt())
+        .whereType<int>()
+        .where((e) => e > 0)
+        .toList();
+    final effectiveQueueKeys = queueKeys.isNotEmpty
+        ? queueKeys
+        : queueIds.map((id) => 'srv:$id').toList();
+    if (effectiveQueueKeys.isEmpty) return;
+    final currentQueueKeys = audio.activeQueue
+        .map(
+          (t) => TracksApi().trackKeyForPaths(
+            assetPath: t.assetPath,
+            audioFilePath: t.audioFilePath,
+          ),
+        )
+        .toList();
+    if (_sameStringList(currentQueueKeys, effectiveQueueKeys)) return;
+    final roomQueue = await _buildQueueFromTrackKeys(effectiveQueueKeys);
+    if (roomQueue.isEmpty) return;
+    _log(
+      'host inbound queue-only room=$_roomId keys=${effectiveQueueKeys.length}',
+    );
+    ListeningRoomSession.instance.replaceQueue(roomQueue);
+    await audio.syncQueuePreservingPlayback(roomQueue);
   }
 
   Future<void> _applyRoomPlaybackPayload(
@@ -1097,18 +2171,18 @@ class ColistenController {
         .map((e) => e.toString().trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    final pos =
-        ((j['positionSeconds'] as num?) ?? (j['position'] as num?))
-            ?.toDouble() ??
-        0;
     final playing = j['playing'] as bool? ?? false;
+    final pos = _interpolatePositionSeconds(j);
     final shuffleEnabled = j['shuffleEnabled'] as bool?;
     final repeatMode = (j['repeatMode'] as String?)?.trim().toLowerCase();
     final roleTag = guestTimelineHints ? 'guest' : 'host';
     _log(
       '$roleTag playback room=$_roomId trackId=$tid key=$trackKey pos=${pos.toStringAsFixed(3)} playing=$playing forceReload=$forceTrackReload',
     );
-    final anchorLocalMs = DateTime.now().millisecondsSinceEpoch;
+    final wallClockMs = (j['wallClockMs'] as num?)?.toInt() ?? 0;
+    final anchorLocalMs = wallClockMs > 0
+        ? wallClockMs
+        : DateTime.now().millisecondsSinceEpoch;
     if (guestTimelineHints) {
       _guestTargetPositionSeconds = pos;
       _guestTargetPlaying = playing;
@@ -1117,6 +2191,65 @@ class ColistenController {
     final effectiveQueueKeys = queueKeys.isNotEmpty
         ? queueKeys
         : queueIds.map((id) => 'srv:$id').toList();
+    final effectiveTrackKey = () {
+      if (trackKey != null && trackKey.isNotEmpty) return trackKey;
+      if (tid != null) return 'srv:$tid';
+      return null;
+    }();
+    final currentTrackKey = TracksApi().trackKeyForPaths(
+      assetPath: audio.currentTrack?.assetPath ?? '',
+      audioFilePath: audio.currentTrack?.audioFilePath,
+    );
+    final currentQueueKeys = audio.activeQueue
+        .map(
+          (t) => TracksApi().trackKeyForPaths(
+            assetPath: t.assetPath,
+            audioFilePath: t.audioFilePath,
+          ),
+        )
+        .toList();
+    final queueMismatch =
+        effectiveQueueKeys.isNotEmpty &&
+        !_sameStringList(currentQueueKeys, effectiveQueueKeys);
+    final trackKeyMatches =
+        effectiveTrackKey != null && effectiveTrackKey == currentTrackKey;
+    if (trackKeyMatches && !queueMismatch && !forceTrackReload) {
+      await audio.applyRoomPlaybackModes(
+        shuffleEnabled: shuffleEnabled,
+        repeatMode: repeatMode,
+      );
+      final targetMs = (pos * 1000).round();
+      final transportDiffMs =
+          (targetMs - audio.position.inMilliseconds).abs();
+      final needsSeek =
+          forcePositionSync ||
+          transportDiffMs >= 700 ||
+          (guestTimelineHints && _guestNeedsInitialHardSync);
+      // Пауза до seek: иначе seek в той же позиции на части Android снова запускает play.
+      if (!playing) {
+        await _applyGuestServerPlaying(audio, serverPlaying: false);
+        if (_connectionGeneration != applyGeneration) return;
+        if (needsSeek && transportDiffMs >= 180) {
+          await audio.seekFromRoomSync(Duration(milliseconds: targetMs));
+        }
+      } else {
+        if (needsSeek) {
+          await audio.seekFromRoomSync(Duration(milliseconds: targetMs));
+          if (guestTimelineHints) {
+            _guestNeedsInitialHardSync = false;
+          }
+        }
+        await _applyGuestServerPlaying(audio, serverPlaying: true);
+        if (guestTimelineHints && !needsSeek && transportDiffMs < 1500) {
+          _guestTargetPositionSeconds = pos;
+          _guestTargetPlaying = true;
+          _guestTargetAnchorLocalMs = anchorLocalMs;
+        }
+      }
+      if (_connectionGeneration != applyGeneration) return;
+      _log('$roleTag transport-only apply room=$_roomId playing=$playing');
+      return;
+    }
     List<Track> roomQueue = const [];
     if (effectiveQueueKeys.isNotEmpty) {
       roomQueue = await _buildQueueFromTrackKeys(effectiveQueueKeys);
@@ -1124,28 +2257,28 @@ class ColistenController {
         ListeningRoomSession.instance.replaceQueue(roomQueue);
       }
     }
-    final effectiveTrackKey = () {
-      if (trackKey != null && trackKey.isNotEmpty) return trackKey;
-      if (tid != null) return 'srv:$tid';
-      return null;
-    }();
+    if (trackKeyMatches &&
+        queueMismatch &&
+        !forceTrackReload &&
+        !forcePositionSync &&
+        roomQueue.isNotEmpty) {
+      final queueOnlyDiffMs =
+          ((pos * 1000).round() - audio.position.inMilliseconds).abs();
+      await audio.syncQueuePreservingPlayback(roomQueue);
+      if (_connectionGeneration != applyGeneration) return;
+      if (queueOnlyDiffMs < 900) {
+        _log('$roleTag queue-only apply room=$_roomId keys=${effectiveQueueKeys.length}');
+        return;
+      }
+      _log(
+        '$roleTag queue-only + seek room=$_roomId keys=${effectiveQueueKeys.length} diffMs=$queueOnlyDiffMs',
+      );
+    }
     var trackWasReloaded = false;
     if (effectiveTrackKey != null) {
-      final currentQueue = audio.activeQueue;
-      final currentQueueKeys = currentQueue
-          .map(
-            (t) => TracksApi().trackKeyForPaths(
-              assetPath: t.assetPath,
-              audioFilePath: t.audioFilePath,
-            ),
-          )
-          .toList();
       final tr = await _trackFromTrackKey(effectiveTrackKey);
       if (_connectionGeneration != applyGeneration) return;
       final roomQueueKeys = effectiveQueueKeys;
-      final queueMismatch =
-          roomQueueKeys.isNotEmpty &&
-          !_sameStringList(currentQueueKeys, roomQueueKeys);
       final needTrackReload =
           forceTrackReload ||
           TracksApi().trackKeyForPaths(
@@ -1168,22 +2301,16 @@ class ColistenController {
         if (_connectionGeneration != applyGeneration) return;
         trackWasReloaded = true;
       } else if (queueMismatch && roomQueue.isNotEmpty) {
-        await audio.replaceQueueFromRoomSync(roomQueue);
+        await audio.syncQueuePreservingPlayback(roomQueue);
       }
     }
-    final seekTargetSeconds = () {
-      if (!playing || anchorLocalMs <= 0) return pos;
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
-      final elapsedMs = (nowMs - anchorLocalMs).clamp(0, 15000);
-      return pos + (elapsedMs / 1000.0);
-    }();
-    final seekPos = Duration(milliseconds: (seekTargetSeconds * 1000).round());
+    final seekPos = Duration(milliseconds: (pos * 1000).round());
     final currentMs = audio.position.inMilliseconds;
     final targetMs = seekPos.inMilliseconds;
     final signedDiffMs = targetMs - currentMs;
     final hardSyncNow = guestTimelineHints && _guestNeedsInitialHardSync;
-    final needForwardHardSeek = signedDiffMs >= 1400;
-    final needBackwardHardSeek = signedDiffMs <= -3000;
+    final needForwardHardSeek = signedDiffMs >= 900;
+    final needBackwardHardSeek = signedDiffMs <= -1800;
     final shouldSeek = playing
         ? forcePositionSync ||
               hardSyncNow ||
@@ -1211,14 +2338,7 @@ class ColistenController {
       shuffleEnabled: shuffleEnabled,
       repeatMode: repeatMode,
     );
-    if (playing) {
-      await audio.playFromRoomSync();
-      if (guestTimelineHints) {
-        await _guestTightSync(audio);
-      }
-    } else {
-      await audio.pauseFromRoomSync();
-    }
+    await _applyGuestServerPlaying(audio, serverPlaying: playing);
     final needsPostSettleSeek =
         guestTimelineHints &&
         playing &&
@@ -1242,13 +2362,52 @@ class ColistenController {
     final applyGeneration = generation ?? _connectionGeneration;
     if (_connectionGeneration != applyGeneration) return;
     if (!ListeningRoomSession.instance.active) return;
-    final version = (j['stateVersion'] as num?)?.toInt() ?? 0;
+    if (_guestIncomingStateIsObsolete(j)) {
+      _applySessionState(j);
+      return;
+    }
+    final version = _stateVersionFromJson(j);
+    final incomingTrackKey = () {
+      final key = (j['trackKey'] as String?)?.trim();
+      if (key != null && key.isNotEmpty) return key;
+      final tid = (j['trackId'] as num?)?.toInt();
+      if (tid != null && tid > 0) return 'srv:$tid';
+      return null;
+    }();
+    final currentTrackKey = TracksApi().trackKeyForPaths(
+      assetPath: audio.currentTrack?.assetPath ?? '',
+      audioFilePath: audio.currentTrack?.audioFilePath,
+    );
+    final trackChanged = incomingTrackKey != null &&
+        incomingTrackKey != currentTrackKey;
+    final playing = j['playing'] as bool? ?? false;
+    final playingChanged = _guestServerPlayingChanged(playing);
+    final enginePlayingDrift = !_guestEngineMatchesServer(playing, audio);
+    final controlAdvanced = _guestControlSeqAdvanced(j);
     if (version > 0 &&
         version <= _guestAppliedVersion &&
         !forceTrackReload &&
-        !forcePositionSync) {
+        !forcePositionSync &&
+        !trackChanged &&
+        !playingChanged &&
+        !enginePlayingDrift &&
+        !controlAdvanced) {
       return;
     }
+    final playbackSig = _roomPlaybackSignature(j);
+    if (!controlAdvanced &&
+        !forceTrackReload &&
+        !forcePositionSync &&
+        !trackChanged &&
+        !playingChanged &&
+        !enginePlayingDrift &&
+        version <= _guestAppliedVersion &&
+        playbackSig == _guestLastAppliedPlaybackSig) {
+      _applySessionState(j);
+      return;
+    }
+    var applyForcePositionSync = forcePositionSync;
+    var applyForceTrackReload = forceTrackReload || (controlAdvanced && trackChanged);
     _applySessionState(j);
     // Как только получили и применили состояние комнаты, убираем "Connecting...":
     // дальнейшие доп.снапшоты могут идти в фоне, но пользователь уже синхронизируется.
@@ -1257,16 +2416,25 @@ class ColistenController {
       j,
       audio,
       applyGeneration: applyGeneration,
-      forceTrackReload: forceTrackReload,
-      forcePositionSync: forcePositionSync,
+      forceTrackReload: applyForceTrackReload,
+      forcePositionSync: applyForcePositionSync,
       guestTimelineHints: true,
     );
     if (_connectionGeneration != applyGeneration) return;
     if (version > _guestAppliedVersion) {
       _guestAppliedVersion = version;
+      _markGuestWsApplied(version);
     }
-    if (version > _guestLastVersion) {
-      _guestLastVersion = version;
+    if (version > _guestLastSeenVersion) {
+      _guestLastSeenVersion = version;
+    }
+    final controlSeq = _guestControlSeqFrom(j);
+    if (controlSeq > _guestLastControlSeq) {
+      _guestLastControlSeq = controlSeq;
+    }
+    _guestLastAppliedPlaybackSig = playbackSig;
+    if (_guestEngineMatchesServer(playing, audio)) {
+      _guestLastKnownPlaying = playing;
     }
     final pendingPlaying = _guestPendingPlayPausePlaying;
     if (pendingPlaying != null && j['playing'] == pendingPlaying) {
@@ -1290,9 +2458,9 @@ class ColistenController {
     await audio.seekFromRoomSync(target);
     final targetMs = target.inMilliseconds;
     if (!playing || targetMs < 1200) return;
-    final attempts = trackWasReloaded ? 8 : 4;
+    final attempts = trackWasReloaded ? 4 : 2;
     for (var i = 0; i < attempts; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 320));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
       if (_connectionGeneration != generation) return;
       final actualMs = audio.position.inMilliseconds;
       final diffMs = (targetMs - actualMs).abs();
@@ -1317,40 +2485,6 @@ class ColistenController {
       'guest post-settle seek targetMs=$targetMs actualMs=$actualMs diffMs=$diffMs',
     );
     await audio.seekFromRoomSync(target);
-  }
-
-  Future<void> _guestTightSync(AudioPlayerService audio) async {
-    if (!ListeningRoomSession.instance.active) {
-      await disconnect();
-      return;
-    }
-    if (_isHost || _channel == null || !_guestTargetPlaying) {
-      return;
-    }
-    final anchorLocal = _guestTargetAnchorLocalMs;
-    if (anchorLocal <= 0) return;
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final elapsedMs = (nowMs - anchorLocal).clamp(0, 15000);
-    final targetSec = _guestTargetPositionSeconds + (elapsedMs / 1000.0);
-    final actualSec = audio.position.inMilliseconds / 1000.0;
-    final driftSec = targetSec - actualSec;
-    final sinceLastSeekMs = nowMs - _guestLastTightSeekAtMs;
-    if (!audio.isPlaying) {
-      return;
-    }
-    final needForwardCatchup = driftSec >= 1.0;
-    // Лёгкое опережение не трогаем: иначе возможны заметные подёргивания.
-    final needBackwardCorrection = driftSec <= -3.2;
-    if ((needForwardCatchup || needBackwardCorrection) &&
-        sinceLastSeekMs >= 2500) {
-      _log(
-        'guest tight sync correct drift=${driftSec.toStringAsFixed(3)} target=${targetSec.toStringAsFixed(3)} actual=${actualSec.toStringAsFixed(3)}',
-      );
-      _guestLastTightSeekAtMs = nowMs;
-      await audio.seekFromRoomSync(
-        Duration(milliseconds: (targetSec * 1000).round()),
-      );
-    }
   }
 
   int? _resolveTrackId(Track? track) {
@@ -1433,6 +2567,36 @@ class ColistenController {
     return Track(assetPath: key, title: key);
   }
 
+  double _interpolatePositionSeconds(Map<String, dynamic> j) {
+    final pos =
+        ((j['positionSeconds'] as num?) ?? (j['position'] as num?))
+            ?.toDouble() ??
+        0;
+    final playing = j['playing'] as bool? ?? false;
+    if (!playing) return pos;
+    final wallClock = (j['wallClockMs'] as num?)?.toInt() ?? 0;
+    if (wallClock <= 0) return pos;
+    final elapsedMs = (DateTime.now().millisecondsSinceEpoch - wallClock)
+        .clamp(0, _guestMaxInterpolationMs);
+    return pos + (elapsedMs / 1000.0);
+  }
+
+  String _roomPlaybackSignature(Map<String, dynamic> j) {
+    final version = (j['stateVersion'] as num?)?.toInt() ?? 0;
+    final playing = j['playing'] as bool? ?? false;
+    final trackId = j['trackId'];
+    final trackKey = j['trackKey'];
+    final pos =
+        ((j['positionSeconds'] as num?) ?? (j['position'] as num?))
+            ?.toDouble() ??
+        0;
+    final queueKeys = ((j['queueTrackKeys'] as List?) ?? const [])
+        .map((e) => e.toString())
+        .join(',');
+    final posBucket = playing ? (pos * 2).round() : (pos * 4).round();
+    return '$version|$playing|$trackId|$trackKey|$posBucket|$queueKeys';
+  }
+
   bool _sameStringList(List<String> a, List<String> b) {
     if (identical(a, b)) return true;
     if (a.length != b.length) return false;
@@ -1462,6 +2626,13 @@ class ColistenController {
       skipHostOnly: j['controlSkipHostOnly'] as bool? ?? true,
       playlistHostOnly: j['controlPlaylistHostOnly'] as bool? ?? true,
     );
+  }
+
+  void _noteHostRoomVersion(int version) {
+    if (!_isHost || version <= 0) return;
+    if (version > _hostAppliedRoomVersion) {
+      _hostAppliedRoomVersion = version;
+    }
   }
 
   void _applyRoomDtoToSession(ColistenRoomStateDto state) {
@@ -1514,11 +2685,11 @@ class ColistenController {
       jsonEncode(<String, dynamic>{
         'type': 'update_settings',
         'privateRoom': privateRoom,
-        'controlPauseHostOnly': true,
-        'controlSeekHostOnly': true,
-        'controlShuffleHostOnly': true,
-        'controlRepeatHostOnly': true,
-        'controlSkipHostOnly': true,
+        'controlPauseHostOnly': pauseHostOnly,
+        'controlSeekHostOnly': seekHostOnly,
+        'controlShuffleHostOnly': shuffleHostOnly,
+        'controlRepeatHostOnly': repeatHostOnly,
+        'controlSkipHostOnly': skipHostOnly,
         'controlPlaylistHostOnly': playlistHostOnly,
       }),
     );
@@ -1587,7 +2758,7 @@ class ColistenController {
     final serial = ++_guestCommandSerial;
     _pushHostStateNow(
       audio,
-      forceRest: false,
+      forceRest: true,
       forceWs: true,
       guestPayloadOverride: cmd,
     );
@@ -1635,49 +2806,69 @@ class ColistenController {
     );
   }
 
-  void _scheduleHostStateFollowUps(
-    AudioPlayerService audio, {
-    Map<String, dynamic>? hostPayloadOverride,
-  }) {
-    const delays = <Duration>[
-      Duration(milliseconds: 180),
-      Duration(milliseconds: 650),
-      Duration(milliseconds: 1200),
-    ];
-    for (final delay in delays) {
-      unawaited(
-        Future<void>.delayed(delay, () {
-          if (!_isHost || !ListeningRoomSession.instance.active) return;
-          _pushHostStateNow(
-            audio,
-            forceRest: true,
-            forceWs: true,
-            hostPayloadOverride: hostPayloadOverride,
-          );
-        }),
-      );
-    }
-  }
-
   void pushHostPlayPauseState(
     AudioPlayerService audio, {
     required bool playing,
   }) {
     if (!_isHost) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    _hostLastPlayPausePushedPlaying = playing;
+    _hostLastPlayPausePushAtMs = nowMs;
     _hostLocalActionSerial++;
-    final payload = _hostStatePayload(audio);
-    final override = <String, dynamic>{
-      'playing': playing,
-      'position': payload['position'],
-    };
-    _setHostAuthoritativeOverride(override);
-    _pushHostStateNow(
-      audio,
-      forceRest: true,
-      forceWs: true,
-      hostPayloadOverride: override,
+    _hostListenerMutedUntilMs = nowMs + 400;
+    _hostLastSentSignature = null;
+    _log(
+      'host playpause room=$_roomId playing=$playing pos=${(audio.position.inMilliseconds / 1000.0).toStringAsFixed(3)}',
     );
-    _scheduleHostStateFollowUps(audio, hostPayloadOverride: override);
+    final position = audio.enginePosition.inMilliseconds / 1000.0;
+    _pushHostControlPacket(
+      audio,
+      overrides: <String, dynamic>{
+        'playing': playing,
+        'position': position,
+      },
+    );
+  }
+
+  /// Seek/skip: контрольный пакет `command` + REST-ack (см. _pushHostControlPacket).
+  void pushHostTransportState(
+    AudioPlayerService audio, {
+    double? positionSeconds,
+    bool? playing,
+  }) {
+    if (!_isHost) return;
+    _hostLocalActionSerial++;
+    _hostLastSentSignature = null;
+    final resolved = _resolveHostTrackFields(audio);
+    final overrides = <String, dynamic>{
+      'position': positionSeconds ??
+          audio.enginePosition.inMilliseconds / 1000.0,
+      'playing': playing ?? audio.engineIsPlaying,
+    };
+    if (resolved.trackId != null) overrides['trackId'] = resolved.trackId;
+    if (resolved.trackKey != null) overrides['trackKey'] = resolved.trackKey;
+    _pushHostControlPacket(audio, overrides: overrides);
+  }
+
+  /// После skip/previous ждём смены [currentPlayablePath], затем шлём control.
+  Future<void> pushHostTransportStateAfterSkip(
+    AudioPlayerService audio, {
+    String? previousPlayablePath,
+  }) async {
+    if (!_isHost) return;
+    for (var i = 0; i < 30; i++) {
+      final path = audio.currentPlayablePath?.trim() ?? '';
+      if (path.isNotEmpty && path != (previousPlayablePath?.trim() ?? '')) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+    if (!_isHost || !ListeningRoomSession.instance.active) return;
+    pushHostTransportState(
+      audio,
+      positionSeconds: 0,
+      playing: audio.engineIsPlaying,
+    );
   }
 
   void pushHostState(
@@ -1693,7 +2884,5 @@ class ColistenController {
       forceWs: true,
       includeQueueForGuest: includeQueueForGuest,
     );
-    if (!_isHost) return;
-    _scheduleHostStateFollowUps(audio);
   }
 }

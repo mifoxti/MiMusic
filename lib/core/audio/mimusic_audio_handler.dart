@@ -26,15 +26,20 @@ void setListeningHistoryRepository(ListeningHistoryRepository? repo) {
 /// Обработчик аудио для audio_service: воспроизведение через just_audio,
 /// уведомление в шторке (Android) и Control Center (iOS) с управлением.
 class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
-  MiMusicAudioHandler() {
-    _initPlayer();
+  MiMusicAudioHandler() : this._fromCreated(_createPlayer());
+
+  MiMusicAudioHandler._fromCreated(
+    ({AudioPlayer player, AndroidEqualizer? equalizer}) created,
+  )   : _player = created.player,
+        _androidEqualizer = created.equalizer {
     _listenToPlayer();
     ListeningRoomSession.instance.addListener(_onRoomSessionChanged);
     likedPathsNotifier.value = Set.from(_likedPaths);
   }
 
-  late final AudioPlayer _player;
-  AndroidEqualizer? _androidEqualizer;
+  final AudioPlayer _player;
+  final AndroidEqualizer? _androidEqualizer;
+  bool _handlerDisposed = false;
   StreamSubscription<PlayerState>? _playerStateSub;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<SequenceState?>? _sequenceStateSub;
@@ -64,26 +69,25 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     LoopMode.off,
   );
 
-  void _initPlayer() {
+  static ({AudioPlayer player, AndroidEqualizer? equalizer}) _createPlayer() {
     if (kIsWeb || !isAndroid) {
-      _player = AudioPlayer();
-    } else {
-      try {
-        final eq = AndroidEqualizer();
-        _player = AudioPlayer(
-          audioPipeline: AudioPipeline(androidAudioEffects: [eq]),
-        );
-        _androidEqualizer = eq;
-        // Включается после применения настроек; при плоской кривой остаётся выкл. (меньше окраски/артефактов).
-        eq.setEnabled(false);
-      } catch (_) {
-        // На части Android-девайсов/изолятов эффект может не инициализироваться.
-        // Не блокируем запуск приложения: плеер стартует без DSP.
-        _player = AudioPlayer();
-        _androidEqualizer = null;
-      }
+      return (player: AudioPlayer(), equalizer: null);
+    }
+    try {
+      final eq = AndroidEqualizer();
+      final player = AudioPlayer(
+        audioPipeline: AudioPipeline(androidAudioEffects: [eq]),
+      );
+      // Включается после применения настроек; при плоской кривой остаётся выкл.
+      eq.setEnabled(false);
+      return (player: player, equalizer: eq);
+    } catch (_) {
+      return (player: AudioPlayer(), equalizer: null);
     }
   }
+
+  bool get _canRoomSyncPlayer =>
+      !_handlerDisposed && (_player.audioSource != null || _queue.isNotEmpty);
 
   void _listenToPlayer() {
     _playerStateSub = _player.playerStateStream.listen(_onPlayerStateChanged);
@@ -206,12 +210,14 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void _onPositionChanged(Duration position) {
-    if (!_player.playing) return;
     if (kIsWeb) return;
     playbackState.add(
       playbackState.value.copyWith(
         updatePosition: position,
+        playing: _player.playing,
+        controls: _currentControls(),
         systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndices,
       ),
     );
   }
@@ -585,6 +591,89 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     return null;
   }
 
+  /// Обновить очередь без сброса позиции текущего трека (colisten / правки очереди).
+  Future<void> _updateQueuePreserve(Map<String, dynamic>? extras) async {
+    final path = extras?['path'] as String? ?? '';
+    if (path.isEmpty) return;
+    final queueList = extras?['queue'];
+    if (queueList is! List || queueList.isEmpty) return;
+    final queue = queueList
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    final index = queue.indexWhere((t) => (t['path'] as String?) == path);
+    if (index < 0) return;
+    final positionSeconds = (extras?['positionSeconds'] as num?)?.toDouble();
+    final resumeAt = positionSeconds == null
+        ? _player.position
+        : Duration(milliseconds: (positionSeconds * 1000).round());
+    final autoPlay = extras?['autoPlay'] as bool? ?? _player.playing;
+    _queue = queue;
+    _queueIndex = index;
+    final current = queue[index];
+    final title = current['title'] as String? ?? '';
+    final artist = current['artist'] as String?;
+    final artPath = current['artPath'] as String?;
+    final artUri = current['artUri'] as String?;
+    Uri? coverUri = await _coverUriFromPath(artPath: artPath, artUri: artUri);
+    final mediaItemId = (current['itemId'] as String?)?.trim();
+    final resolvedMediaId = mediaItemId != null && mediaItemId.isNotEmpty
+        ? mediaItemId
+        : path;
+    final item = MediaItem(
+      id: resolvedMediaId,
+      title: title,
+      artist: artist ?? '',
+      artUri: coverUri,
+    );
+    mediaItem.add(item);
+    try {
+      if (queue.length > 1) {
+        final sources = queue
+            .map((t) => createAudioSource(t['path'] as String? ?? ''))
+            .toList();
+        await _player.setAudioSource(
+          ConcatenatingAudioSource(children: sources),
+          initialIndex: index,
+          initialPosition: resumeAt,
+        );
+        _concatenatingSourceUsed = true;
+      } else {
+        await _player.setAudioSource(
+          createAudioSource(path),
+          initialPosition: resumeAt,
+        );
+        _concatenatingSourceUsed = false;
+      }
+      await _applyEqualizerFromSettings();
+      final duration = _player.duration ?? Duration.zero;
+      mediaItem.add(
+        MediaItem(
+          id: item.id,
+          title: item.title,
+          artist: item.artist,
+          duration: duration,
+          artUri: coverUri,
+        ),
+      );
+      if (autoPlay) {
+        await _player.play();
+      } else {
+        await _player.pause();
+      }
+      playbackState.add(
+        playbackState.value.copyWith(
+          controls: _currentControls(),
+          systemActions: _systemActions,
+          androidCompactActionIndices: _compactIndices,
+          processingState: AudioProcessingState.ready,
+          playing: autoPlay,
+          updatePosition: _player.position,
+          bufferedPosition: _player.bufferedPosition,
+        ),
+      );
+    } catch (_) {}
+  }
+
   /// Воспроизвести трек из assets. Вызывается из UI через customAction.
   /// artPath — путь к обложке в assets; копируется в temp для artUri в уведомлении.
   /// artUri — готовый file URI (если передан из UI).
@@ -823,42 +912,16 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         }
         break;
       case 'roomSyncSeek':
-        final seconds = (extras?['positionSeconds'] as num?)?.toDouble();
-        if (seconds != null) {
-          final position = Duration(milliseconds: (seconds * 1000).round());
-          await _player.seek(position);
-          playbackState.add(
-            playbackState.value.copyWith(
-              updatePosition: position,
-              systemActions: _systemActions,
-              androidCompactActionIndices: _compactIndices,
-            ),
-          );
-        }
+        await _roomSyncSeek(extras);
         break;
       case 'roomSyncPlay':
-        await _player.play();
-        playbackState.add(
-          playbackState.value.copyWith(
-            playing: true,
-            controls: _currentControls(),
-            systemActions: _systemActions,
-            androidCompactActionIndices: _compactIndices,
-            updatePosition: _player.position,
-          ),
-        );
+        await _roomSyncPlay();
         break;
       case 'roomSyncPause':
-        await _player.pause();
-        playbackState.add(
-          playbackState.value.copyWith(
-            playing: false,
-            controls: _currentControls(),
-            systemActions: _systemActions,
-            androidCompactActionIndices: _compactIndices,
-            updatePosition: _player.position,
-          ),
-        );
+        await _roomSyncPause();
+        break;
+      case 'updateQueuePreserve':
+        await _updateQueuePreserve(extras);
         break;
       default:
         return super.customAction(name, extras);
@@ -871,7 +934,64 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     await super.onTaskRemoved();
   }
 
+  Future<void> _roomSyncSeek(Map<String, dynamic>? extras) async {
+    if (!_canRoomSyncPlayer) return;
+    try {
+      final seconds = (extras?['positionSeconds'] as num?)?.toDouble();
+      if (seconds == null) return;
+      final position = Duration(milliseconds: (seconds * 1000).round());
+      await _player.seek(position);
+      playbackState.add(
+        playbackState.value.copyWith(
+          updatePosition: position,
+          systemActions: _systemActions,
+          androidCompactActionIndices: _compactIndices,
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('[colisten] roomSyncSeek skipped: $e\n$st');
+    }
+  }
+
+  Future<void> _roomSyncPlay() async {
+    if (!_canRoomSyncPlayer) return;
+    try {
+      await _player.play();
+      playbackState.add(
+        playbackState.value.copyWith(
+          playing: true,
+          controls: _currentControls(),
+          systemActions: _systemActions,
+          androidCompactActionIndices: _compactIndices,
+          updatePosition: _player.position,
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('[colisten] roomSyncPlay skipped: $e\n$st');
+    }
+  }
+
+  Future<void> _roomSyncPause() async {
+    if (!_handlerDisposed) {
+      try {
+        await _player.pause();
+        playbackState.add(
+          playbackState.value.copyWith(
+            playing: false,
+            controls: _currentControls(),
+            systemActions: _systemActions,
+            androidCompactActionIndices: _compactIndices,
+            updatePosition: _player.position,
+          ),
+        );
+      } catch (e, st) {
+        debugPrint('[colisten] roomSyncPause skipped: $e\n$st');
+      }
+    }
+  }
+
   Future<void> disposeHandler() async {
+    _handlerDisposed = true;
     ListeningRoomSession.instance.removeListener(_onRoomSessionChanged);
     _stopWebPositionPoll();
     await _playerStateSub?.cancel();

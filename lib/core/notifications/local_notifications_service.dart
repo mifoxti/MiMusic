@@ -37,46 +37,71 @@ class LocalNotificationsService {
     return out;
   }
 
+  /// Регистрирует platform implementation до [FlutterLocalNotificationsPlugin.initialize].
+  /// Иначе на части устройств: LateInitializationError: Field '_instance' has not been initialized.
+  void _ensurePlatformRegistered() {
+    if (kIsWeb) return;
+    try {
+      if (Platform.isAndroid) {
+        AndroidFlutterLocalNotificationsPlugin.registerWith();
+      } else if (Platform.isIOS) {
+        IOSFlutterLocalNotificationsPlugin.registerWith();
+      }
+    } catch (e, st) {
+      debugPrint('[notifications] platform registerWith failed: $e\n$st');
+    }
+  }
+
   Future<void> initialize() async {
     if (_initialized) return;
     if (kIsWeb) return;
     if (!(Platform.isAndroid || Platform.isIOS)) return;
 
-    const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      iOS: DarwinInitializationSettings(
-        requestAlertPermission: false,
-        requestBadgePermission: false,
-        requestSoundPermission: false,
-      ),
-    );
-    await _plugin.initialize(
-      settings: settings,
-      onDidReceiveNotificationResponse: (response) {
-        _handleNotificationResponse(response);
-      },
-    );
+    try {
+      _ensurePlatformRegistered();
 
-    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
-    final launchResponse = launchDetails?.notificationResponse;
-    if (launchResponse != null) {
-      _handleNotificationResponse(launchResponse);
+      const settings = InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
+      );
+      await _plugin.initialize(
+        settings: settings,
+        onDidReceiveNotificationResponse: (response) {
+          _handleNotificationResponse(response);
+        },
+      );
+
+      final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+      final launchResponse = launchDetails?.notificationResponse;
+      if (launchResponse != null) {
+        _handleNotificationResponse(launchResponse);
+      }
+
+      final androidPlugin =
+          _plugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.createNotificationChannel(_friendRequestsChannel);
+      await androidPlugin?.requestNotificationsPermission();
+      final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      _initialized = true;
+    } catch (e, st) {
+      if (e.toString().contains('LateInitializationError')) {
+        debugPrint('[notifications] init LateInitializationError: $e\n$st');
+        return;
+      }
+      debugPrint('[notifications] init failed: $e\n$st');
     }
-
-    final androidPlugin =
-        _plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.createNotificationChannel(_friendRequestsChannel);
-    await androidPlugin?.requestNotificationsPermission();
-    final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
-        IOSFlutterLocalNotificationsPlugin>();
-    await iosPlugin?.requestPermissions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    _initialized = true;
   }
 
   Future<void> showFriendRequestNotification({

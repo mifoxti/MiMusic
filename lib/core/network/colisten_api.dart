@@ -25,6 +25,7 @@ class ColistenRoomStateDto {
     this.participantIds = const [],
     this.stateVersion = 0,
     this.wallClockMs = 0,
+    this.controlSeq = 0,
   });
 
   final String roomId;
@@ -47,6 +48,7 @@ class ColistenRoomStateDto {
   final List<int> participantIds;
   final int stateVersion;
   final int wallClockMs;
+  final int controlSeq;
 
   factory ColistenRoomStateDto.fromJson(Map<String, dynamic> j) {
     final p = j['participantIds'];
@@ -78,6 +80,7 @@ class ColistenRoomStateDto {
           : const [],
       stateVersion: (j['stateVersion'] as num?)?.toInt() ?? 0,
       wallClockMs: (j['wallClockMs'] as num?)?.toInt() ?? 0,
+      controlSeq: (j['controlSeq'] as num?)?.toInt() ?? 0,
     );
   }
 }

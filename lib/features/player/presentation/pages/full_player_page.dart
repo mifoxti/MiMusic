@@ -12,6 +12,7 @@ import '../../../../core/social/colisten_controller.dart';
 import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/player/full_player_visibility.dart';
 import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/player/shell_navigator_host.dart';
@@ -477,6 +478,9 @@ class FullPlayerDockPanel extends StatelessWidget {
                                   width: double.infinity,
                                   child: FilledButton.icon(
                                     onPressed: () {
+                                      if (FullPlayerVisibility.open.value) {
+                                        PlayerDockHost.collapse();
+                                      }
                                       Navigator.of(context).push(
                                         ShellMaterialPageRoute<void>(
                                           settings: const RouteSettings(

@@ -7,6 +7,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/audio/audio_player_service.dart';
 import 'core/audio/mimusic_audio_handler.dart';
+import 'core/social/colisten_controller.dart';
+import 'core/social/listening_room_session.dart';
 import 'core/auth/auth_session_store.dart';
 import 'core/profile/me_profile_cache.dart';
 import 'core/network/api_config.dart';
@@ -69,7 +71,11 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
 
   Future<_InitResult> _init() async {
     try {
-      await LocalNotificationsService.instance.initialize();
+      try {
+        await LocalNotificationsService.instance.initialize();
+      } catch (e, st) {
+        debugPrint('Notifications init skipped: $e\n$st');
+      }
       final repository = LocalSettingsRepository();
       setMiMusicHandlerSettingsRepository(repository);
       final settings = await repository.getSettings();
@@ -253,6 +259,11 @@ class _MiMusicAppState extends State<MiMusicApp> {
   }
 
   Future<void> _onSignOut() async {
+    if (ListeningRoomSession.instance.active) {
+      ListeningRoomSession.instance.end();
+    } else if (ColistenController.instance.isConnected) {
+      await ColistenController.instance.disconnect();
+    }
     MeProfileCache.clear();
     await AuthSessionStore.clearSessionToken();
     if (!mounted) return;

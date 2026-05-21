@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/settings/local_settings_repository.dart';
+
 import '../core/audio/audio_player_service.dart';
 import '../core/auth/auth_session_store.dart';
 import '../core/audio/local_tracks.dart';
@@ -184,7 +186,7 @@ class _MainShellState extends State<MainShell>
     final userId = acc.userId;
     if (userId == null) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await getSafeSharedPreferences();
       final key = 'mimusic_last_friend_push_notif_id_$userId';
       var lastShown = prefs.getInt(key) ?? 0;
       final list = await NotificationsApi().fetchNotifications(
