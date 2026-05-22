@@ -833,6 +833,7 @@ class ColistenController {
       payload.containsKey('playing') || payload.containsKey('position');
 
   bool _canSendHostWs(Map<String, dynamic> payload, {required bool forceWs}) {
+    if (forceWs) return true;
     final hasTrack =
         payload['trackId'] != null ||
         (payload['trackKey'] is String &&
@@ -1874,14 +1875,29 @@ class ColistenController {
     final lastTransportPos = _guestLastTransportPositionSeconds;
     final serverPositionChanged = lastTransportPos == null ||
         (lastTransportPos - pos).abs() >= 0.2;
-    await _applyGuestServerPlaying(audio, serverPlaying: playing);
+    // Non-blocking play/pause: _isPlaying is set synchronously inside
+    // play/pauseFromRoomSync before their internal await, so the next chain
+    // item sees the correct engine state without waiting for ExoPlayer.
+    if (!_guestEngineMatchesServer(playing, audio)) {
+      _guestLastKnownPlaying = playing;
+      if (playing) {
+        unawaited(audio.playFromRoomSync());
+      } else {
+        _guestHostPausedAtMs = DateTime.now().millisecondsSinceEpoch;
+        unawaited(audio.pauseFromRoomSync());
+      }
+    } else {
+      _guestLastKnownPlaying = playing;
+    }
+    if (_connectionGeneration != generation) return;
     final targetMs = (pos * 1000).round();
     final diffMs = (targetMs - audio.position.inMilliseconds).abs();
     final seekThresholdMs = playing ? 280 : 180;
     if (serverPositionChanged || diffMs >= seekThresholdMs) {
-      await audio.seekFromRoomSync(Duration(milliseconds: targetMs));
+      // Don't await — large seeks block the transport chain for multiple seconds
+      // while ExoPlayer buffers. Position is corrected by next WS state or poll.
+      unawaited(audio.seekFromRoomSync(Duration(milliseconds: targetMs)));
     }
-    if (_connectionGeneration != generation) return;
     final controlSeq = _guestControlSeqFrom(j);
     if (controlSeq > _guestLastControlSeq) {
       _guestLastControlSeq = controlSeq;
@@ -2050,8 +2066,12 @@ class ColistenController {
       final playingChanged = _guestServerPlayingChanged(state.playing);
       final trackReload = _guestNeedsTrackReload(map, audio);
       final queueMismatch = _guestNeedsQueueSync(map, audio);
+      // Use interpolated position so that normal playback progress doesn't
+      // look like drift. Raw positionSeconds stays frozen while audio advances,
+      // causing spurious full-applies and seek loops.
+      final interpolatedPollPos = _interpolatePositionSeconds(map);
       final posDiffMs =
-          ((state.positionSeconds * 1000).round() -
+          ((interpolatedPollPos * 1000).round() -
                   audio.position.inMilliseconds)
               .abs();
       final needsApply = forceApply ||
@@ -2071,12 +2091,16 @@ class ColistenController {
           !queueMismatch &&
           (controlAdvanced || engineDrift || playingChanged);
       if (transportOnly) {
-        await _applyGuestTransportFromWs(
-          map,
-          audio,
+        final ver = state.stateVersion;
+        _enqueueGuestTransportApply(
           generation,
-          state.stateVersion,
+          () async {
+            await _applyGuestTransportFromWs(map, audio, generation, ver);
+            if (_connectionGeneration == generation) _markGuestWsApplied(ver);
+          },
+          debugLabel: 'poll-transport',
         );
+        return;
       } else if (bootstrapInFlight) {
         final incomingVer = state.stateVersion;
         final deferredVer = _guestDeferredRoomState == null
@@ -2140,6 +2164,17 @@ class ColistenController {
         )
         .toList();
     if (_sameStringList(currentQueueKeys, effectiveQueueKeys)) return;
+    // While the host's own REST push is in flight, ignore queue updates that
+    // would downgrade the local queue. The WS may deliver a stale server state
+    // (before the push was processed), and accepting it would overwrite the
+    // host's locally-authoritative queue with an older, shorter one.
+    if (_hostRestSyncInFlight &&
+        effectiveQueueKeys.length < currentQueueKeys.length) {
+      _log(
+        'host inbound skip queue regress (rest in flight) server=${effectiveQueueKeys.length} local=${currentQueueKeys.length}',
+      );
+      return;
+    }
     final roomQueue = await _buildQueueFromTrackKeys(effectiveQueueKeys);
     if (roomQueue.isEmpty) return;
     _log(
@@ -2338,10 +2373,18 @@ class ColistenController {
       shuffleEnabled: shuffleEnabled,
       repeatMode: repeatMode,
     );
-    await _applyGuestServerPlaying(audio, serverPlaying: playing);
+    // Если транспортная цепочка применила более новую версию пока мы загружали трек,
+    // используем уже известное состояние воспроизведения, а не из устаревшего payload.
+    final payloadVersion = (j['stateVersion'] as num?)?.toInt() ?? 0;
+    final effectivePlaying = (guestTimelineHints &&
+            payloadVersion > 0 &&
+            payloadVersion < _guestAppliedVersion)
+        ? (_guestLastKnownPlaying ?? playing)
+        : playing;
+    await _applyGuestServerPlaying(audio, serverPlaying: effectivePlaying);
     final needsPostSettleSeek =
         guestTimelineHints &&
-        playing &&
+        effectivePlaying &&
         (forcePositionSync || hardSyncNow || trackWasReloaded);
     if (needsPostSettleSeek) {
       await _postSettleGuestSeek(
@@ -2384,6 +2427,14 @@ class ColistenController {
     final playingChanged = _guestServerPlayingChanged(playing);
     final enginePlayingDrift = !_guestEngineMatchesServer(playing, audio);
     final controlAdvanced = _guestControlSeqAdvanced(j);
+    // Если транспортная цепочка уже применила более свежую версию —
+    // возвращаемся сразу, кроме случаев когда нужно перезагрузить трек.
+    if (version > 0 && version < _guestAppliedVersion && !forceTrackReload && !forcePositionSync) {
+      _log(
+        'guest apply skip stale v=$version applied=$_guestAppliedVersion forceTrack=$forceTrackReload',
+      );
+      return;
+    }
     if (version > 0 &&
         version <= _guestAppliedVersion &&
         !forceTrackReload &&
