@@ -43,7 +43,9 @@ class ColistenController {
   int _hostLastWsSyncAtMs = 0;
   int _hostLastPlayPausePushAtMs = 0;
   bool? _hostLastPlayPausePushedPlaying;
-  static const int _guestMaxInterpolationMs = 1500;
+  /// Макс. «догон» позиции гостя по wallClock (без экстраполяции гость убегает вперёд).
+  static const int _guestMaxLeadMs = 350;
+  static const int _guestNetworkLatencyMs = 200;
   static const int _guestWsSnapshotSilenceMs = 20000;
   static const int _guestPollIntervalMs = 800;
   static const int _guestPollWsSilenceMs = 1200;
@@ -2056,12 +2058,12 @@ class ColistenController {
       final needsTrackReload = _guestNeedsTrackReload(j, audio);
       final queueMismatch = _guestNeedsQueueSync(j, audio);
       final controlAdvanced = _guestControlSeqAdvanced(j);
-      final pos = _interpolatePositionSeconds(j);
+      final pos = _guestSyncPositionSeconds(j);
       final posDiffMs =
           ((pos * 1000).round() - audio.position.inMilliseconds).abs();
       final positionMeaningful = posDiffMs >= 180;
       _log(
-        'guest ws state room=$_roomId v=$ver cs=${_guestControlSeqFrom(j)} trackId=${j['trackId']} key=${j['trackKey']} pos=${j['positionSeconds'] ?? j['position']} playing=$playing reload=$needsTrackReload queue=$queueMismatch ctrl=$controlAdvanced',
+        'guest ws state room=$_roomId v=$ver cs=${_guestControlSeqFrom(j)} trackId=${j['trackId']} key=${j['trackKey']} pos=${pos.toStringAsFixed(3)} playing=$playing reload=$needsTrackReload queue=$queueMismatch ctrl=$controlAdvanced',
       );
       if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
       final needsApply = ver > _guestAppliedVersion ||
@@ -2129,7 +2131,7 @@ class ColistenController {
     final needsTrackReload = _guestNeedsTrackReload(j, audio);
     final queueMismatch = _guestNeedsQueueSync(j, audio);
     final controlAdvanced = _guestControlSeqAdvanced(j);
-    final pos = _interpolatePositionSeconds(j);
+    final pos = _guestSyncPositionSeconds(j);
     final posDiffMs =
         ((pos * 1000).round() - audio.position.inMilliseconds).abs();
     final positionMeaningful = posDiffMs >= 180;
@@ -2188,7 +2190,7 @@ class ColistenController {
     }
     _applySessionState(j);
     final playing = j['playing'] as bool? ?? false;
-    final pos = _interpolatePositionSeconds(j);
+    final pos = _guestSyncPositionSeconds(j);
     final hasLoadedTrack = audio.currentTrack != null;
     if (!hasLoadedTrack) {
       _log('guest ws transport defer until track loaded v=$ver');
@@ -2340,7 +2342,7 @@ class ColistenController {
     final ver = (j['stateVersion'] as num?)?.toInt() ?? 0;
     final needsTrackReload = _guestNeedsTrackReload(j, audio);
     if (ver <= _guestAppliedVersion && !needsTrackReload) return;
-    final pos = _interpolatePositionSeconds(j);
+    final pos = _guestSyncPositionSeconds(j);
     final diffMs =
         ((pos * 1000).round() - audio.position.inMilliseconds).abs();
     final playing = j['playing'] as bool? ?? false;
@@ -2361,7 +2363,7 @@ class ColistenController {
 
   void _commitGuestTransportApply(Map<String, dynamic> j, int version) {
     final playing = j['playing'] as bool? ?? false;
-    final pos = _interpolatePositionSeconds(j);
+    final pos = _guestSyncPositionSeconds(j);
     _guestTargetPositionSeconds = pos;
     _guestTargetPlaying = playing;
     _guestTargetAnchorLocalMs =
@@ -2427,7 +2429,7 @@ class ColistenController {
       // Use interpolated position so that normal playback progress doesn't
       // look like drift. Raw positionSeconds stays frozen while audio advances,
       // causing spurious full-applies and seek loops.
-      final interpolatedPollPos = _interpolatePositionSeconds(map);
+      final interpolatedPollPos = _guestSyncPositionSeconds(map);
       final posDiffMs =
           ((interpolatedPollPos * 1000).round() -
                   audio.position.inMilliseconds)
@@ -2600,7 +2602,7 @@ class ColistenController {
         .where((e) => e.isNotEmpty)
         .toList();
     final playing = j['playing'] as bool? ?? false;
-    final pos = _interpolatePositionSeconds(j);
+    final pos = _guestSyncPositionSeconds(j);
     final shuffleEnabled = j['shuffleEnabled'] as bool?;
     final repeatMode = (j['repeatMode'] as String?)?.trim().toLowerCase();
     final roleTag = guestTimelineHints ? 'guest' : 'host';
@@ -3048,7 +3050,8 @@ class ColistenController {
     return Track(assetPath: key, title: key);
   }
 
-  double _interpolatePositionSeconds(Map<String, dynamic> j) {
+  /// Позиция для гостя: без агрессивной экстраполяции вперёд (иначе +1–2с к хосту).
+  double _guestSyncPositionSeconds(Map<String, dynamic> j) {
     final pos =
         ((j['positionSeconds'] as num?) ?? (j['position'] as num?))
             ?.toDouble() ??
@@ -3057,9 +3060,9 @@ class ColistenController {
     if (!playing) return pos;
     final wallClock = (j['wallClockMs'] as num?)?.toInt() ?? 0;
     if (wallClock <= 0) return pos;
-    final elapsedMs = (DateTime.now().millisecondsSinceEpoch - wallClock)
-        .clamp(0, _guestMaxInterpolationMs);
-    return pos + (elapsedMs / 1000.0);
+    final elapsedMs = DateTime.now().millisecondsSinceEpoch - wallClock;
+    final leadMs = (elapsedMs - _guestNetworkLatencyMs).clamp(0, _guestMaxLeadMs);
+    return pos + (leadMs / 1000.0);
   }
 
   String _roomPlaybackSignature(Map<String, dynamic> j) {

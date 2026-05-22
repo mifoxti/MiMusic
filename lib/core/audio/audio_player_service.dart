@@ -215,6 +215,7 @@ class AudioPlayerService extends ChangeNotifier {
           },
         )
         .toList();
+    final pathBefore = currentPlayablePath;
     await _handler.customAction('playAsset', {
       'path': path,
       'itemId': track.assetPath,
@@ -225,6 +226,15 @@ class AudioPlayerService extends ChangeNotifier {
       'autoPlay': autoPlay,
       if (queueMaps?.isNotEmpty ?? false) 'queue': queueMaps,
     });
+    final room = ListeningRoomSession.instance;
+    if (room.active && room.isHost && !leaveListeningRoomSession) {
+      unawaited(
+        ColistenController.instance.pushHostTransportStateAfterSkip(
+          this,
+          previousPlayablePath: pathBefore,
+        ),
+      );
+    }
     unawaited(_syncNowPlayingToServer(track));
   }
 
