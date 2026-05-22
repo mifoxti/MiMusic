@@ -98,6 +98,8 @@ class ColistenController {
   int _guestCommandSerial = 0;
   String? _guestLastAppliedPlaybackSig;
   double? _guestLastTransportPositionSeconds;
+  bool? _guestLastKnownShuffleEnabled;
+  String? _guestLastKnownRepeatMode;
   String? _roomId;
   final Map<int, Track> _trackCache = <int, Track>{};
   final Map<int, String> _participantNameCache = <int, String>{};
@@ -115,14 +117,113 @@ class ColistenController {
     return !_guestEngineMatchesServer(_guestLastKnownPlaying!, audio);
   }
 
+  bool _guestTransportFieldsChanged(
+    Map<String, dynamic> j,
+    AudioPlayerService audio,
+  ) {
+    final playing = j['playing'] as bool? ?? false;
+    if (_guestServerPlayingChanged(playing)) return true;
+    if (_guestNeedsTrackReload(j, audio)) return true;
+    final pos =
+        ((j['positionSeconds'] as num?) ?? (j['position'] as num?))
+            ?.toDouble() ??
+        0;
+    final lastPos = _guestLastTransportPositionSeconds;
+    if (lastPos == null) return true;
+    return (lastPos - pos).abs() >= 0.2;
+  }
+
+  bool _guestMetadataChanged(Map<String, dynamic> j) {
+    final shuffle = j['shuffleEnabled'] as bool?;
+    final repeat = (j['repeatMode'] as String?)?.trim().toLowerCase();
+    if (shuffle != null && shuffle != _guestLastKnownShuffleEnabled) {
+      return true;
+    }
+    if (repeat != null &&
+        repeat.isNotEmpty &&
+        repeat != _guestLastKnownRepeatMode) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _guestSessionSettingsChanged(Map<String, dynamic> j) {
+    final session = ListeningRoomSession.instance;
+    if (!session.active) return false;
+    final privateRoom = !(j['isOpen'] as bool? ?? false);
+    if (privateRoom != session.privateRoom) return true;
+    if ((j['controlPauseHostOnly'] as bool? ?? true) != session.pauseHostOnly) {
+      return true;
+    }
+    if ((j['controlSeekHostOnly'] as bool? ?? true) != session.seekHostOnly) {
+      return true;
+    }
+    if ((j['controlShuffleHostOnly'] as bool? ?? true) !=
+        session.shuffleHostOnly) {
+      return true;
+    }
+    if ((j['controlRepeatHostOnly'] as bool? ?? true) != session.repeatHostOnly) {
+      return true;
+    }
+    if ((j['controlSkipHostOnly'] as bool? ?? true) != session.skipHostOnly) {
+      return true;
+    }
+    if ((j['controlPlaylistHostOnly'] as bool? ?? true) !=
+        session.playlistHostOnly) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _guestLightweightStateChanged(Map<String, dynamic> j) =>
+      _guestMetadataChanged(j) || _guestSessionSettingsChanged(j);
+
   bool _guestNeedsTransportSync(
     Map<String, dynamic> j,
     AudioPlayerService audio,
   ) {
     final playing = j['playing'] as bool? ?? false;
-    return _guestControlSeqAdvanced(j) ||
-        _guestServerPlayingChanged(playing) ||
-        !_guestEngineMatchesServer(playing, audio);
+    return _guestServerPlayingChanged(playing) ||
+        !_guestEngineMatchesServer(playing, audio) ||
+        (_guestControlSeqAdvanced(j) &&
+            _guestTransportFieldsChanged(j, audio));
+  }
+
+  Future<void> _applyGuestMetadataOnly(
+    Map<String, dynamic> j,
+    AudioPlayerService audio,
+    int generation,
+    int ver,
+  ) async {
+    if (_connectionGeneration != generation) return;
+    _applySessionState(j);
+    final shuffle = j['shuffleEnabled'] as bool?;
+    final repeat = (j['repeatMode'] as String?)?.trim().toLowerCase();
+    await audio.applyRoomPlaybackModes(
+      shuffleEnabled: shuffle,
+      repeatMode: repeat,
+    );
+    if (_connectionGeneration != generation) return;
+    final cs = _guestControlSeqFrom(j);
+    if (cs > _guestLastControlSeq) {
+      _guestLastControlSeq = cs;
+    }
+    if (shuffle != null) {
+      _guestLastKnownShuffleEnabled = shuffle;
+    }
+    if (repeat != null && repeat.isNotEmpty) {
+      _guestLastKnownRepeatMode = repeat;
+    }
+    if (ver > _guestAppliedVersion) {
+      _guestAppliedVersion = ver;
+      _markGuestWsApplied(ver);
+    }
+    if (ver > _guestLastSeenVersion) {
+      _guestLastSeenVersion = ver;
+    }
+    _log(
+      'guest metadata apply v=$ver cs=$cs shuffle=$shuffle repeat=$repeat',
+    );
   }
 
   Future<void> _applyGuestServerPlaying(
@@ -243,6 +344,8 @@ class ColistenController {
     _guestCommandSerial = 0;
     _guestLastAppliedPlaybackSig = null;
     _guestLastTransportPositionSeconds = null;
+    _guestLastKnownShuffleEnabled = null;
+    _guestLastKnownRepeatMode = null;
     _guestLastKnownPlaying = null;
     _guestWsBootstrapBuffer.clear();
     _guestWsBootstrapDone = false;
@@ -480,6 +583,7 @@ class ColistenController {
           forcePositionSync: true,
         ),
       );
+      return;
     } else if (pendingInitial != null && pendingInitialVer > _guestAppliedVersion) {
       _log(
         'guest bootstrap apply initial-rest room=$roomId v=$pendingInitialVer',
@@ -497,6 +601,7 @@ class ColistenController {
           forcePositionSync: true,
         ),
       );
+      return;
     } else if (!initialBootstrapOk) {
       _log('guest bootstrap no snapshot room=$roomId, REST fallback');
       _runGuestBootstrapApply(
@@ -510,15 +615,32 @@ class ColistenController {
           forcePositionSync: true,
         ),
       );
+      return;
+    }
+    _onGuestBootstrapReady(roomId: roomId, audio: audio, generation: generation);
+  }
+
+  void _onGuestBootstrapReady({
+    required String roomId,
+    required AudioPlayerService audio,
+    required int generation,
+  }) {
+    if (_connectionGeneration != generation ||
+        _isHost ||
+        _roomId != roomId ||
+        !ListeningRoomSession.instance.active) {
+      return;
     }
     _guestBootstrapComplete = true;
     ListeningRoomSession.instance.setJoining(false);
+    _guestPollTimer?.cancel();
     _guestPollTimer = Timer.periodic(
       const Duration(milliseconds: _guestPollIntervalMs),
       (_) {
         unawaited(_guestPollRoomState(roomId, audio, generation));
       },
     );
+    _guestForcedRestTimer?.cancel();
     _guestForcedRestTimer = Timer.periodic(
       const Duration(milliseconds: _guestForcedRestSyncMs),
       (_) {
@@ -570,6 +692,11 @@ class ColistenController {
             debugLabel: 'deferred-after-bootstrap',
           );
         }
+        _onGuestBootstrapReady(
+          roomId: roomId,
+          audio: audio,
+          generation: generation,
+        );
         unawaited(
           _guestPollRoomState(
             roomId,
@@ -1781,6 +1908,11 @@ class ColistenController {
           !needsTrackReload &&
           !queueMismatch &&
           _guestNeedsTransportSync(j, audio);
+      final metadataOnly = audio.currentTrack != null &&
+          !needsTrackReload &&
+          !queueMismatch &&
+          _guestLightweightStateChanged(j) &&
+          !_guestNeedsTransportSync(j, audio);
       if (transportOnly) {
         final stateCopy = Map<String, dynamic>.from(j);
         _enqueueGuestTransportApply(
@@ -1792,6 +1924,16 @@ class ColistenController {
             ver,
           ),
           debugLabel: 'ws-transport',
+        );
+        if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
+        _completeGuestFirstRealtimeIfNeeded();
+        return;
+      }
+      if (metadataOnly) {
+        _enqueueGuestApply(
+          generation,
+          () => _applyGuestMetadataOnly(j, audio, generation, ver),
+          debugLabel: 'ws-metadata',
         );
         if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
         _completeGuestFirstRealtimeIfNeeded();
@@ -2024,6 +2166,14 @@ class ColistenController {
     _guestLastAppliedPlaybackSig = _roomPlaybackSignature(j);
     _guestLastTransportPositionSeconds = pos;
     _guestLastKnownPlaying = playing;
+    final shuffle = j['shuffleEnabled'] as bool?;
+    final repeat = (j['repeatMode'] as String?)?.trim().toLowerCase();
+    if (shuffle != null) {
+      _guestLastKnownShuffleEnabled = shuffle;
+    }
+    if (repeat != null && repeat.isNotEmpty) {
+      _guestLastKnownRepeatMode = repeat;
+    }
     _guestNeedsInitialHardSync = false;
   }
 
@@ -2080,8 +2230,7 @@ class ColistenController {
           engineDrift ||
           playingChanged ||
           trackReload ||
-          queueMismatch ||
-          posDiffMs >= 350;
+          queueMismatch;
       if (!needsApply) return;
       _log(
         'guest poll apply room=$roomId v=${state.stateVersion} pos=${state.positionSeconds.toStringAsFixed(3)} playing=${state.playing} force=$forceApply drift=$engineDrift wsAgoMs=${_guestLastWsStateAtMs == 0 ? -1 : nowMs - _guestLastWsStateAtMs}',
@@ -2089,7 +2238,13 @@ class ColistenController {
       final transportOnly = audio.currentTrack != null &&
           !trackReload &&
           !queueMismatch &&
-          (controlAdvanced || engineDrift || playingChanged);
+          (controlAdvanced || engineDrift || playingChanged) &&
+          _guestNeedsTransportSync(map, audio);
+      final metadataOnly = audio.currentTrack != null &&
+          !trackReload &&
+          !queueMismatch &&
+          _guestLightweightStateChanged(map) &&
+          !_guestNeedsTransportSync(map, audio);
       if (transportOnly) {
         final ver = state.stateVersion;
         _enqueueGuestTransportApply(
@@ -2099,6 +2254,14 @@ class ColistenController {
             if (_connectionGeneration == generation) _markGuestWsApplied(ver);
           },
           debugLabel: 'poll-transport',
+        );
+        return;
+      } else if (metadataOnly) {
+        await _applyGuestMetadataOnly(
+          map,
+          audio,
+          generation,
+          state.stateVersion,
         );
         return;
       } else if (bootstrapInFlight) {
@@ -2249,6 +2412,24 @@ class ColistenController {
     final trackKeyMatches =
         effectiveTrackKey != null && effectiveTrackKey == currentTrackKey;
     if (trackKeyMatches && !queueMismatch && !forceTrackReload) {
+      final metadataOnly = !forcePositionSync &&
+          _guestLightweightStateChanged(j) &&
+          !_guestTransportFieldsChanged(j, audio);
+      if (metadataOnly) {
+        await audio.applyRoomPlaybackModes(
+          shuffleEnabled: shuffleEnabled,
+          repeatMode: repeatMode,
+        );
+        if (shuffleEnabled != null) {
+          _guestLastKnownShuffleEnabled = shuffleEnabled;
+        }
+        if (repeatMode != null && repeatMode.isNotEmpty) {
+          _guestLastKnownRepeatMode = repeatMode;
+        }
+        if (_connectionGeneration != applyGeneration) return;
+        _log('$roleTag metadata-only apply room=$_roomId');
+        return;
+      }
       await audio.applyRoomPlaybackModes(
         shuffleEnabled: shuffleEnabled,
         repeatMode: repeatMode,
@@ -2442,7 +2623,8 @@ class ColistenController {
         !trackChanged &&
         !playingChanged &&
         !enginePlayingDrift &&
-        !controlAdvanced) {
+        !controlAdvanced &&
+        !_guestLightweightStateChanged(j)) {
       return;
     }
     final playbackSig = _roomPlaybackSignature(j);
@@ -2452,9 +2634,21 @@ class ColistenController {
         !trackChanged &&
         !playingChanged &&
         !enginePlayingDrift &&
+        !_guestLightweightStateChanged(j) &&
         version <= _guestAppliedVersion &&
         playbackSig == _guestLastAppliedPlaybackSig) {
       _applySessionState(j);
+      return;
+    }
+    if (audio.currentTrack != null &&
+        !forceTrackReload &&
+        !forcePositionSync &&
+        !trackChanged &&
+        !playingChanged &&
+        !enginePlayingDrift &&
+        _guestLightweightStateChanged(j) &&
+        !_guestTransportFieldsChanged(j, audio)) {
+      await _applyGuestMetadataOnly(j, audio, applyGeneration, version);
       return;
     }
     var applyForcePositionSync = forcePositionSync;
@@ -2894,7 +3088,7 @@ class ColistenController {
     final overrides = <String, dynamic>{
       'position': positionSeconds ??
           audio.enginePosition.inMilliseconds / 1000.0,
-      'playing': playing ?? audio.engineIsPlaying,
+      'playing': playing ?? audio.isPlaying,
     };
     if (resolved.trackId != null) overrides['trackId'] = resolved.trackId;
     if (resolved.trackKey != null) overrides['trackKey'] = resolved.trackKey;

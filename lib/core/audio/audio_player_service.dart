@@ -437,8 +437,10 @@ class AudioPlayerService extends ChangeNotifier {
     final room = ListeningRoomSession.instance;
     if (room.active && !room.canControlPause) return;
     ColistenController.instance.onGuestManualPlayPauseToggle(this);
+    // В комнате — по UI-намерению (_isPlaying): engineIsPlaying после pause часто
+    // ещё true, из-за чего первое нажатие play снова шлёт pause на сервер.
     final willPlay = !_isPlaying;
-    _suppressPlayingMirror();
+    _suppressPlayingMirror(ms: room.active ? 450 : 120);
     _isPlaying = willPlay;
     notifyListeners();
     if (!willPlay) {
@@ -494,6 +496,7 @@ class AudioPlayerService extends ChangeNotifier {
     final room = ListeningRoomSession.instance;
     if (room.active && !room.canControlSeek) return;
     await _handler.seek(position);
+    _syncPlayingFromHandler(notify: false);
     if (room.active && room.canControlSeek) {
       ColistenController.instance.pushHostTransportState(
         this,
