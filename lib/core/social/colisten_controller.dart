@@ -58,6 +58,13 @@ class ColistenController {
   bool _guestWsBootstrapDone = false;
   Future<void> _guestWsApplyChain = Future<void>.value();
   Future<void> _guestTransportApplyChain = Future<void>.value();
+  Future<void> _guestPlayPauseChain = Future<void>.value();
+  Object? _guestSeekToken;
+  Map<String, dynamic>? _guestPendingTransportState;
+  int _guestPendingTransportVer = 0;
+  int _guestPendingTransportGeneration = 0;
+  AudioPlayerService? _guestPendingTransportAudio;
+  bool _guestTransportDrainQueued = false;
   String? _hostLastSentSignature;
   int _connectionGeneration = 0;
   int _hostAppliedRoomVersion = 0;
@@ -67,6 +74,8 @@ class ColistenController {
   Timer? _hostRestDebounceTimer;
   Map<String, dynamic>? _hostRestDebouncePayload;
   AudioPlayerService? _hostRestDebounceAudio;
+  Timer? _hostControlRestTimer;
+  int _hostControlRestSerial = 0;
   int _guestLastWsStateAtMs = 0;
   int _guestHostPausedAtMs = 0;
   int _guestWsConnectedAtMs = 0;
@@ -110,6 +119,23 @@ class ColistenController {
 
   bool _guestEngineMatchesServer(bool serverPlaying, AudioPlayerService audio) =>
       serverPlaying == audio.engineIsPlaying;
+
+  bool _guestOutOfSyncWithServer(bool serverPlaying, AudioPlayerService audio) =>
+      _guestServerPlayingChanged(serverPlaying) ||
+      !_guestEngineMatchesServer(serverPlaying, audio);
+
+  /// In-flight transport устарел: в очереди уже лежит более новый pending snapshot.
+  /// Не сравниваем с [_guestLastSeenVersion]: WS может обновить seen до drain,
+  /// и тогда пауза/плей из pending никогда не доходит до ExoPlayer.
+  bool _guestTransportSuperseded(int ver, int generation) {
+    if (_connectionGeneration != generation) return true;
+    if (ver <= 0) return false;
+    final pendingVer = _guestPendingTransportVer;
+    final hasNewerPending = _guestPendingTransportState != null &&
+        _guestPendingTransportGeneration == generation &&
+        pendingVer > ver;
+    return hasNewerPending;
+  }
 
   bool _guestEngineDrifted(AudioPlayerService audio) {
     if (audio.currentTrack == null) return false;
@@ -183,10 +209,110 @@ class ColistenController {
     AudioPlayerService audio,
   ) {
     final playing = j['playing'] as bool? ?? false;
-    return _guestServerPlayingChanged(playing) ||
-        !_guestEngineMatchesServer(playing, audio) ||
-        (_guestControlSeqAdvanced(j) &&
-            _guestTransportFieldsChanged(j, audio));
+    if (_guestServerPlayingChanged(playing)) return true;
+    if (!_guestEngineMatchesServer(playing, audio)) return true;
+    final pos =
+        ((j['positionSeconds'] as num?) ?? (j['position'] as num?))
+            ?.toDouble() ??
+        0;
+    final lastPos = _guestLastTransportPositionSeconds;
+    if (lastPos != null && (lastPos - pos).abs() >= 0.2) return true;
+    return _guestControlSeqAdvanced(j) &&
+        _guestTransportFieldsChanged(j, audio);
+  }
+
+  void _resetGuestTransportPending() {
+    _guestPendingTransportState = null;
+    _guestPendingTransportVer = 0;
+    _guestPendingTransportGeneration = 0;
+    _guestPendingTransportAudio = null;
+    _guestTransportDrainQueued = false;
+    _guestPlayPauseChain = Future<void>.value();
+    _guestSeekToken = null;
+  }
+
+  static const Duration _guestEngineOpTimeout = Duration(seconds: 2);
+
+  Future<void> _runGuestPlayPause(Future<void> Function() op) {
+    final scheduled = _guestPlayPauseChain.then((_) async {
+      if (_isHost || !ListeningRoomSession.instance.active) return;
+      try {
+        await op().timeout(_guestEngineOpTimeout);
+      } on TimeoutException {
+        _log('guest playpause sync timeout room=$_roomId');
+      }
+    });
+    _guestPlayPauseChain = scheduled.catchError((Object e) {
+      _log('guest playpause sync error room=$_roomId error=$e');
+    });
+    return scheduled;
+  }
+
+  Future<void> _guestTransportEngineOp(
+    Future<void> Function() op, {
+    required String label,
+  }) async {
+    try {
+      await op().timeout(_guestEngineOpTimeout);
+    } on TimeoutException {
+      _log('guest transport $label timeout room=$_roomId');
+    } catch (e) {
+      _log('guest transport $label error room=$_roomId error=$e');
+    }
+  }
+
+  /// Только последний seek; не ждём предыдущий (длинный seek не блокирует resume).
+  Future<void> _runGuestSeek(Future<void> Function() op) {
+    final token = Object();
+    _guestSeekToken = token;
+    return Future<void>(() async {
+      if (_isHost || !ListeningRoomSession.instance.active) return;
+      if (_guestSeekToken != token) return;
+      try {
+        await op().timeout(const Duration(seconds: 3));
+      } on TimeoutException {
+        if (_guestSeekToken == token) {
+          _log('guest seek timeout room=$_roomId');
+        }
+      } catch (e) {
+        if (_guestSeekToken == token) {
+          _log('guest seek sync error room=$_roomId error=$e');
+        }
+      }
+    });
+  }
+
+  Future<void> _guestApplyPlayPauseIntent(
+    AudioPlayerService audio, {
+    required bool playing,
+    required Duration target,
+  }) async {
+    if (playing) {
+      await audio.playFromRoomSync();
+      if (!audio.engineIsPlaying) {
+        await audio.seekFromRoomSync(target);
+        await audio.playFromRoomSync();
+      }
+    } else {
+      await audio.pauseFromRoomSync();
+    }
+  }
+
+  bool _shouldReplaceGuestPendingTransport(
+    int generation,
+    Map<String, dynamic> j,
+  ) {
+    final pending = _guestPendingTransportState;
+    if (pending == null || _guestPendingTransportGeneration != generation) {
+      return true;
+    }
+    final incomingVer = _stateVersionFromJson(j);
+    final incomingCs = _guestControlSeqFrom(j);
+    final pendingVer = _guestPendingTransportVer;
+    final pendingCs = _guestControlSeqFrom(pending);
+    if (incomingVer > pendingVer) return true;
+    if (incomingVer == pendingVer && incomingCs >= pendingCs) return true;
+    return false;
   }
 
   Future<void> _applyGuestMetadataOnly(
@@ -197,6 +323,8 @@ class ColistenController {
   ) async {
     if (_connectionGeneration != generation) return;
     _applySessionState(j);
+    final playing = j['playing'] as bool? ?? false;
+    _guestLastKnownPlaying = playing;
     final shuffle = j['shuffleEnabled'] as bool?;
     final repeat = (j['repeatMode'] as String?)?.trim().toLowerCase();
     await audio.applyRoomPlaybackModes(
@@ -234,8 +362,13 @@ class ColistenController {
       _guestLastKnownPlaying = serverPlaying;
       return;
     }
+    final target = Duration(milliseconds: audio.position.inMilliseconds);
     if (serverPlaying) {
-      await audio.playFromRoomSync();
+      await _guestApplyPlayPauseIntent(
+        audio,
+        playing: true,
+        target: target,
+      );
     } else {
       await audio.pauseFromRoomSync();
       _guestHostPausedAtMs = DateTime.now().millisecondsSinceEpoch;
@@ -284,6 +417,7 @@ class ColistenController {
     _guestForcedRestTimer = null;
     _guestCoalescedState = null;
     _guestCoalesceFlushScheduled = false;
+    _resetGuestTransportPending();
     _guestApplyDebounceTimer?.cancel();
     _guestApplyDebounceTimer = null;
     _guestPendingApplyState = null;
@@ -308,6 +442,9 @@ class ColistenController {
     _hostRestDebounceTimer = null;
     _hostRestDebouncePayload = null;
     _hostRestDebounceAudio = null;
+    _hostControlRestTimer?.cancel();
+    _hostControlRestTimer = null;
+    _hostControlRestSerial = 0;
     _guestLastWsStateAtMs = 0;
     _guestHostPausedAtMs = 0;
     _guestWsConnectedAtMs = 0;
@@ -869,7 +1006,7 @@ class ColistenController {
       _log(
         'guest force snapshot room=$roomId v=${state.stateVersion} trackId=${state.trackId} key=${state.trackKey} pos=${state.positionSeconds.toStringAsFixed(3)} playing=${state.playing} forceReload=$forceTrackReload',
       );
-      final engineDrift = !_guestEngineMatchesServer(state.playing, audio);
+      final engineDrift = _guestOutOfSyncWithServer(state.playing, audio);
       if (state.stateVersion <= _guestAppliedVersion &&
           !forceTrackReload &&
           !forcePositionSync &&
@@ -990,23 +1127,48 @@ class ColistenController {
     return false;
   }
 
+  /// Очередь transport: при burst WS/poll применяем только последний snapshot,
+  /// иначе await play/pause блокирует цепочку и гость «залипает».
   void _enqueueGuestTransportApply(
     int generation,
-    Future<void> Function() apply, {
+    Map<String, dynamic> state,
+    int ver,
+    AudioPlayerService audio, {
     String? debugLabel,
   }) {
+    if (_shouldReplaceGuestPendingTransport(generation, state)) {
+      _guestPendingTransportState = Map<String, dynamic>.from(state);
+      _guestPendingTransportVer = ver;
+      _guestPendingTransportGeneration = generation;
+      _guestPendingTransportAudio = audio;
+    }
+    if (_guestTransportDrainQueued) return;
+    _guestTransportDrainQueued = true;
     _guestTransportApplyChain = _guestTransportApplyChain.then((_) async {
-      if (_connectionGeneration != generation ||
-          _isHost ||
-          !ListeningRoomSession.instance.active) {
-        return;
-      }
       try {
-        await apply();
-      } catch (e) {
-        _log(
-          'guest transport apply error room=$_roomId label=${debugLabel ?? "transport"} error=$e',
-        );
+      while (_guestPendingTransportState != null) {
+        if (_connectionGeneration != _guestPendingTransportGeneration ||
+            _isHost ||
+            !ListeningRoomSession.instance.active) {
+          _resetGuestTransportPending();
+          return;
+        }
+        final j = _guestPendingTransportState!;
+        final applyVer = _guestPendingTransportVer;
+        final applyGen = _guestPendingTransportGeneration;
+        final applyAudio = _guestPendingTransportAudio;
+        _guestPendingTransportState = null;
+        if (applyAudio == null) continue;
+        try {
+          await _applyGuestTransportFromWs(j, applyAudio, applyGen, applyVer);
+        } catch (e) {
+          _log(
+            'guest transport apply error room=$_roomId label=${debugLabel ?? "transport"} error=$e',
+          );
+        }
+      }
+      } finally {
+        _guestTransportDrainQueued = false;
       }
     });
   }
@@ -1172,12 +1334,23 @@ class ColistenController {
     if (_canSendHostWs(payload, forceWs: true)) {
       _sink(jsonEncode(payload));
     }
-    unawaited(
-      Future<void>.delayed(const Duration(milliseconds: 50), () {
-        if (!_isHost || !ListeningRoomSession.instance.active) return;
-        _syncHostStateViaRest(audio, force: true, payloadOverride: payload);
-      }),
-    );
+    _scheduleHostControlRestAck(audio, Map<String, dynamic>.from(payload));
+  }
+
+  /// REST-ack для `command`: один отложенный запрос с последним payload.
+  /// Иначе при быстром play→pause→play срабатывает таймер прошлой паузы и гость
+  /// получает playing=false уже после resume по WS.
+  void _scheduleHostControlRestAck(
+    AudioPlayerService audio,
+    Map<String, dynamic> payload,
+  ) {
+    _hostControlRestTimer?.cancel();
+    final serial = ++_hostControlRestSerial;
+    _hostControlRestTimer = Timer(const Duration(milliseconds: 50), () {
+      if (serial != _hostControlRestSerial) return;
+      if (!_isHost || !ListeningRoomSession.instance.active) return;
+      _syncHostStateViaRest(audio, force: true, payloadOverride: payload);
+    });
   }
 
   String _hostStateSignature(Map<String, dynamic> payload) {
@@ -1879,7 +2052,7 @@ class ColistenController {
       }
       final playing = j['playing'] as bool? ?? false;
       final playingChanged = _guestServerPlayingChanged(playing);
-      final enginePlayingDrift = !_guestEngineMatchesServer(playing, audio);
+      final enginePlayingDrift = _guestOutOfSyncWithServer(playing, audio);
       final needsTrackReload = _guestNeedsTrackReload(j, audio);
       final queueMismatch = _guestNeedsQueueSync(j, audio);
       final controlAdvanced = _guestControlSeqAdvanced(j);
@@ -1890,6 +2063,7 @@ class ColistenController {
       _log(
         'guest ws state room=$_roomId v=$ver cs=${_guestControlSeqFrom(j)} trackId=${j['trackId']} key=${j['trackKey']} pos=${j['positionSeconds'] ?? j['position']} playing=$playing reload=$needsTrackReload queue=$queueMismatch ctrl=$controlAdvanced',
       );
+      if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
       final needsApply = ver > _guestAppliedVersion ||
           controlAdvanced ||
           playingChanged ||
@@ -1914,15 +2088,11 @@ class ColistenController {
           _guestLightweightStateChanged(j) &&
           !_guestNeedsTransportSync(j, audio);
       if (transportOnly) {
-        final stateCopy = Map<String, dynamic>.from(j);
         _enqueueGuestTransportApply(
           generation,
-          () => _applyGuestTransportFromWs(
-            stateCopy,
-            audio,
-            generation,
-            ver,
-          ),
+          j,
+          ver,
+          audio,
           debugLabel: 'ws-transport',
         );
         if (ver > _guestLastSeenVersion) _guestLastSeenVersion = ver;
@@ -1955,7 +2125,7 @@ class ColistenController {
     final ver = _stateVersionFromJson(j);
     final playing = j['playing'] as bool? ?? false;
     final playingChanged = _guestServerPlayingChanged(playing);
-    final enginePlayingDrift = !_guestEngineMatchesServer(playing, audio);
+    final enginePlayingDrift = _guestOutOfSyncWithServer(playing, audio);
     final needsTrackReload = _guestNeedsTrackReload(j, audio);
     final queueMismatch = _guestNeedsQueueSync(j, audio);
     final controlAdvanced = _guestControlSeqAdvanced(j);
@@ -1968,8 +2138,13 @@ class ColistenController {
         !queueMismatch &&
         (controlAdvanced || playingChanged || enginePlayingDrift);
     if (transportOnly) {
-      await _applyGuestTransportFromWs(j, audio, generation, ver);
-      if (_connectionGeneration != generation) return;
+      _enqueueGuestTransportApply(
+        generation,
+        j,
+        ver,
+        audio,
+        debugLabel: 'wire-transport',
+      );
       return;
     }
     _guestApplyDebounceTimer?.cancel();
@@ -2005,6 +2180,12 @@ class ColistenController {
       );
       return;
     }
+    if (_guestTransportSuperseded(ver, generation)) {
+      _log(
+        'guest transport skip superseded v=$ver pending=$_guestPendingTransportVer seen=$_guestLastSeenVersion',
+      );
+      return;
+    }
     _applySessionState(j);
     final playing = j['playing'] as bool? ?? false;
     final pos = _interpolatePositionSeconds(j);
@@ -2017,28 +2198,55 @@ class ColistenController {
     final lastTransportPos = _guestLastTransportPositionSeconds;
     final serverPositionChanged = lastTransportPos == null ||
         (lastTransportPos - pos).abs() >= 0.2;
-    // Non-blocking play/pause: _isPlaying is set synchronously inside
-    // play/pauseFromRoomSync before their internal await, so the next chain
-    // item sees the correct engine state without waiting for ExoPlayer.
-    if (!_guestEngineMatchesServer(playing, audio)) {
-      _guestLastKnownPlaying = playing;
-      if (playing) {
-        unawaited(audio.playFromRoomSync());
-      } else {
-        _guestHostPausedAtMs = DateTime.now().millisecondsSinceEpoch;
-        unawaited(audio.pauseFromRoomSync());
-      }
-    } else {
-      _guestLastKnownPlaying = playing;
-    }
-    if (_connectionGeneration != generation) return;
     final targetMs = (pos * 1000).round();
+    final target = Duration(milliseconds: targetMs);
     final diffMs = (targetMs - audio.position.inMilliseconds).abs();
     final seekThresholdMs = playing ? 280 : 180;
-    if (serverPositionChanged || diffMs >= seekThresholdMs) {
-      // Don't await — large seeks block the transport chain for multiple seconds
-      // while ExoPlayer buffers. Position is corrected by next WS state or poll.
-      unawaited(audio.seekFromRoomSync(Duration(milliseconds: targetMs)));
+    final needsSeek = serverPositionChanged || diffMs >= seekThresholdMs;
+    final playPauseNeeded = _guestOutOfSyncWithServer(playing, audio);
+    // Пауза до seek на Android; seek не ждём play/pause-очередь (иначе seek «замораживается»).
+    if (!playing && playPauseNeeded) {
+      await _guestTransportEngineOp(() async {
+        await audio.pauseFromRoomSync();
+        _guestHostPausedAtMs = DateTime.now().millisecondsSinceEpoch;
+      }, label: 'pause');
+    }
+    if (_connectionGeneration != generation ||
+        _guestTransportSuperseded(ver, generation)) {
+      return;
+    }
+    if (needsSeek) {
+      await _guestTransportEngineOp(
+        () => audio.seekFromRoomSync(target),
+        label: 'seek',
+      );
+    }
+    if (_connectionGeneration != generation ||
+        _guestTransportSuperseded(ver, generation)) {
+      return;
+    }
+    if (playing && playPauseNeeded) {
+      await _guestTransportEngineOp(
+        () => _guestApplyPlayPauseIntent(
+          audio,
+          playing: true,
+          target: target,
+        ),
+        label: 'play',
+      );
+    } else if (playing && !_guestEngineMatchesServer(true, audio)) {
+      await _guestTransportEngineOp(
+        () => _guestApplyPlayPauseIntent(
+          audio,
+          playing: true,
+          target: target,
+        ),
+        label: 'play-resync',
+      );
+    }
+    if (_connectionGeneration != generation ||
+        _guestTransportSuperseded(ver, generation)) {
+      return;
     }
     final controlSeq = _guestControlSeqFrom(j);
     if (controlSeq > _guestLastControlSeq) {
@@ -2212,7 +2420,7 @@ class ColistenController {
         return;
       }
       final controlAdvanced = state.controlSeq > _guestLastControlSeq;
-      final engineDrift = !_guestEngineMatchesServer(state.playing, audio);
+      final engineDrift = _guestOutOfSyncWithServer(state.playing, audio);
       final playingChanged = _guestServerPlayingChanged(state.playing);
       final trackReload = _guestNeedsTrackReload(map, audio);
       final queueMismatch = _guestNeedsQueueSync(map, audio);
@@ -2246,13 +2454,11 @@ class ColistenController {
           _guestLightweightStateChanged(map) &&
           !_guestNeedsTransportSync(map, audio);
       if (transportOnly) {
-        final ver = state.stateVersion;
         _enqueueGuestTransportApply(
           generation,
-          () async {
-            await _applyGuestTransportFromWs(map, audio, generation, ver);
-            if (_connectionGeneration == generation) _markGuestWsApplied(ver);
-          },
+          map,
+          state.stateVersion,
+          audio,
           debugLabel: 'poll-transport',
         );
         return;
@@ -2274,6 +2480,30 @@ class ColistenController {
         }
         _log(
           'guest poll defer full apply during bootstrap room=$roomId v=${state.stateVersion}',
+        );
+      } else if (state.stateVersion > _guestAppliedVersion &&
+          _guestNeedsTransportSync(map, audio)) {
+        _enqueueGuestTransportApply(
+          generation,
+          map,
+          state.stateVersion,
+          audio,
+          debugLabel: 'poll-transport-catchup',
+        );
+      } else if (!engineDrift &&
+          !playingChanged &&
+          !trackReload &&
+          !queueMismatch &&
+          posDiffMs < 900 &&
+          state.stateVersion > _guestAppliedVersion &&
+          _guestEngineMatchesServer(state.playing, audio)) {
+        if (state.stateVersion > _guestLastSeenVersion) {
+          _guestLastSeenVersion = state.stateVersion;
+        }
+        _guestAppliedVersion = state.stateVersion;
+        _markGuestWsApplied(state.stateVersion);
+        _log(
+          'guest poll skip version-only room=$roomId v=${state.stateVersion} applied=$_guestAppliedVersion',
         );
       } else {
         await _applyGuestState(
@@ -2606,7 +2836,7 @@ class ColistenController {
         incomingTrackKey != currentTrackKey;
     final playing = j['playing'] as bool? ?? false;
     final playingChanged = _guestServerPlayingChanged(playing);
-    final enginePlayingDrift = !_guestEngineMatchesServer(playing, audio);
+    final enginePlayingDrift = _guestOutOfSyncWithServer(playing, audio);
     final controlAdvanced = _guestControlSeqAdvanced(j);
     // Если транспортная цепочка уже применила более свежую версию —
     // возвращаемся сразу, кроме случаев когда нужно перезагрузить трек.
@@ -2666,7 +2896,13 @@ class ColistenController {
       guestTimelineHints: true,
     );
     if (_connectionGeneration != applyGeneration) return;
-    if (version > _guestAppliedVersion) {
+    if (version > _guestAppliedVersion &&
+        (forceTrackReload ||
+            forcePositionSync ||
+            trackChanged ||
+            playingChanged ||
+            enginePlayingDrift ||
+            _guestEngineMatchesServer(playing, audio))) {
       _guestAppliedVersion = version;
       _markGuestWsApplied(version);
     }
@@ -3057,6 +3293,13 @@ class ColistenController {
   }) {
     if (!_isHost) return;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (_hostLastPlayPausePushedPlaying == playing &&
+        nowMs - _hostLastPlayPausePushAtMs < 200) {
+      _log(
+        'host playpause skip duplicate room=$_roomId playing=$playing',
+      );
+      return;
+    }
     _hostLastPlayPausePushedPlaying = playing;
     _hostLastPlayPausePushAtMs = nowMs;
     _hostLocalActionSerial++;

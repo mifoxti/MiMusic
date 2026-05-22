@@ -103,7 +103,11 @@ class AudioPlayerService extends ChangeNotifier {
 
       var changed = posChanged;
       final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final room = ListeningRoomSession.instance;
+      final hostOwnsPlayState =
+          room.active && room.isHost && room.canControlPause;
       if (nowMs >= _playbackMirrorSuppressUntilMs &&
+          !hostOwnsPlayState &&
           _isPlaying != state.playing) {
         _isPlaying = state.playing;
         changed = true;
@@ -128,6 +132,9 @@ class AudioPlayerService extends ChangeNotifier {
     _playbackMirrorSuppressUntilMs =
         DateTime.now().millisecondsSinceEpoch + ms;
   }
+
+  /// Сериализует play/pause в комнате (без блокировки повторных нажатий).
+  Future<void> _colistenToggleChain = Future<void>.value();
 
   void _syncPlayingFromHandler({bool notify = true}) {
     final playing = _handler.playbackState.value.playing;
@@ -436,9 +443,56 @@ class AudioPlayerService extends ChangeNotifier {
     }
     final room = ListeningRoomSession.instance;
     if (room.active && !room.canControlPause) return;
+    if (room.active && room.canControlPause) {
+      _colistenToggleChain = _colistenToggleChain.then(
+        (_) => _runColistenTogglePlayPause(room),
+      );
+      return _colistenToggleChain;
+    }
+    await _runLocalTogglePlayPause(room);
+  }
+
+  Future<void> _runColistenTogglePlayPause(ListeningRoomSession room) async {
+    if (!room.active || !room.canControlPause) return;
     ColistenController.instance.onGuestManualPlayPauseToggle(this);
-    // В комнате — по UI-намерению (_isPlaying): engineIsPlaying после pause часто
-    // ещё true, из-за чего первое нажатие play снова шлёт pause на сервер.
+    // UI-намерение (_isPlaying), не engineIsPlaying: после pause движок часто
+    // ещё «playing», и повторный tap инвертирует команду на сервер.
+    final willPlay = !_isPlaying;
+    _suppressPlayingMirror(ms: 450);
+    _isPlaying = willPlay;
+    notifyListeners();
+    if (room.isHost) {
+      ColistenController.instance.pushHostPlayPauseState(
+        this,
+        playing: willPlay,
+      );
+    } else {
+      ColistenController.instance.sendGuestPlayPauseCommand(
+        this,
+        playing: willPlay,
+      );
+    }
+    // ExoPlayer play/pause на части Android зависает — не блокируем UI-очередь.
+    unawaited(_syncColistenEnginePlayPause(willPlay));
+  }
+
+  Future<void> _syncColistenEnginePlayPause(bool willPlay) async {
+    try {
+      if (!willPlay) {
+        await _handler.pause().timeout(const Duration(seconds: 3));
+      } else {
+        await _handler.play().timeout(const Duration(seconds: 3));
+      }
+    } on TimeoutException {
+      debugPrint(
+        '[colisten] togglePlayPause engine timeout willPlay=$willPlay',
+      );
+    } catch (e, st) {
+      debugPrint('[colisten] togglePlayPause engine error willPlay=$willPlay: $e\n$st');
+    }
+  }
+
+  Future<void> _runLocalTogglePlayPause(ListeningRoomSession room) async {
     final willPlay = !_isPlaying;
     _suppressPlayingMirror(ms: room.active ? 450 : 120);
     _isPlaying = willPlay;
@@ -447,19 +501,6 @@ class AudioPlayerService extends ChangeNotifier {
       await _handler.pause();
     } else {
       await _handler.play();
-    }
-    if (room.active && room.canControlPause) {
-      if (room.isHost) {
-        ColistenController.instance.pushHostPlayPauseState(
-          this,
-          playing: _isPlaying,
-        );
-      } else {
-        ColistenController.instance.sendGuestPlayPauseCommand(
-          this,
-          playing: _isPlaying,
-        );
-      }
     }
   }
 
@@ -495,16 +536,29 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> seek(Duration position) async {
     final room = ListeningRoomSession.instance;
     if (room.active && !room.canControlSeek) return;
-    await _handler.seek(position);
-    _syncPlayingFromHandler(notify: false);
+    final positionSeconds = position.inMilliseconds / 1000.0;
     if (room.active && room.canControlSeek) {
       ColistenController.instance.pushHostTransportState(
         this,
-        positionSeconds: position.inMilliseconds / 1000.0,
+        positionSeconds: positionSeconds,
         playing: _isPlaying,
       );
     }
+    _position = position;
     notifyListeners();
+    unawaited(_syncColistenEngineSeek(position));
+  }
+
+  Future<void> _syncColistenEngineSeek(Duration position) async {
+    try {
+      await _handler.seek(position).timeout(const Duration(seconds: 3));
+      _syncPlayingFromHandler(notify: false);
+      notifyListeners();
+    } on TimeoutException {
+      debugPrint('[colisten] seek engine timeout pos=${position.inMilliseconds}ms');
+    } catch (e, st) {
+      debugPrint('[colisten] seek engine error: $e\n$st');
+    }
   }
 
   /// Принудительный seek для синхронизации комнаты (без проверки прав гостя).
@@ -526,26 +580,22 @@ class AudioPlayerService extends ChangeNotifier {
     if (_guestLocalPauseActive) return;
     try {
       _suppressPlayingMirror(ms: 500);
-      _isPlaying = true;
-      notifyListeners();
       await _handler.customAction('roomSyncPlay');
+      _syncPlayingFromHandler(notify: true);
     } catch (e, st) {
       debugPrint('[colisten] playFromRoomSync error: $e\n$st');
     }
-    _syncPlayingFromHandler();
   }
 
   Future<void> pauseFromRoomSync() async {
     if (!ListeningRoomSession.instance.active) return;
     try {
       _suppressPlayingMirror(ms: 500);
-      _isPlaying = false;
-      notifyListeners();
       await _handler.customAction('roomSyncPause');
+      _syncPlayingFromHandler(notify: true);
     } catch (e, st) {
       debugPrint('[colisten] pauseFromRoomSync error: $e\n$st');
     }
-    _syncPlayingFromHandler();
   }
 
   Future<void> stop() async {
