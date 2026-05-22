@@ -186,7 +186,7 @@ class _MainShellState extends State<MainShell>
     final userId = acc.userId;
     if (userId == null) return;
     try {
-      final prefs = await getSafeSharedPreferences();
+      final prefs = await SharedPreferences.getInstance();
       final key = 'mimusic_last_friend_push_notif_id_$userId';
       var lastShown = prefs.getInt(key) ?? 0;
       final list = await NotificationsApi().fetchNotifications(
