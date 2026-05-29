@@ -14,6 +14,7 @@ import '../widgets/glass_bottom_menu_sheet.dart';
 import '../widgets/hold_to_confirm_button.dart';
 import '../../core/auth/auth_session_store.dart';
 import '../../core/network/api_config.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/network/playlists_api.dart';
 import '../../core/network/thoughts_api.dart';
 import '../../core/network/tracks_api.dart';
@@ -120,7 +121,12 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     );
   }
 
-  Future<void> _loadFeed() async {
+  Future<void> _loadFeed({bool fromUser = false}) async {
+    if (fromUser && !mounted) return;
+    if (fromUser &&
+        !await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+      return;
+    }
     try {
       final scope = _feed == _ThoughtFeed.friends ? 'friends' : 'popular';
       final list = await ThoughtsApi().fetchThoughtFeed(scope: scope);
@@ -131,8 +137,11 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
           ..addAll(list.map(_fromDto));
         _commentsLoaded.clear();
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      if (fromUser) {
+        await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+      }
       setState(() {
         _items.clear();
         _commentsLoaded.clear();
@@ -140,9 +149,14 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     }
   }
 
-  Future<void> _loadUserThoughtsList() async {
+  Future<void> _loadUserThoughtsList({bool fromUser = false}) async {
     final id = widget.viewedUserId;
     if (id == null) return;
+    if (fromUser && !mounted) return;
+    if (fromUser &&
+        !await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+      return;
+    }
     try {
       final list = await ThoughtsApi().fetchUserThoughts(id);
       if (!mounted) return;
@@ -152,12 +166,23 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
           ..addAll(list.map(_fromDto));
         _commentsLoaded.clear();
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      if (fromUser) {
+        await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+      }
       setState(() {
         _items.clear();
         _commentsLoaded.clear();
       });
+    }
+  }
+
+  Future<void> _refreshFromUser() async {
+    if (widget.viewedUserId != null) {
+      await _loadUserThoughtsList(fromUser: true);
+    } else {
+      await _loadFeed(fromUser: true);
     }
   }
 
@@ -1294,8 +1319,9 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 feed: _feed,
                 onFeedChanged: (f) {
                   setState(() => _feed = f);
-                  unawaited(_loadFeed());
+                  unawaited(_loadFeed(fromUser: true));
                 },
+                onRefresh: _refreshFromUser,
                 onAttachmentTap: _openAttachment,
                 onLikeTap: _toggleLike,
                 onCommentTap: _toggleComments,
@@ -1328,8 +1354,9 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               feed: _feed,
               onFeedChanged: (f) {
                 setState(() => _feed = f);
-                unawaited(_loadFeed());
+                unawaited(_loadFeed(fromUser: true));
               },
+              onRefresh: _refreshFromUser,
               onAttachmentTap: _openAttachment,
               onLikeTap: _toggleLike,
               onCommentTap: _toggleComments,
@@ -1378,6 +1405,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
     this.showComposer = true,
     this.showFeedSwitch = true,
     this.titleOverride,
+    this.onRefresh,
   });
 
   final AppColorPalette palette;
@@ -1400,6 +1428,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
   final bool showComposer;
   final bool showFeedSwitch;
   final String? titleOverride;
+  final Future<void> Function()? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -1443,11 +1472,26 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
               ),
             ),
           Expanded(
-            child: ListView.separated(
+            child: RefreshIndicator(
+              onRefresh: onRefresh ?? () async {},
+              color: palette.accent,
+              child: ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-              itemCount: items.length,
+              itemCount: items.isEmpty ? 1 : items.length,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
+                if (items.isEmpty) {
+                  return SizedBox(
+                    height: MediaQuery.sizeOf(context).height * 0.45,
+                    child: Center(
+                      child: Text(
+                        context.t('userProfile.emptyThoughts'),
+                        style: TextStyle(color: palette.textMuted),
+                      ),
+                    ),
+                  );
+                }
                 final item = items[index];
                 final canManage =
                     currentUserId != null && item.authorUserId == currentUserId;
@@ -1471,6 +1515,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
                       : (comment) => onManageComment!(item.id, comment),
                 );
               },
+            ),
             ),
           ),
         ],

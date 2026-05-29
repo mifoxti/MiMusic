@@ -6,10 +6,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/audio/audio_player_service.dart';
+import 'core/audio/mobile_audio_session.dart';
 import 'core/audio/mimusic_audio_handler.dart';
 import 'core/social/colisten_controller.dart';
 import 'core/social/listening_room_session.dart';
 import 'core/auth/auth_session_store.dart';
+import 'core/constants/server_avatar_constants.dart';
+import 'core/profile/me_profile_avatar_disk.dart';
 import 'core/profile/me_profile_cache.dart';
 import 'core/network/api_config.dart';
 import 'core/auth/session_scope.dart';
@@ -82,12 +85,15 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
       final settings = await repository.getSettings();
       final listeningHistoryRepository = ApiListeningHistoryRepository();
       await listeningHistoryRepository.refresh();
+      await configureMobilePlaybackAudioSession();
       final handler = await AudioService.init(
         builder: () => MiMusicAudioHandler(),
         config: AudioServiceConfig(
           androidNotificationChannelId: 'com.example.mimusic.audio',
           androidNotificationChannelName: 'Playback',
+          // ongoing + stopForegroundOnPause:false в audio_service несовместимы
           androidStopForegroundOnPause: false,
+          androidResumeOnClick: true,
         ),
       );
       setListeningHistoryRepository(listeningHistoryRepository);
@@ -228,6 +234,13 @@ class _MiMusicAppState extends State<MiMusicApp> {
       s = s.copyWith(password: '');
       await widget.settingsRepository.saveSettings(s);
     }
+    if (serverSession && acc.userId != null) {
+      final cached = await MeProfileCache.loadForUser(acc.userId!);
+      if (cached != null && cached.hasServerAvatar) {
+        s = s.copyWith(avatarPath: kServerMeAvatarMarker);
+        await widget.settingsRepository.saveSettings(s);
+      }
+    }
     if (!mounted) return;
     setState(() {
       _shellSettings = s;
@@ -272,6 +285,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
       await ColistenController.instance.disconnect();
     }
     MeProfileCache.clear();
+    await MeProfileAvatarDisk.clear();
     await AuthSessionStore.clearSessionToken();
     if (!mounted) return;
     // Сначала убираем MainShell с ListenableBuilder(audio), иначе один кадр с disposed ChangeNotifier — красный FlutterError.

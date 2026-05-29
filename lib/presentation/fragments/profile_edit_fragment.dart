@@ -12,7 +12,10 @@ import '../../core/auth/auth_session_store.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/server_avatar_constants.dart';
 import '../../core/l10n/app_localization.dart';
+import '../../core/cache/remote_image_cache.dart';
+import '../../core/network/playlists_api.dart';
 import '../../core/network/profile_api.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/network/users_api.dart';
 import '../../core/profile/me_profile_cache.dart';
 import '../../core/platform/avatar_upload_encode.dart';
@@ -280,6 +283,8 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
     final passwordToSave = newPassword.isNotEmpty ? newPassword : storedPassword;
     var avatarToSave = _newAvatarPath;
     if (server) {
+      if (!mounted) return;
+      if (!await ServerConnectivity.instance.ensureOnline(context)) return;
       final nickTrim = _nickController.text.trim();
       final initialNick = widget.initialSettings.nickname.trim();
       if (nickTrim.isNotEmpty &&
@@ -349,6 +354,7 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
               tempPng = png;
               await ProfileApi().uploadAvatar(png);
               avatarToSave = kServerMeAvatarMarker;
+              await RemoteImageCache.instance.evictUrl(meAvatarUrl());
             } catch (e) {
               if (!mounted) return;
               _showAvatarUploadErrorSnack(e);
@@ -369,6 +375,7 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
             resized = await encodeImageFileToTempPngForAvatarUpload(rawPng);
             await ProfileApi().uploadAvatar(resized);
             avatarToSave = kServerMeAvatarMarker;
+            await RemoteImageCache.instance.evictUrl(meAvatarUrl());
           } catch (e) {
             if (!mounted) return;
             _showAvatarUploadErrorSnack(e);

@@ -17,6 +17,12 @@ String userAvatarUrl(int userId, {int? cacheBust}) {
   return '$u?cb=$cacheBust';
 }
 
+String meAvatarUrl({int cacheRevision = 0}) {
+  final b = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
+  if (cacheRevision == 0) return '$b/me/avatar';
+  return '$b/me/avatar?cb=$cacheRevision';
+}
+
 int? parseServerPlaylistId(String playlistId) {
   const p = 'srv:';
   if (!playlistId.startsWith(p)) return null;

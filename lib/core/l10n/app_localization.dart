@@ -167,6 +167,9 @@ class AppLocalization {
       'common.notSpecifiedArtist': 'Исполнитель не указан',
       'common.unknownArtist': 'Неизвестный исполнитель',
       'common.close': 'Закрыть',
+      'network.noServerTitle': 'Нет связи с сервером',
+      'network.noServerBody':
+          'Проверьте, что на телефоне есть интернет и сервер MiMusic запущен и доступен. Сохранённые треки и кэш картинок работают офлайн.',
       'home.forYou': 'Для вас',
       'home.charts': 'Чарты',
       'home.connectFriends': 'Подключиться к друзьям',
@@ -588,6 +591,9 @@ class AppLocalization {
       'common.notSpecifiedArtist': 'Artist not specified',
       'common.unknownArtist': 'Unknown artist',
       'common.close': 'Close',
+      'network.noServerTitle': 'No server connection',
+      'network.noServerBody':
+          'Make sure your phone is online and the MiMusic server is running and reachable. Saved tracks and cached images work offline.',
       'home.forYou': 'For You',
       'home.charts': 'Charts',
       'home.connectFriends': 'Connect friends',

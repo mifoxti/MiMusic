@@ -8,6 +8,7 @@ import '../../../../core/audio/track.dart';
 import '../../../../core/offline/download_feedback.dart';
 import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/network/playlists_api.dart';
+import '../../../../core/network/server_connectivity.dart';
 import '../../../../core/network/tracks_api.dart';
 import '../../../../core/social/colisten_controller.dart';
 import '../../../../core/social/listening_room_session.dart';
@@ -164,6 +165,10 @@ class FullPlayerDockPanel extends StatelessWidget {
                       onPressed: downloading || downloaded
                           ? null
                           : () async {
+                              if (!await ServerConnectivity.instance
+                                  .ensureOnline(context)) {
+                                return;
+                              }
                               final result =
                                   await audioPlayerService.downloadTrack(track);
                               if (!context.mounted) return;

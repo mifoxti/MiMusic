@@ -10,6 +10,7 @@ import '../../../../core/auth/auth_session_store.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/history/listening_history_repository.dart';
 import '../../../../core/l10n/app_localization.dart';
+import '../../../../core/network/server_connectivity.dart';
 import '../../../../core/network/tracks_api.dart';
 import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
@@ -123,7 +124,13 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool fromUser = false}) async {
+    if (fromUser && mounted) {
+      if (!await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+        setState(() => _isLoading = false);
+        return;
+      }
+    }
     setState(() {
       _isLoading = true;
       _serverTracksError = null;
@@ -139,6 +146,9 @@ class _HomePageState extends State<HomePage> {
         remote = await TracksApi().fetchTracks(limit: 50);
       } catch (e) {
         remoteErr = e.toString();
+        if (fromUser && mounted) {
+          await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+        }
       }
       if (mounted) {
         setState(() {
@@ -149,7 +159,10 @@ class _HomePageState extends State<HomePage> {
           _isLoading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      if (fromUser && mounted) {
+        await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+      }
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -416,7 +429,7 @@ class _HomePageState extends State<HomePage> {
           parent: BouncingScrollPhysics(),
         ),
         slivers: [
-          CupertinoSliverRefreshControl(onRefresh: _load),
+          CupertinoSliverRefreshControl(onRefresh: () => _load(fromUser: true)),
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(0, 16 + topPadding, 0, 0),

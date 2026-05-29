@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/auth/auth_session_store.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/player/player_dock_host.dart';
@@ -55,6 +56,11 @@ class _FriendsPageState extends State<FriendsPage> {
 
   Future<void> _load({bool silent = false}) async {
     if (!silent) {
+      if (!mounted) return;
+      if (!await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+        setState(() => _loading = false);
+        return;
+      }
       setState(() {
         _loading = true;
         _error = null;
@@ -94,8 +100,11 @@ class _FriendsPageState extends State<FriendsPage> {
         _incoming = inc;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      if (!silent) {
+        await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+      }
       setState(() {
         _error = context.t('common.errorLoading');
         _loading = false;

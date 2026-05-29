@@ -9,6 +9,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/network/friends_api.dart';
 import '../../core/network/notifications_api.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/network/playlists_api.dart';
 import '../../core/social/colisten_controller.dart';
 import '../../core/social/listening_room_session.dart';
@@ -46,7 +47,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool fromUser = false}) async {
+    if (fromUser && mounted) {
+      if (!await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+        setState(() => _loading = false);
+        return;
+      }
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -74,6 +81,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       widget.onUnreadChanged?.call();
     } catch (e) {
       if (!mounted) return;
+      if (fromUser) {
+        await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+      }
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -239,7 +249,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 ),
               )
             : RefreshIndicator(
-                onRefresh: _load,
+                onRefresh: () => _load(fromUser: true),
                 child: ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
                   itemCount: _items.length,

@@ -45,12 +45,12 @@ packages:
     dependency: "direct main"
     description:
       name: audio_service_win
-      sha256: "8e8cd6a576901e4386dc22a8ca6d959317bf41c74b2bc4c6c5466826d0e529e8"
+      sha256: "677e25f447d3d49f537ea6f4fd36e9511acdc0badc6534c9cb92a205566ba12a"
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.2"
+    version: "0.0.3"
   audio_session:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: audio_session
       sha256: "2b7fff16a552486d078bfc09a8cde19f426dc6d6329262b684182597bec5b1ac"

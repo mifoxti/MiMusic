@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/auth/auth_session_store.dart';
 import '../../core/constants/server_avatar_constants.dart';
 import '../../core/network/profile_api.dart';
+import '../../core/network/server_connectivity.dart';
+import '../../core/profile/me_profile_avatar_disk.dart';
 import '../../core/profile/me_profile_cache.dart';
 import '../../features/playlists/domain/repositories/playlists_repository.dart';
 import '../../core/constants/app_constants.dart';
@@ -84,7 +87,16 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   /// Сначала кэш (быстрый UI), затем сеть; [setState] только если данные изменились.
-  Future<void> _primeFromCacheAndSync() async {
+  Future<void> _refreshProfileFromUser() async {
+    if (!mounted) return;
+    if (!await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+      return;
+    }
+    await _primeFromCacheAndSync(showOfflineSheet: true);
+    await _loadStats(showOfflineSheet: true);
+  }
+
+  Future<void> _primeFromCacheAndSync({bool showOfflineSheet = false}) async {
     final acc = await AuthSessionStore.readAccount();
     if (acc == null || acc.sessionToken.trim().isEmpty || acc.userId == null) return;
     final uid = acc.userId!;
@@ -100,42 +112,51 @@ class _ProfilePageState extends State<ProfilePage> {
       });
     }
 
-    try {
-      final me = await ProfileApi().fetchMe();
-      if (!mounted) return;
-      final unchanged = cached != null && cached.matches(me);
-      await MeProfileCache.save(uid, me);
-      if (unchanged) return;
-      setState(() {
-        if (me.nickname.trim().isNotEmpty) {
-          _serverNickname = me.nickname;
-        }
-        if (me.avatarStorageKey != null && me.avatarStorageKey!.trim().isNotEmpty) {
-          _avatarPathOverride = kServerMeAvatarMarker;
-        } else {
-          _avatarPathOverride = null;
-        }
-      });
-    } catch (_) {}
+    if (!mounted) return;
+    final me = await ServerConnectivity.instance.runOnline(
+      context,
+      () => ProfileApi().fetchMe(),
+      showOfflineSheet: showOfflineSheet,
+    );
+    if (me == null || !mounted) return;
+    final unchanged = cached != null && cached.matches(me);
+    await MeProfileCache.save(uid, me);
+    if (unchanged) return;
+    setState(() {
+      if (me.nickname.trim().isNotEmpty) {
+        _serverNickname = me.nickname;
+      }
+      if (me.avatarStorageKey != null && me.avatarStorageKey!.trim().isNotEmpty) {
+        _avatarPathOverride = kServerMeAvatarMarker;
+      } else {
+        _avatarPathOverride = null;
+        unawaited(MeProfileAvatarDisk.clear());
+      }
+    });
   }
 
-  Future<void> _loadStats() async {
+  Future<void> _loadStats({bool showOfflineSheet = false}) async {
     final acc = await AuthSessionStore.readAccount();
     if (acc == null || acc.sessionToken.trim().isEmpty) {
       if (mounted) setState(() => _statsLoading = false);
       return;
     }
-    try {
-      final stats = await ProfileApi().fetchMeStats();
-      if (!mounted) return;
+    if (!mounted) return;
+    final stats = await ServerConnectivity.instance.runOnline(
+      context,
+      () => ProfileApi().fetchMeStats(),
+      showOfflineSheet: showOfflineSheet,
+    );
+    if (!mounted) return;
+    if (stats != null) {
       setState(() {
         _tracksStat = stats.tracksCount;
         _playlistsStat = stats.playlistsCount;
         _friendsStat = stats.friendsCount;
         _statsLoading = false;
       });
-    } catch (_) {
-      if (mounted) setState(() => _statsLoading = false);
+    } else {
+      setState(() => _statsLoading = false);
     }
   }
 
@@ -163,6 +184,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return CustomScrollView(
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       slivers: [
+        CupertinoSliverRefreshControl(onRefresh: _refreshProfileFromUser),
         SliverAppBar(
           pinned: true,
           automaticallyImplyLeading: false,

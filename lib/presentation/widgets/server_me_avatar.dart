@@ -1,13 +1,14 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/network/authenticated_dio.dart';
+import '../../core/cache/remote_image_cache.dart';
+import '../../core/network/playlists_api.dart';
+import '../../core/platform/platform.dart';
+import '../../core/profile/me_profile_avatar_disk.dart';
 import '../../core/theme/app_colors.dart';
 
-/// Аватар текущего пользователя с [GET /me/avatar] (Bearer из [createAuthenticatedDio]).
+/// Аватар текущего пользователя с [GET /me/avatar] (дисковый кэш + Bearer).
 ///
 /// [clipCircle] — круг как в шапке профиля; `false` — прямоугольник под обложку (без круга).
 class ServerMeAvatar extends StatefulWidget {
@@ -29,7 +30,7 @@ class ServerMeAvatar extends StatefulWidget {
   /// При [clipCircle] == false задаёт размер области (иначе [size]×[size]).
   final double? boxWidth;
   final double? boxHeight;
-  /// При изменении перезапрашивает байты (смена аккаунта, после загрузки аватара).
+  /// При изменении перезапрашивает аватар (сброс сетевого кэша по ревизии).
   final int cacheRevision;
 
   @override
@@ -37,7 +38,8 @@ class ServerMeAvatar extends StatefulWidget {
 }
 
 class _ServerMeAvatarState extends State<ServerMeAvatar> {
-  Uint8List? _bytes;
+  String? _filePath;
+  bool _loading = true;
 
   double get _w => widget.clipCircle ? widget.size : (widget.boxWidth ?? widget.size);
   double get _h => widget.clipCircle ? widget.size : (widget.boxHeight ?? widget.size);
@@ -45,34 +47,46 @@ class _ServerMeAvatarState extends State<ServerMeAvatar> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _bootstrap();
   }
 
   @override
   void didUpdateWidget(covariant ServerMeAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.cacheRevision != widget.cacheRevision) {
-      setState(() => _bytes = null);
-      _load();
+      _load(forceRefresh: true);
     }
   }
 
-  Future<void> _load() async {
-    try {
-      final dio = await createAuthenticatedDio();
-      final res = await dio.get<List<int>>(
-        '/me/avatar',
-        queryParameters: <String, dynamic>{
-          'cb': '${widget.cacheRevision}_${DateTime.now().millisecondsSinceEpoch}',
-        },
-        options: Options(responseType: ResponseType.bytes),
-      );
-      final data = res.data;
-      if (!mounted) return;
-      if (data != null && data.isNotEmpty) {
-        setState(() => _bytes = Uint8List.fromList(data));
-      }
-    } catch (_) {}
+  Future<void> _bootstrap() async {
+    final stable = await MeProfileAvatarDisk.cachedFile();
+    if (stable != null && mounted) {
+      setState(() {
+        _filePath = stable.path;
+        _loading = false;
+      });
+    }
+    await _load(forceRefresh: false);
+  }
+
+  Future<void> _load({required bool forceRefresh}) async {
+    if (!forceRefresh && _filePath != null && _filePath!.isNotEmpty) {
+      if (mounted) setState(() => _loading = false);
+    } else if (mounted) {
+      setState(() => _loading = true);
+    }
+
+    final url = meAvatarUrl(cacheRevision: widget.cacheRevision);
+    final file = await RemoteImageCache.instance.fileForUrl(
+      url,
+      requireAuth: true,
+      forceRefresh: forceRefresh,
+    );
+    if (!mounted) return;
+    setState(() {
+      _filePath = file?.path ?? _filePath;
+      _loading = false;
+    });
   }
 
   @override
@@ -88,16 +102,20 @@ class _ServerMeAvatarState extends State<ServerMeAvatar> {
         size: widget.clipCircle ? widget.size * 0.45 : math.min(_w, _h) * 0.35,
       ),
     );
-    final b = _bytes;
-    Widget imageLayer;
-    if (b != null && b.isNotEmpty) {
-      imageLayer = Image.memory(
-        b,
-        width: _w,
-        height: _h,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => placeholder,
+
+    final path = _filePath;
+    final Widget imageLayer;
+    if (path != null && path.isNotEmpty) {
+      imageLayer = buildCoverImageFromFile(
+        path,
+        _w,
+        _h,
+        BorderRadius.zero,
+        placeholder,
+        BoxFit.cover,
       );
+    } else if (_loading) {
+      imageLayer = placeholder;
     } else {
       imageLayer = placeholder;
     }

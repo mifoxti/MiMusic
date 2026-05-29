@@ -8,6 +8,7 @@ import '../history/listening_history_repository.dart';
 import '../platform/platform.dart';
 import '../settings/settings_repository.dart';
 import '../social/listening_room_session.dart';
+import 'mimusic_ios_remote_commands.dart';
 
 /// Конфигурация для [MiMusicAudioHandler]. Задаётся до [AudioService.init].
 SettingsRepository? _handlerSettingsRepository;
@@ -38,6 +39,15 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _listenToPlayer();
     ListeningRoomSession.instance.addListener(_onRoomSessionChanged);
     likedPathsNotifier.value = Set.from(_likedPaths);
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _currentControls(),
+        systemActions: _systemActions,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        processingState: AudioProcessingState.idle,
+        speed: 1.0,
+      ),
+    );
   }
 
   final AudioPlayer _player;
@@ -122,7 +132,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       current.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
       ),
     );
   }
@@ -141,7 +152,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       playbackState.value.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
         processingState: processingState,
         playing: state.playing,
         updatePosition: _player.position,
@@ -151,6 +163,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _syncWebPositionPoll();
     if (state.playing && state.processingState == ProcessingState.ready) {
       _recordListeningHistoryOnce();
+      _refreshPlatformRemoteCommands();
     }
     if (state.processingState == ProcessingState.completed) {
       _stopWebPositionPoll();
@@ -160,7 +173,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
           playing: false,
           controls: _currentControls(),
           systemActions: _systemActions,
-          androidCompactActionIndices: _compactIndices,
+          androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
         ),
       );
     }
@@ -193,7 +207,19 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     name: 'like',
   );
 
-  static const _systemActions = {MediaAction.seek};
+  static const _systemActions = {
+    MediaAction.seek,
+    MediaAction.seekForward,
+    MediaAction.seekBackward,
+    MediaAction.play,
+    MediaAction.pause,
+    MediaAction.skipToNext,
+    MediaAction.skipToPrevious,
+  };
+
+  /// Лайк/дизлайк в notification (drawable) — только Android; iOS — [MiMusicIosRemoteCommands].
+  static bool get _useAndroidLikeDislikeControls =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
   bool get _roomGuest =>
       ListeningRoomSession.instance.active &&
       !ListeningRoomSession.instance.isHost;
@@ -205,16 +231,57 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   List<MediaControl> _currentControls() {
     final playing = _player.playing;
     final playPause = playing ? MediaControl.pause : MediaControl.play;
-    final controls = <MediaControl>[_dislikeControl, playPause, _likeControl];
-    if (_canUseSkipControls) {
-      controls.insert(1, MediaControl.skipToPrevious);
-      controls.insert(3, MediaControl.skipToNext);
+    final controls = <MediaControl>[
+      if (_canUseSkipControls) MediaControl.skipToPrevious,
+      playPause,
+      if (_canUseSkipControls) MediaControl.skipToNext,
+    ];
+    if (_useAndroidLikeDislikeControls) {
+      controls.addAll([_dislikeControl, _likeControl]);
     }
-    return controls;
+    return controls.isEmpty ? [playPause] : controls;
   }
 
-  /// Компактный вид: первые три доступные кнопки.
-  static const _compactIndices = [0, 1, 2];
+  void _syncHandlerQueue() {
+    if (_queue.isEmpty) {
+      queue.add(const []);
+      return;
+    }
+    final items = _queue.map((t) {
+      final path = t['path'] as String? ?? '';
+      final itemId = (t['itemId'] as String?)?.trim();
+      final mediaId = (itemId != null && itemId.isNotEmpty) ? itemId : path;
+      return MediaItem(
+        id: mediaId,
+        title: t['title'] as String? ?? '',
+        artist: t['artist'] as String?,
+      );
+    }).toList();
+    queue.add(items);
+  }
+
+  void _refreshPlatformRemoteCommands() {
+    unawaited(MiMusicIosRemoteCommands.refreshIfNeeded());
+  }
+
+  /// Компактный вид: prev / play-pause / next (не dislike+skipPrev+play).
+  static List<int> _compactIndicesFor(List<MediaControl> controls) {
+    if (controls.length <= 3) {
+      return List.generate(controls.length, (i) => i);
+    }
+    final playIdx = controls.indexWhere((c) {
+      final a = c.action;
+      return a == MediaAction.play || a == MediaAction.pause;
+    });
+    if (playIdx < 0) {
+      return [0, 1, 2].take(controls.length).toList();
+    }
+    final out = <int>[];
+    if (playIdx > 0) out.add(playIdx - 1);
+    out.add(playIdx);
+    if (playIdx + 1 < controls.length) out.add(playIdx + 1);
+    return out;
+  }
 
   void _onSequenceStateChanged(SequenceState? state) {
     final idx = state?.currentIndex ?? 0;
@@ -235,7 +302,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         playing: _player.playing,
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
       ),
     );
   }
@@ -278,7 +346,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         playing: true,
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
         updatePosition: _player.position,
       ),
     );
@@ -293,7 +362,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         playing: false,
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
         updatePosition: _player.position,
       ),
     );
@@ -324,7 +394,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       playbackState.value.copyWith(
         updatePosition: position,
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
       ),
     );
   }
@@ -438,7 +509,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       playbackState.value.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
         updatePosition: _player.position,
         bufferedPosition: _player.bufferedPosition,
       ),
@@ -493,7 +565,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       playbackState.value.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
       ),
     );
   }
@@ -512,7 +585,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       playbackState.value.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
       ),
     );
   }
@@ -528,14 +602,14 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       playbackState.value.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
       ),
     );
   }
 
-  void _toggleDislikeCurrent() {
-    final path = currentPlayablePath;
-    if (path == null) return;
+  void _toggleDislikePath(String path) {
+    if (path.isEmpty) return;
     if (_dislikedPaths.contains(path)) {
       _dislikedPaths.remove(path);
     } else {
@@ -548,24 +622,16 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       playbackState.value.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
       ),
     );
   }
 
-  void _removeLike([String? path]) {
-    final p = path ?? currentPlayablePath;
-    if (p != null && p.isNotEmpty) {
-      _likedPaths.remove(p);
-      likedPathsNotifier.value = Set.from(_likedPaths);
-    }
-    playbackState.add(
-      playbackState.value.copyWith(
-        controls: _currentControls(),
-        systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
-      ),
-    );
+  void _toggleDislikeCurrent() {
+    final path = currentPlayablePath;
+    if (path == null) return;
+    _toggleDislikePath(path);
   }
 
   /// Перемешивание очереди (только при очереди из нескольких треков).
@@ -683,17 +749,20 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       } else {
         await _player.pause();
       }
+      _syncHandlerQueue();
       playbackState.add(
         playbackState.value.copyWith(
           controls: _currentControls(),
           systemActions: _systemActions,
-          androidCompactActionIndices: _compactIndices,
+          androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+          speed: 1.0,
           processingState: AudioProcessingState.ready,
           playing: autoPlay,
           updatePosition: _player.position,
           bufferedPosition: _player.bufferedPosition,
         ),
       );
+      _refreshPlatformRemoteCommands();
     } catch (_) {}
   }
 
@@ -750,7 +819,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       playbackState.value.copyWith(
         controls: _currentControls(),
         systemActions: _systemActions,
-        androidCompactActionIndices: _compactIndices,
+        androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
         processingState: AudioProcessingState.loading,
         playing: false,
         updatePosition: Duration.zero,
@@ -789,24 +859,28 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       if (autoPlay) {
         await _player.play();
       }
+      _syncHandlerQueue();
       playbackState.add(
         playbackState.value.copyWith(
           controls: _currentControls(),
           systemActions: _systemActions,
-          androidCompactActionIndices: _compactIndices,
+          androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+          speed: 1.0,
           processingState: AudioProcessingState.ready,
           playing: autoPlay,
           updatePosition: _player.position,
           bufferedPosition: _player.bufferedPosition,
         ),
       );
+      _refreshPlatformRemoteCommands();
     } catch (e) {
       playbackState.add(
         playbackState.value.copyWith(
           processingState: AudioProcessingState.error,
           playing: false,
           systemActions: _systemActions,
-          androidCompactActionIndices: _compactIndices,
+          androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
         ),
       );
       rethrow;
@@ -924,7 +998,12 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         _toggleDislikeCurrent();
         break;
       case 'dislike':
-        _removeLike(extras?['path'] as String?);
+        final dislikePath = extras?['path'] as String?;
+        if (dislikePath != null && dislikePath.isNotEmpty) {
+          _toggleDislikePath(dislikePath);
+        } else {
+          _toggleDislikeCurrent();
+        }
         break;
       case 'applyEqualizer':
         final gainsList = extras?['gains'];
@@ -967,7 +1046,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         playbackState.value.copyWith(
           updatePosition: position,
           systemActions: _systemActions,
-          androidCompactActionIndices: _compactIndices,
+          androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
         ),
       );
     } catch (e, st) {
@@ -984,7 +1064,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
           playing: true,
           controls: _currentControls(),
           systemActions: _systemActions,
-          androidCompactActionIndices: _compactIndices,
+          androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
           updatePosition: _player.position,
         ),
       );
@@ -1002,7 +1083,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
             playing: false,
             controls: _currentControls(),
             systemActions: _systemActions,
-            androidCompactActionIndices: _compactIndices,
+            androidCompactActionIndices: _compactIndicesFor(_currentControls()),
+        speed: 1.0,
             updatePosition: _player.position,
           ),
         );

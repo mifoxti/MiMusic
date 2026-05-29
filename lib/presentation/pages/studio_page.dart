@@ -1,8 +1,11 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/track.dart';
 import '../../core/auth/auth_session_store.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/network/tracks_api.dart';
 import '../../core/player/player_dock_host.dart';
 import '../../core/player/shell_route_back_guard.dart';
@@ -61,6 +64,15 @@ class _StudioPageState extends State<StudioPage> {
     _load();
   }
 
+  Future<void> _loadFromUser() async {
+    if (!mounted) return;
+    if (!await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+      setState(() => _loading = false);
+      return;
+    }
+    await _load();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     final albums = await _repo.getAlbums();
@@ -88,14 +100,18 @@ class _StudioPageState extends State<StudioPage> {
     final serverTracks = <Track>[];
     final acc = await AuthSessionStore.readAccount();
     final loggedIn = acc != null && acc.sessionToken.trim().isNotEmpty;
-    if (loggedIn) {
-      try {
-        final remote = await TracksApi().fetchMyUploadedTracks();
+    if (loggedIn && mounted) {
+      final remote = await ServerConnectivity.instance.runOnline(
+        context,
+        () => TracksApi().fetchMyUploadedTracks(),
+        showOfflineSheet: false,
+      );
+      if (remote != null) {
         for (final item in remote) {
           if (linkedServerIds.contains(item.id)) continue;
           serverTracks.add(item.toTrack());
         }
-      } catch (_) {}
+      }
     }
 
     if (!mounted) return;
@@ -212,7 +228,7 @@ class _StudioPageState extends State<StudioPage> {
                       overrides: _overrides,
                       customPaths: _customPaths,
                       trackWithOverrides: _trackWithOverrides,
-                      onRefresh: _load,
+                      onRefresh: () => unawaited(_loadFromUser()),
                       onAddTrack: _addTrack,
                       onEditTrack: _editTrack,
                       onDeleteTrack: _deleteTrack,
@@ -222,7 +238,7 @@ class _StudioPageState extends State<StudioPage> {
                       palette: palette,
                       albums: _albums,
                       allTracks: _tracks,
-                      onRefresh: _load,
+                      onRefresh: () => unawaited(_loadFromUser()),
                       onAddAlbum: _addAlbum,
                       onOpenAlbumDetail: _openAlbumDetail,
                       onEditAlbum: _editAlbum,

@@ -8,6 +8,7 @@ import '../../core/audio/track.dart';
 import '../../core/auth/auth_session_store.dart';
 import '../../core/network/api_config.dart';
 import '../../core/network/playlists_api.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/network/tracks_api.dart';
 import '../../core/offline/download_feedback.dart';
 import '../../core/constants/app_constants.dart';
@@ -308,6 +309,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   Future<void> _downloadWholePlaylist() async {
     final sid = parseServerPlaylistId(widget.playlistId);
     if (sid == null || _tracks.isEmpty) return;
+    if (!await ServerConnectivity.instance.ensureOnline(context)) return;
     setState(() => _playlistDownloadBusy = true);
     final result = await widget.audioPlayerService.offlineDownloads
         .downloadPlaylist(sid);
@@ -913,6 +915,9 @@ class _PlaylistTrackTile extends StatelessWidget {
                     }
                     if (value == 'dl') {
                       if (trackKey.isEmpty || downloading || downloaded) return;
+                      if (!await ServerConnectivity.instance.ensureOnline(context)) {
+                        return;
+                      }
                       final result = await audioPlayerService.downloadTrack(track);
                       if (!context.mounted) return;
                       showTrackDownloadSnackBar(context, result);
