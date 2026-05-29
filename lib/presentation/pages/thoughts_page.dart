@@ -11,6 +11,7 @@ import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../widgets/glass_bottom_menu_sheet.dart';
+import '../widgets/hold_to_confirm_button.dart';
 import '../../core/auth/auth_session_store.dart';
 import '../../core/network/api_config.dart';
 import '../../core/network/playlists_api.dart';
@@ -128,10 +129,14 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
         _items
           ..clear()
           ..addAll(list.map(_fromDto));
+        _commentsLoaded.clear();
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _items.clear());
+      setState(() {
+        _items.clear();
+        _commentsLoaded.clear();
+      });
     }
   }
 
@@ -145,10 +150,14 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
         _items
           ..clear()
           ..addAll(list.map(_fromDto));
+        _commentsLoaded.clear();
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _items.clear());
+      setState(() {
+        _items.clear();
+        _commentsLoaded.clear();
+      });
     }
   }
 
@@ -683,17 +692,24 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
         _expandedComments.remove(thoughtId);
       }
     });
-    if (!expanding || _commentsLoaded.contains(thoughtId)) return;
+    if (!expanding) return;
+    final index = _items.indexWhere((e) => e.id == thoughtId);
+    if (index < 0) return;
+    final item = _items[index];
+    final commentsStale = _commentsLoaded.contains(thoughtId) &&
+        item.commentsCount != item.comments.length;
+    if (_commentsLoaded.contains(thoughtId) && !commentsStale) return;
+    if (commentsStale) _commentsLoaded.remove(thoughtId);
     final tid = int.tryParse(thoughtId);
     if (tid == null) return;
     setState(() => _commentsLoading.add(thoughtId));
     try {
       final list = await ThoughtsApi().fetchThoughtComments(tid);
       if (!mounted) return;
-      final index = _items.indexWhere((e) => e.id == thoughtId);
-      if (index >= 0) {
+      final loadedIndex = _items.indexWhere((e) => e.id == thoughtId);
+      if (loadedIndex >= 0) {
         setState(() {
-          _items[index] = _items[index].copyWith(
+          _items[loadedIndex] = _items[loadedIndex].copyWith(
             comments: list.map(_commentFromDto).toList(),
             commentsCount: list.length,
           );
@@ -703,7 +719,10 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
       }
     } catch (_) {
       if (!mounted) return;
-      setState(() => _commentsLoading.remove(thoughtId));
+      setState(() {
+        _commentsLoading.remove(thoughtId);
+        _commentsLoaded.remove(thoughtId);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.t('common.errorLoading'))),
       );
@@ -742,6 +761,182 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     }
   }
 
+  Future<void> _showCommentManageSheet(
+    String thoughtId,
+    _ThoughtComment comment,
+  ) async {
+    _overlayDepth++;
+    await showGlassBottomMenuSheet(
+      context,
+      actions: [
+        GlassMenuAction(
+          icon: Icons.edit_rounded,
+          label: context.t('thoughts.edit'),
+          onTap: () {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              unawaited(_editComment(thoughtId, comment));
+            });
+          },
+        ),
+        GlassMenuAction(
+          icon: Icons.delete_outline_rounded,
+          label: context.t('thoughts.delete'),
+          iconColor: Colors.redAccent,
+          labelStyle: const TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.w600,
+          ),
+          onTap: () {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              unawaited(_deleteComment(thoughtId, comment));
+            });
+          },
+        ),
+      ],
+    );
+    _overlayDepth = max(0, _overlayDepth - 1);
+  }
+
+  Future<void> _editComment(String thoughtId, _ThoughtComment comment) async {
+    _overlayDepth++;
+    final updatedText = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      isDismissible: true,
+      enableDrag: false,
+      builder: (sheetContext) {
+        final viewInsets = MediaQuery.viewInsetsOf(sheetContext);
+        return Padding(
+          padding: EdgeInsets.only(bottom: viewInsets.bottom),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: _CommentEditSheet(initialText: comment.text),
+          ),
+        );
+      },
+    );
+    _overlayDepth = max(0, _overlayDepth - 1);
+    if (updatedText == null || !mounted) return;
+    final thoughtIndex = _items.indexWhere((e) => e.id == thoughtId);
+    if (thoughtIndex < 0) return;
+    final tid = int.tryParse(thoughtId);
+    final cid = int.tryParse(comment.id);
+    if (tid == null || cid == null) return;
+    try {
+      final dto = await ThoughtsApi().updateThoughtComment(
+        thoughtId: tid,
+        commentId: cid,
+        bodyText: updatedText,
+      );
+      if (!mounted) return;
+      final updated = _commentFromDto(dto);
+      final item = _items[thoughtIndex];
+      setState(() {
+        _items[thoughtIndex] = item.copyWith(
+          comments: item.comments
+              .map((c) => c.id == comment.id ? updated : c)
+              .toList(),
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('thoughts.commentEditFailed'))),
+      );
+    }
+  }
+
+  Future<void> _deleteComment(String thoughtId, _ThoughtComment comment) async {
+    _overlayDepth++;
+    final confirmed = await showGlassCenterSheet<bool>(
+      context,
+      builder: (sheetContext) {
+        final palette = AppPaletteExtension.of(sheetContext).palette;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                context.t('thoughts.delete'),
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                context.t('thoughts.commentDeleteConfirm'),
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                context.t('thoughts.deleteHoldHint'),
+                style: TextStyle(
+                  color: palette.textMuted,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetContext, false),
+                      child: Text(context.t('common.cancel')),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: HoldToConfirmButton(
+                      label: context.t('thoughts.delete'),
+                      onConfirmed: () => Navigator.pop(sheetContext, true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    _overlayDepth = max(0, _overlayDepth - 1);
+    if (confirmed != true || !mounted) return;
+    final thoughtIndex = _items.indexWhere((e) => e.id == thoughtId);
+    if (thoughtIndex < 0) return;
+    final tid = int.tryParse(thoughtId);
+    final cid = int.tryParse(comment.id);
+    if (tid == null || cid == null) return;
+    try {
+      await ThoughtsApi().deleteThoughtComment(
+        thoughtId: tid,
+        commentId: cid,
+      );
+      if (!mounted) return;
+      final item = _items[thoughtIndex];
+      setState(() {
+        _items[thoughtIndex] = item.copyWith(
+          comments: item.comments.where((c) => c.id != comment.id).toList(),
+          commentsCount: max(0, item.commentsCount - 1),
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('thoughts.commentDeleteFailed'))),
+      );
+    }
+  }
+
   Future<void> _showThoughtManageSheet(String thoughtId) async {
     _overlayDepth++;
     await showGlassBottomMenuSheet(
@@ -774,129 +969,145 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     final controller = TextEditingController(text: item.text);
     _ThoughtAttachment? pendingAttachment = item.attachment;
     _overlayDepth++;
-    final updated = await showDialog<_ComposeResult>(
+    final updated = await showModalBottomSheet<_ComposeResult>(
       context: context,
+      isScrollControlled: true,
       useRootNavigator: true,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        final palette = AppPaletteExtension.of(dialogContext).palette;
-        return StatefulBuilder(
-          builder: (context, setDialogState) => Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: EdgeInsets.fromLTRB(
-              16,
-              16,
-              16,
-              16 + MediaQuery.viewInsetsOf(dialogContext).bottom,
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppConstants.radiusXLarge),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
+      backgroundColor: Colors.transparent,
+      isDismissible: true,
+      enableDrag: false,
+      builder: (sheetContext) {
+        final palette = AppPaletteExtension.of(sheetContext).palette;
+        final viewInsets = MediaQuery.viewInsetsOf(sheetContext);
+        return Padding(
+          padding: EdgeInsets.only(bottom: viewInsets.bottom),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: StatefulBuilder(
+              builder: (context, setDialogState) => ClipRRect(
+                borderRadius: BorderRadius.circular(AppConstants.radiusXLarge),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child: Material(
                     color: palette.cardBackground.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(AppConstants.radiusXLarge),
-                    border: Border.all(
-                      color: palette.textPrimary.withValues(alpha: 0.16),
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          context.t('thoughts.edit'),
-                          style: TextStyle(
-                            color: palette.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
+                    borderRadius:
+                        BorderRadius.circular(AppConstants.radiusXLarge),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.radiusXLarge),
+                        border: Border.all(
+                          color: palette.textPrimary.withValues(alpha: 0.16),
                         ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: controller,
-                          minLines: 3,
-                          maxLines: 6,
-                          decoration: InputDecoration(
-                            hintText: context.t('thoughts.placeholder'),
-                            border: InputBorder.none,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        if (pendingAttachment != null) ...[
-                          _DraftAttachmentView(
-                            attachment: pendingAttachment!,
-                            onRemove: () =>
-                                setDialogState(() => pendingAttachment = null),
-                          ),
-                          const SizedBox(height: 10),
-                        ],
-                        Row(
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            TextButton.icon(
-                              onPressed: () async {
-                                final type =
-                                    await _showAttachmentTypePicker(dialogContext);
-                                if (!dialogContext.mounted) return;
-                                if (type == _ThoughtAttachmentType.track) {
-                                  final picked =
-                                      await _pickTrackAttachment(dialogContext);
-                                  if (!dialogContext.mounted) return;
-                                  if (picked != null) {
-                                    setDialogState(() => pendingAttachment = picked);
-                                  }
-                                } else if (type ==
-                                    _ThoughtAttachmentType.playlist) {
-                                  final picked = await _pickPlaylistAttachment(
-                                    dialogContext,
-                                  );
-                                  if (!dialogContext.mounted) return;
-                                  if (picked != null) {
-                                    setDialogState(() => pendingAttachment = picked);
-                                  }
-                                } else if (type == null) {
-                                  setDialogState(() => pendingAttachment = null);
-                                }
-                              },
-                              icon: const Icon(Icons.attach_file_rounded),
-                              label: Text(context.t('thoughts.attach')),
+                            Text(
+                              context.t('thoughts.edit'),
+                              style: TextStyle(
+                                color: palette.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                            const Spacer(),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  onPressed: () =>
-                                      Navigator.of(dialogContext).pop(),
-                                  icon: const Icon(Icons.close_rounded),
-                                  tooltip: context.t('common.cancel'),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: controller,
+                              minLines: 3,
+                              maxLines: 6,
+                              decoration: InputDecoration(
+                                hintText: context.t('thoughts.placeholder'),
+                                border: InputBorder.none,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (pendingAttachment != null) ...[
+                              _DraftAttachmentView(
+                                attachment: pendingAttachment!,
+                                onRemove: () => setDialogState(
+                                  () => pendingAttachment = null,
                                 ),
-                                const SizedBox(width: 4),
-                                FilledButton(
-                                  onPressed: () {
-                                    final text = controller.text.trim();
-                                    if (text.isEmpty) return;
-                                    Navigator.of(dialogContext).pop(
-                                      _ComposeResult(
-                                        text: text,
-                                        attachment: pendingAttachment,
-                                      ),
+                              ),
+                              const SizedBox(height: 10),
+                            ],
+                            Row(
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () async {
+                                    final type = await _showAttachmentTypePicker(
+                                      sheetContext,
                                     );
+                                    if (!sheetContext.mounted) return;
+                                    if (type == _ThoughtAttachmentType.track) {
+                                      final picked = await _pickTrackAttachment(
+                                        sheetContext,
+                                      );
+                                      if (!sheetContext.mounted) return;
+                                      if (picked != null) {
+                                        setDialogState(
+                                          () => pendingAttachment = picked,
+                                        );
+                                      }
+                                    } else if (type ==
+                                        _ThoughtAttachmentType.playlist) {
+                                      final picked =
+                                          await _pickPlaylistAttachment(
+                                        sheetContext,
+                                      );
+                                      if (!sheetContext.mounted) return;
+                                      if (picked != null) {
+                                        setDialogState(
+                                          () => pendingAttachment = picked,
+                                        );
+                                      }
+                                    } else if (type == null) {
+                                      setDialogState(
+                                        () => pendingAttachment = null,
+                                      );
+                                    }
                                   },
-                                  style: FilledButton.styleFrom(
-                                    minimumSize: const Size(44, 44),
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                  child: const Icon(Icons.check_rounded),
+                                  icon: const Icon(Icons.attach_file_rounded),
+                                  label: Text(context.t('thoughts.attach')),
+                                ),
+                                const Spacer(),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      onPressed: () =>
+                                          Navigator.of(sheetContext).pop(),
+                                      icon: const Icon(Icons.close_rounded),
+                                      tooltip: context.t('common.cancel'),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    FilledButton(
+                                      onPressed: () {
+                                        final text = controller.text.trim();
+                                        if (text.isEmpty) return;
+                                        Navigator.of(sheetContext).pop(
+                                          _ComposeResult(
+                                            text: text,
+                                            attachment: pendingAttachment,
+                                          ),
+                                        );
+                                      },
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(44, 44),
+                                        padding: EdgeInsets.zero,
+                                      ),
+                                      child: const Icon(Icons.check_rounded),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -981,6 +1192,14 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                   height: 1.35,
                 ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                context.t('thoughts.deleteHoldHint'),
+                style: TextStyle(
+                  color: palette.textMuted,
+                  fontSize: 12,
+                ),
+              ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -992,12 +1211,9 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: FilledButton(
-                      onPressed: () => Navigator.pop(sheetContext, true),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                      ),
-                      child: Text(context.t('common.delete')),
+                    child: HoldToConfirmButton(
+                      label: context.t('thoughts.delete'),
+                      onConfirmed: () => Navigator.pop(sheetContext, true),
                     ),
                   ),
                 ],
@@ -1091,6 +1307,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 onCreateTap: _openCreateThoughtDialog,
                 currentUserId: _currentUserId,
                 onManageThought: _showThoughtManageSheet,
+                onManageComment: _showCommentManageSheet,
                 fabBottomInset: AppConstants.shellBottomInset,
                 showComposer: widget.viewedUserId == null,
                 showFeedSwitch: widget.viewedUserId == null,
@@ -1124,6 +1341,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               onCreateTap: _openCreateThoughtDialog,
               currentUserId: _currentUserId,
               onManageThought: _showThoughtManageSheet,
+              onManageComment: _showCommentManageSheet,
               fabBottomInset: fabBottomInset,
               showComposer: widget.viewedUserId == null,
               showFeedSwitch: widget.viewedUserId == null,
@@ -1156,6 +1374,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
     required this.fabBottomInset,
     this.currentUserId,
     this.onManageThought,
+    this.onManageComment,
     this.showComposer = true,
     this.showFeedSwitch = true,
     this.titleOverride,
@@ -1177,6 +1396,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
   final double fabBottomInset;
   final int? currentUserId;
   final Future<void> Function(String thoughtId)? onManageThought;
+  final Future<void> Function(String thoughtId, _ThoughtComment comment)? onManageComment;
   final bool showComposer;
   final bool showFeedSwitch;
   final String? titleOverride;
@@ -1245,6 +1465,10 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
                   onManage: canManage && onManageThought != null
                       ? () => onManageThought!(item.id)
                       : null,
+                  currentUserId: currentUserId,
+                  onManageComment: onManageComment == null
+                      ? null
+                      : (comment) => onManageComment!(item.id, comment),
                 );
               },
             ),
@@ -1346,6 +1570,8 @@ class _ThoughtCard extends StatelessWidget {
     this.commentsLoading = false,
     this.canManage = false,
     this.onManage,
+    this.currentUserId,
+    this.onManageComment,
   });
 
   final _ThoughtItem item;
@@ -1359,6 +1585,8 @@ class _ThoughtCard extends StatelessWidget {
   final bool commentsLoading;
   final bool canManage;
   final VoidCallback? onManage;
+  final int? currentUserId;
+  final Future<void> Function(_ThoughtComment comment)? onManageComment;
 
   @override
   Widget build(BuildContext context) {
@@ -1533,6 +1761,8 @@ class _ThoughtCard extends StatelessWidget {
                   onSubmit: onCommentSubmit,
                   onAuthorTap: onAuthorTap,
                   loading: commentsLoading,
+                  currentUserId: currentUserId,
+                  onManageComment: onManageComment,
                 ),
               ],
             ],
@@ -1563,6 +1793,8 @@ class _InlineCommentsBlock extends StatelessWidget {
     required this.onSubmit,
     required this.onAuthorTap,
     this.loading = false,
+    this.currentUserId,
+    this.onManageComment,
   });
 
   final List<_ThoughtComment> comments;
@@ -1570,6 +1802,8 @@ class _InlineCommentsBlock extends StatelessWidget {
   final VoidCallback onSubmit;
   final void Function(int userId, String nickname) onAuthorTap;
   final bool loading;
+  final int? currentUserId;
+  final Future<void> Function(_ThoughtComment comment)? onManageComment;
 
   @override
   Widget build(BuildContext context) {
@@ -1613,6 +1847,9 @@ class _InlineCommentsBlock extends StatelessWidget {
               itemBuilder: (context, index) {
                 final comment = comments[index];
                 final commentAvatar = userAvatarUrl(comment.authorUserId);
+                final canManageComment = currentUserId != null &&
+                    comment.authorUserId == currentUserId &&
+                    onManageComment != null;
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1670,6 +1907,21 @@ class _InlineCommentsBlock extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (canManageComment)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        icon: Icon(
+                          Icons.more_vert_rounded,
+                          size: 18,
+                          color: palette.textSecondary,
+                        ),
+                        onPressed: () => onManageComment!(comment),
+                      ),
                   ],
                 );
               },
@@ -1889,6 +2141,95 @@ class _ThoughtComment {
   final String author;
   final String text;
   final DateTime createdAt;
+}
+
+class _CommentEditSheet extends StatefulWidget {
+  const _CommentEditSheet({required this.initialText});
+
+  final String initialText;
+
+  @override
+  State<_CommentEditSheet> createState() => _CommentEditSheetState();
+}
+
+class _CommentEditSheetState extends State<_CommentEditSheet> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppConstants.radiusXLarge),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Material(
+          color: palette.cardBackground.withValues(alpha: 0.92),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  context.t('thoughts.edit'),
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  maxLines: 4,
+                  minLines: 2,
+                  decoration: InputDecoration(
+                    hintText: context.t('thoughts.addComment'),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text(context.t('common.cancel')),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () {
+                          final text = _controller.text.trim();
+                          if (text.isEmpty) return;
+                          Navigator.of(context).pop(text);
+                        },
+                        child: Text(context.t('common.save')),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ThoughtAttachment {

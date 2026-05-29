@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -128,7 +127,7 @@ Future<T?> showGlassCenterSheet<T>(
           left: 16,
           right: 16,
           bottom: viewInsets.bottom + MediaQuery.paddingOf(sheetContext).bottom + 16,
-          top: max(16.0, MediaQuery.sizeOf(sheetContext).height * 0.08),
+          top: 48,
         ),
         child: SingleChildScrollView(
           child: ClipRRect(

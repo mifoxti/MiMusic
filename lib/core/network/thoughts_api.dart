@@ -242,4 +242,29 @@ class ThoughtsApi {
     }
     return ThoughtCommentDto.fromJson(data);
   }
+
+  Future<ThoughtCommentDto> updateThoughtComment({
+    required int thoughtId,
+    required int commentId,
+    required String bodyText,
+  }) async {
+    final dio = await _authDio();
+    final res = await dio.put<Map<String, dynamic>>(
+      '/thoughts/$thoughtId/comments/$commentId',
+      data: {'bodyText': bodyText},
+    );
+    final data = res.data;
+    if (data == null) {
+      throw StateError('Empty comment update response');
+    }
+    return ThoughtCommentDto.fromJson(data);
+  }
+
+  Future<void> deleteThoughtComment({
+    required int thoughtId,
+    required int commentId,
+  }) async {
+    final dio = await _authDio();
+    await dio.delete<void>('/thoughts/$thoughtId/comments/$commentId');
+  }
 }
