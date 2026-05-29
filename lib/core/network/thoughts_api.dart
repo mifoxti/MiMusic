@@ -18,6 +18,9 @@ class ThoughtFeedItemDto {
     this.attachmentTrackArtist,
     this.attachmentPlaylistTitle,
     this.isFriend = false,
+    this.likesCount = 0,
+    this.likedByMe = false,
+    this.commentsCount = 0,
   });
 
   final int id;
@@ -32,6 +35,9 @@ class ThoughtFeedItemDto {
   final String? attachmentTrackArtist;
   final String? attachmentPlaylistTitle;
   final bool isFriend;
+  final int likesCount;
+  final bool likedByMe;
+  final int commentsCount;
 
   factory ThoughtFeedItemDto.fromJson(Map<String, dynamic> j) {
     return ThoughtFeedItemDto(
@@ -47,6 +53,49 @@ class ThoughtFeedItemDto {
       attachmentTrackArtist: j['attachmentTrackArtist'] as String?,
       attachmentPlaylistTitle: j['attachmentPlaylistTitle'] as String?,
       isFriend: j['isFriend'] as bool? ?? false,
+      likesCount: (j['likesCount'] as num?)?.toInt() ?? 0,
+      likedByMe: j['likedByMe'] as bool? ?? false,
+      commentsCount: (j['commentsCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class ThoughtCommentDto {
+  const ThoughtCommentDto({
+    required this.id,
+    required this.authorUserId,
+    required this.authorNickname,
+    this.bodyText,
+    this.createdAt,
+  });
+
+  final int id;
+  final int authorUserId;
+  final String authorNickname;
+  final String? bodyText;
+  final String? createdAt;
+
+  factory ThoughtCommentDto.fromJson(Map<String, dynamic> j) {
+    return ThoughtCommentDto(
+      id: (j['id'] as num).toInt(),
+      authorUserId: (j['authorUserId'] as num).toInt(),
+      authorNickname: j['authorNickname'] as String? ?? '',
+      bodyText: j['bodyText'] as String?,
+      createdAt: j['createdAt'] as String?,
+    );
+  }
+}
+
+class ThoughtLikeResult {
+  const ThoughtLikeResult({required this.liked, required this.likesCount});
+
+  final bool liked;
+  final int likesCount;
+
+  factory ThoughtLikeResult.fromJson(Map<String, dynamic> j) {
+    return ThoughtLikeResult(
+      liked: j['status'] as bool? ?? false,
+      likesCount: (j['likesCount'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -64,6 +113,8 @@ class ThoughtsApi {
 
   final Dio _dio;
 
+  Future<Dio> _authDio() => createAuthenticatedDio();
+
   /// Текст последней мысли или `null`, если нет или 404.
   Future<String?> fetchLatestThoughtText(int userId) async {
     try {
@@ -80,7 +131,7 @@ class ThoughtsApi {
     required String scope,
     int limit = 40,
   }) async {
-    final dio = await createAuthenticatedDio();
+    final dio = await _authDio();
     final res = await dio.get<List<dynamic>>(
       '/thoughts/feed',
       queryParameters: {'scope': scope, 'limit': limit},
@@ -93,7 +144,7 @@ class ThoughtsApi {
   }
 
   Future<List<ThoughtFeedItemDto>> fetchUserThoughts(int userId, {int limit = 50}) async {
-    final dio = await createAuthenticatedDio();
+    final dio = await _authDio();
     final res = await dio.get<List<dynamic>>(
       '/users/$userId/thoughts',
       queryParameters: {'limit': limit},
@@ -111,7 +162,7 @@ class ThoughtsApi {
     int? attachmentTrackId,
     int? attachmentPlaylistId,
   }) async {
-    final dio = await createAuthenticatedDio();
+    final dio = await _authDio();
     final body = <String, dynamic>{
       'bodyText': bodyText,
       if (attachmentType != null) 'attachmentType': attachmentType,
@@ -124,5 +175,41 @@ class ThoughtsApi {
       throw StateError('Empty create thought response');
     }
     return ThoughtFeedItemDto.fromJson(data);
+  }
+
+  Future<ThoughtLikeResult> toggleThoughtLike(int thoughtId) async {
+    final dio = await _authDio();
+    final res = await dio.post<Map<String, dynamic>>('/thoughts/$thoughtId/like');
+    final data = res.data;
+    if (data == null) {
+      throw StateError('Empty like response');
+    }
+    return ThoughtLikeResult.fromJson(data);
+  }
+
+  Future<List<ThoughtCommentDto>> fetchThoughtComments(int thoughtId) async {
+    final dio = await _authDio();
+    final res = await dio.get<List<dynamic>>('/thoughts/$thoughtId/comments');
+    final data = res.data;
+    if (data == null) return [];
+    return data
+        .map((e) => ThoughtCommentDto.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<ThoughtCommentDto> postThoughtComment({
+    required int thoughtId,
+    required String bodyText,
+  }) async {
+    final dio = await _authDio();
+    final res = await dio.post<Map<String, dynamic>>(
+      '/thoughts/$thoughtId/comments',
+      data: {'bodyText': bodyText},
+    );
+    final data = res.data;
+    if (data == null) {
+      throw StateError('Empty comment response');
+    }
+    return ThoughtCommentDto.fromJson(data);
   }
 }

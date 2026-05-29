@@ -16,8 +16,9 @@ import '../../core/network/playlists_api.dart';
 import '../../core/network/thoughts_api.dart';
 import '../../core/network/tracks_api.dart';
 import '../../core/player/shell_route_back_guard.dart';
-import 'artist_page.dart';
+import '../../core/widgets/cover_image.dart';
 import 'playlist_detail_page.dart';
+import 'user_public_profile_page.dart';
 
 enum _ThoughtFeed { friends, popular }
 enum _ThoughtAttachmentType { track, playlist }
@@ -47,6 +48,8 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   _ThoughtFeed _feed = _ThoughtFeed.friends;
   int _overlayDepth = 0;
   final Set<String> _expandedComments = <String>{};
+  final Set<String> _commentsLoaded = <String>{};
+  final Set<String> _commentsLoading = <String>{};
   final Map<String, TextEditingController> _commentControllers =
       <String, TextEditingController>{};
 
@@ -84,13 +87,26 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     final ts = dto.createdAt;
     return _ThoughtItem(
       id: dto.id.toString(),
+      authorUserId: dto.authorUserId,
       author: dto.authorNickname,
       text: (dto.bodyText ?? '').trim(),
       createdAt: DateTime.tryParse(ts ?? '') ?? DateTime.now(),
       isFriend: dto.isFriend,
       attachment: att,
-      likesCount: 0,
+      likesCount: dto.likesCount,
+      likedByMe: dto.likedByMe,
+      commentsCount: dto.commentsCount,
       comments: const [],
+    );
+  }
+
+  _ThoughtComment _commentFromDto(ThoughtCommentDto dto) {
+    return _ThoughtComment(
+      id: dto.id.toString(),
+      authorUserId: dto.authorUserId,
+      author: dto.authorNickname,
+      text: (dto.bodyText ?? '').trim(),
+      createdAt: DateTime.tryParse(dto.createdAt ?? '') ?? DateTime.now(),
     );
   }
 
@@ -626,58 +642,105 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     }
   }
 
-  void _toggleLike(String thoughtId) {
+  Future<void> _toggleLike(String thoughtId) async {
     final index = _items.indexWhere((e) => e.id == thoughtId);
     if (index < 0) return;
-    final item = _items[index];
-    final liked = !item.likedByMe;
-    setState(() {
-      _items[index] = item.copyWith(
-        likedByMe: liked,
-        likesCount: liked ? item.likesCount + 1 : max(0, item.likesCount - 1),
+    final tid = int.tryParse(thoughtId);
+    if (tid == null) return;
+    try {
+      final result = await ThoughtsApi().toggleThoughtLike(tid);
+      if (!mounted) return;
+      final item = _items[index];
+      setState(() {
+        _items[index] = item.copyWith(
+          likedByMe: result.liked,
+          likesCount: result.likesCount,
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('common.errorLoading'))),
       );
-    });
+    }
   }
 
-  void _toggleComments(String thoughtId) {
+  Future<void> _toggleComments(String thoughtId) async {
+    final expanding = !_expandedComments.contains(thoughtId);
     setState(() {
-      if (_expandedComments.contains(thoughtId)) {
-        _expandedComments.remove(thoughtId);
-      } else {
+      if (expanding) {
         _expandedComments.add(thoughtId);
+      } else {
+        _expandedComments.remove(thoughtId);
       }
     });
+    if (!expanding || _commentsLoaded.contains(thoughtId)) return;
+    final tid = int.tryParse(thoughtId);
+    if (tid == null) return;
+    setState(() => _commentsLoading.add(thoughtId));
+    try {
+      final list = await ThoughtsApi().fetchThoughtComments(tid);
+      if (!mounted) return;
+      final index = _items.indexWhere((e) => e.id == thoughtId);
+      if (index >= 0) {
+        setState(() {
+          _items[index] = _items[index].copyWith(
+            comments: list.map(_commentFromDto).toList(),
+            commentsCount: list.length,
+          );
+          _commentsLoaded.add(thoughtId);
+          _commentsLoading.remove(thoughtId);
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _commentsLoading.remove(thoughtId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('common.errorLoading'))),
+      );
+    }
   }
 
-  void _addComment(String thoughtId) {
+  Future<void> _addComment(String thoughtId) async {
     final index = _items.indexWhere((e) => e.id == thoughtId);
     if (index < 0) return;
     final controller = _commentControllerFor(thoughtId);
     final text = controller.text.trim();
     if (text.isEmpty) return;
-    setState(() {
-      final current = _items[index];
-      _items[index] = current.copyWith(
-        comments: [
-          ...current.comments,
-          _ThoughtComment(
-            author: widget.currentUsername,
-            text: text,
-          ),
-        ],
+    final tid = int.tryParse(thoughtId);
+    if (tid == null) return;
+    try {
+      final created = await ThoughtsApi().postThoughtComment(
+        thoughtId: tid,
+        bodyText: text,
       );
-      _expandedComments.add(thoughtId);
-      controller.clear();
-    });
+      if (!mounted) return;
+      final current = _items[index];
+      setState(() {
+        _items[index] = current.copyWith(
+          comments: [...current.comments, _commentFromDto(created)],
+          commentsCount: current.commentsCount + 1,
+        );
+        _commentsLoaded.add(thoughtId);
+        _expandedComments.add(thoughtId);
+        controller.clear();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('common.errorLoading'))),
+      );
+    }
   }
 
-  Future<void> _openAuthorProfile(String username) async {
-    if (!mounted) return;
+  Future<void> _openAuthorProfile(int userId, String nickname) async {
+    if (!mounted || widget.audioPlayerService == null) return;
     await Navigator.of(context).push(
       ShellMaterialPageRoute<void>(
-        builder: (_) => ArtistPage(
-          artistName: username,
-          audioPlayerService: widget.audioPlayerService,
+        builder: (_) => UserPublicProfilePage(
+          userId: userId,
+          nickname: nickname,
+          audioPlayerService: widget.audioPlayerService!,
         ),
       ),
     );
@@ -728,6 +791,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 commentControllerFor: _commentControllerFor,
                 onCommentSubmit: _addComment,
                 onAuthorTap: _openAuthorProfile,
+                isCommentsLoading: _commentsLoading.contains,
                 onCreateTap: _openCreateThoughtDialog,
                 fabBottomInset: AppConstants.shellBottomInset,
                 showComposer: widget.viewedUserId == null,
@@ -758,6 +822,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               commentControllerFor: _commentControllerFor,
               onCommentSubmit: _addComment,
               onAuthorTap: _openAuthorProfile,
+              isCommentsLoading: _commentsLoading.contains,
               onCreateTap: _openCreateThoughtDialog,
               fabBottomInset: fabBottomInset,
               showComposer: widget.viewedUserId == null,
@@ -786,6 +851,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
     required this.commentControllerFor,
     required this.onCommentSubmit,
     required this.onAuthorTap,
+    required this.isCommentsLoading,
     required this.onCreateTap,
     required this.fabBottomInset,
     this.showComposer = true,
@@ -798,12 +864,13 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
   final _ThoughtFeed feed;
   final ValueChanged<_ThoughtFeed> onFeedChanged;
   final ValueChanged<_ThoughtAttachment> onAttachmentTap;
-  final ValueChanged<String> onLikeTap;
-  final ValueChanged<String> onCommentTap;
+  final Future<void> Function(String thoughtId) onLikeTap;
+  final Future<void> Function(String thoughtId) onCommentTap;
   final bool Function(String thoughtId) isCommentsExpanded;
   final TextEditingController Function(String thoughtId) commentControllerFor;
-  final ValueChanged<String> onCommentSubmit;
-  final ValueChanged<String> onAuthorTap;
+  final Future<void> Function(String thoughtId) onCommentSubmit;
+  final void Function(int userId, String nickname) onAuthorTap;
+  final bool Function(String thoughtId) isCommentsLoading;
   final VoidCallback onCreateTap;
   final double fabBottomInset;
   final bool showComposer;
@@ -866,6 +933,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
                   commentController: commentControllerFor(items[index].id),
                   onCommentSubmit: () => onCommentSubmit(items[index].id),
                   onAuthorTap: onAuthorTap,
+                  commentsLoading: isCommentsLoading(items[index].id),
                 );
               },
             ),
@@ -964,6 +1032,7 @@ class _ThoughtCard extends StatelessWidget {
     required this.commentController,
     required this.onCommentSubmit,
     required this.onAuthorTap,
+    this.commentsLoading = false,
   });
 
   final _ThoughtItem item;
@@ -973,12 +1042,14 @@ class _ThoughtCard extends StatelessWidget {
   final bool commentsExpanded;
   final TextEditingController commentController;
   final VoidCallback onCommentSubmit;
-  final ValueChanged<String> onAuthorTap;
+  final void Function(int userId, String nickname) onAuthorTap;
+  final bool commentsLoading;
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    final initial = item.author.isNotEmpty ? item.author[0].toUpperCase() : '?';
+    final avatarUrl = userAvatarUrl(item.authorUserId);
+    final commentCount = commentsExpanded ? item.comments.length : item.commentsCount;
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
       child: BackdropFilter(
@@ -998,14 +1069,26 @@ class _ThoughtCard extends StatelessWidget {
               Row(
                 children: [
                   InkWell(
-                    onTap: () => onAuthorTap(item.author),
+                    onTap: () => onAuthorTap(item.authorUserId, item.author),
                     borderRadius: BorderRadius.circular(26),
                     child: Row(
                       children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: palette.accent.withValues(alpha: 0.24),
-                          child: Text(initial),
+                        ClipOval(
+                          child: buildCoverImage(
+                            imageUrl: avatarUrl,
+                            width: 40,
+                            height: 40,
+                            borderRadius: BorderRadius.circular(20),
+                            placeholder: CircleAvatar(
+                              radius: 20,
+                              backgroundColor: palette.accent.withValues(alpha: 0.24),
+                              child: Icon(
+                                Icons.person_rounded,
+                                color: palette.accent,
+                                size: 22,
+                              ),
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 10),
                         Column(
@@ -1100,7 +1183,7 @@ class _ThoughtCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '${item.comments.length}',
+                            '$commentCount',
                             style: TextStyle(
                               color: palette.textSecondary,
                               fontSize: 14,
@@ -1120,6 +1203,7 @@ class _ThoughtCard extends StatelessWidget {
                   controller: commentController,
                   onSubmit: onCommentSubmit,
                   onAuthorTap: onAuthorTap,
+                  loading: commentsLoading,
                 ),
               ],
             ],
@@ -1149,12 +1233,14 @@ class _InlineCommentsBlock extends StatelessWidget {
     required this.controller,
     required this.onSubmit,
     required this.onAuthorTap,
+    this.loading = false,
   });
 
   final List<_ThoughtComment> comments;
   final TextEditingController controller;
   final VoidCallback onSubmit;
-  final ValueChanged<String> onAuthorTap;
+  final void Function(int userId, String nickname) onAuthorTap;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -1170,7 +1256,21 @@ class _InlineCommentsBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (comments.isEmpty)
+          if (loading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: palette.accent,
+                  ),
+                ),
+              ),
+            )
+          else if (comments.isEmpty)
             Text(
               context.t('thoughts.noComments'),
               style: TextStyle(color: palette.textSecondary, fontSize: 12),
@@ -1183,18 +1283,30 @@ class _InlineCommentsBlock extends StatelessWidget {
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final comment = comments[index];
+                final commentAvatar = userAvatarUrl(comment.authorUserId);
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 2,
-                      height: 34,
-                      margin: const EdgeInsets.only(top: 2, right: 8),
-                      decoration: BoxDecoration(
-                        color: palette.textMuted.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(2),
+                    ClipOval(
+                      child: buildCoverImage(
+                        imageUrl: commentAvatar,
+                        width: 28,
+                        height: 28,
+                        borderRadius: BorderRadius.circular(14),
+                        placeholder: Container(
+                          width: 28,
+                          height: 28,
+                          color: palette.accent.withValues(alpha: 0.2),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.person_rounded,
+                            size: 16,
+                            color: palette.accent,
+                          ),
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1202,7 +1314,7 @@ class _InlineCommentsBlock extends StatelessWidget {
                           Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: () => onAuthorTap(comment.author),
+                              onTap: () => onAuthorTap(comment.authorUserId, comment.author),
                               borderRadius: BorderRadius.circular(6),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -1387,39 +1499,46 @@ class _ComposeResult {
 class _ThoughtItem {
   const _ThoughtItem({
     required this.id,
+    required this.authorUserId,
     required this.author,
     required this.text,
     required this.createdAt,
     required this.isFriend,
     required this.likesCount,
+    required this.commentsCount,
     required this.comments,
     this.likedByMe = false,
     this.attachment,
   });
 
   final String id;
+  final int authorUserId;
   final String author;
   final String text;
   final DateTime createdAt;
   final bool isFriend;
   final int likesCount;
+  final int commentsCount;
   final List<_ThoughtComment> comments;
   final bool likedByMe;
   final _ThoughtAttachment? attachment;
 
   _ThoughtItem copyWith({
     int? likesCount,
+    int? commentsCount,
     List<_ThoughtComment>? comments,
     bool? likedByMe,
   }) {
     return _ThoughtItem(
       id: id,
+      authorUserId: authorUserId,
       author: author,
       text: text,
       createdAt: createdAt,
       isFriend: isFriend,
       attachment: attachment,
       likesCount: likesCount ?? this.likesCount,
+      commentsCount: commentsCount ?? this.commentsCount,
       comments: comments ?? this.comments,
       likedByMe: likedByMe ?? this.likedByMe,
     );
@@ -1428,12 +1547,18 @@ class _ThoughtItem {
 
 class _ThoughtComment {
   const _ThoughtComment({
+    required this.id,
+    required this.authorUserId,
     required this.author,
     required this.text,
+    required this.createdAt,
   });
 
+  final String id;
+  final int authorUserId;
   final String author;
   final String text;
+  final DateTime createdAt;
 }
 
 class _ThoughtAttachment {
