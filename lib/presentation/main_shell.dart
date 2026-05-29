@@ -706,7 +706,6 @@ class _TabsView extends StatelessWidget {
         ),
         SearchPage(
           audioPlayerService: audioPlayerService,
-          getHomeSectionUseCase: getHomeSectionUseCase,
           playlistsRepository: playlistsRepository,
         ),
         ProfilePage(

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
+import '../audio/track.dart';
 import 'api_config.dart';
 import 'authenticated_dio.dart';
 
@@ -55,6 +56,17 @@ class ServerTrackListItem {
   String coverUrl() {
     final b = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
     return '$b/tracks/$id/cover';
+  }
+
+  Track toTrack() {
+    return Track(
+      assetPath: 'server_track_$id',
+      title: title,
+      artist: artist,
+      audioFilePath: streamUrl(),
+      coverBytes: coverBytes,
+      coverAssetPath: coverUrl(),
+    );
   }
 }
 
