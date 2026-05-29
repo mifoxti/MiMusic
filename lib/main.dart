@@ -13,7 +13,7 @@ import 'core/auth/auth_session_store.dart';
 import 'core/profile/me_profile_cache.dart';
 import 'core/network/api_config.dart';
 import 'core/auth/session_scope.dart';
-import 'core/history/in_memory_listening_history_repository.dart';
+import 'core/history/api_listening_history_repository.dart';
 import 'core/history/listening_history_repository.dart';
 import 'core/l10n/app_localization.dart';
 import 'core/notifications/local_notifications_service.dart';
@@ -79,7 +79,8 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
       final repository = LocalSettingsRepository();
       setMiMusicHandlerSettingsRepository(repository);
       final settings = await repository.getSettings();
-      final listeningHistoryRepository = InMemoryListeningHistoryRepository();
+      final listeningHistoryRepository = ApiListeningHistoryRepository();
+      await listeningHistoryRepository.refresh();
       final handler = await AudioService.init(
         builder: () => MiMusicAudioHandler(),
         config: AudioServiceConfig(

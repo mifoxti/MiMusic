@@ -4,6 +4,9 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/track.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
+import 'dart:async';
+
+import '../../core/history/api_listening_history_repository.dart';
 import '../../core/history/listening_history_entry.dart';
 import '../../core/history/listening_history_repository.dart';
 import '../../core/theme/app_colors.dart';
@@ -28,6 +31,15 @@ class ListeningHistoryPage extends StatefulWidget {
 }
 
 class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
+  @override
+  void initState() {
+    super.initState();
+    final repo = widget.listeningHistoryRepository;
+    if (repo is ApiListeningHistoryRepository) {
+      unawaited(repo.ensureLoaded());
+    }
+  }
+
   void _openFullPlayer() {
     PlayerDockHost.expand();
   }

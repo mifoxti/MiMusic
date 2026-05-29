@@ -197,6 +197,27 @@ class ThoughtsApi {
         .toList();
   }
 
+  Future<ThoughtFeedItemDto> updateThought({
+    required int thoughtId,
+    required String bodyText,
+  }) async {
+    final dio = await _authDio();
+    final res = await dio.put<Map<String, dynamic>>(
+      '/thoughts/$thoughtId',
+      data: {'bodyText': bodyText},
+    );
+    final data = res.data;
+    if (data == null) {
+      throw StateError('Empty update thought response');
+    }
+    return ThoughtFeedItemDto.fromJson(data);
+  }
+
+  Future<void> deleteThought(int thoughtId) async {
+    final dio = await _authDio();
+    await dio.delete<void>('/thoughts/$thoughtId');
+  }
+
   Future<ThoughtCommentDto> postThoughtComment({
     required int thoughtId,
     required String bodyText,

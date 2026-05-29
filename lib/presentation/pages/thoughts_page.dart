@@ -52,15 +52,23 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   final Set<String> _commentsLoading = <String>{};
   final Map<String, TextEditingController> _commentControllers =
       <String, TextEditingController>{};
+  int? _currentUserId;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_loadCurrentUserId());
     if (widget.viewedUserId != null) {
       unawaited(_loadUserThoughtsList());
     } else {
       unawaited(_loadFeed());
     }
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    final acc = await AuthSessionStore.readAccount();
+    if (!mounted) return;
+    setState(() => _currentUserId = acc?.userId);
   }
 
   _ThoughtItem _fromDto(ThoughtFeedItemDto dto) {
@@ -733,6 +741,106 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     }
   }
 
+  Future<void> _editThought(String thoughtId) async {
+    final index = _items.indexWhere((e) => e.id == thoughtId);
+    if (index < 0) return;
+    final item = _items[index];
+    final controller = TextEditingController(text: item.text);
+    final updated = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(context.t('thoughts.edit')),
+          content: TextField(
+            controller: controller,
+            maxLines: 5,
+            decoration: InputDecoration(
+              hintText: context.t('thoughts.placeholder'),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(context.t('common.cancel')),
+            ),
+            FilledButton(
+              onPressed: () {
+                final t = controller.text.trim();
+                if (t.isNotEmpty) Navigator.pop(ctx, t);
+              },
+              child: Text(context.t('common.save')),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (updated == null || !mounted) return;
+    final tid = int.tryParse(thoughtId);
+    if (tid == null) return;
+    try {
+      final dto = await ThoughtsApi().updateThought(
+        thoughtId: tid,
+        bodyText: updated,
+      );
+      if (!mounted) return;
+      setState(() {
+        _items[index] = _fromDto(dto).copyWith(
+          comments: item.comments,
+          commentsCount: item.commentsCount,
+          likedByMe: item.likedByMe,
+          likesCount: item.likesCount,
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('thoughts.editFailed'))),
+      );
+    }
+  }
+
+  Future<void> _deleteThought(String thoughtId) async {
+    final index = _items.indexWhere((e) => e.id == thoughtId);
+    if (index < 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.t('thoughts.delete')),
+        content: Text(context.t('thoughts.deleteConfirm')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(context.t('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(context.t('common.delete')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final tid = int.tryParse(thoughtId);
+    if (tid == null) return;
+    try {
+      await ThoughtsApi().deleteThought(tid);
+      if (!mounted) return;
+      setState(() {
+        _items.removeAt(index);
+        _expandedComments.remove(thoughtId);
+        _commentsLoaded.remove(thoughtId);
+        _commentsLoading.remove(thoughtId);
+        _commentControllers.remove(thoughtId)?.dispose();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('thoughts.deleteFailed'))),
+      );
+    }
+  }
+
   Future<void> _openAuthorProfile(int userId, String nickname) async {
     if (!mounted || widget.audioPlayerService == null) return;
     await Navigator.of(context).push(
@@ -793,6 +901,9 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 onAuthorTap: _openAuthorProfile,
                 isCommentsLoading: _commentsLoading.contains,
                 onCreateTap: _openCreateThoughtDialog,
+                currentUserId: _currentUserId,
+                onEditThought: _editThought,
+                onDeleteThought: _deleteThought,
                 fabBottomInset: AppConstants.shellBottomInset,
                 showComposer: widget.viewedUserId == null,
                 showFeedSwitch: widget.viewedUserId == null,
@@ -824,6 +935,9 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               onAuthorTap: _openAuthorProfile,
               isCommentsLoading: _commentsLoading.contains,
               onCreateTap: _openCreateThoughtDialog,
+              currentUserId: _currentUserId,
+              onEditThought: _editThought,
+              onDeleteThought: _deleteThought,
               fabBottomInset: fabBottomInset,
               showComposer: widget.viewedUserId == null,
               showFeedSwitch: widget.viewedUserId == null,
@@ -854,6 +968,9 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
     required this.isCommentsLoading,
     required this.onCreateTap,
     required this.fabBottomInset,
+    this.currentUserId,
+    this.onEditThought,
+    this.onDeleteThought,
     this.showComposer = true,
     this.showFeedSwitch = true,
     this.titleOverride,
@@ -873,6 +990,9 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
   final bool Function(String thoughtId) isCommentsLoading;
   final VoidCallback onCreateTap;
   final double fabBottomInset;
+  final int? currentUserId;
+  final Future<void> Function(String thoughtId)? onEditThought;
+  final Future<void> Function(String thoughtId)? onDeleteThought;
   final bool showComposer;
   final bool showFeedSwitch;
   final String? titleOverride;
@@ -924,16 +1044,26 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
               itemCount: items.length,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
+                final item = items[index];
+                final canManage =
+                    currentUserId != null && item.authorUserId == currentUserId;
                 return _ThoughtCard(
-                  item: items[index],
+                  item: item,
                   onAttachmentTap: onAttachmentTap,
-                  onLikeTap: () => onLikeTap(items[index].id),
-                  onCommentTap: () => onCommentTap(items[index].id),
-                  commentsExpanded: isCommentsExpanded(items[index].id),
-                  commentController: commentControllerFor(items[index].id),
-                  onCommentSubmit: () => onCommentSubmit(items[index].id),
+                  onLikeTap: () => onLikeTap(item.id),
+                  onCommentTap: () => onCommentTap(item.id),
+                  commentsExpanded: isCommentsExpanded(item.id),
+                  commentController: commentControllerFor(item.id),
+                  onCommentSubmit: () => onCommentSubmit(item.id),
                   onAuthorTap: onAuthorTap,
-                  commentsLoading: isCommentsLoading(items[index].id),
+                  commentsLoading: isCommentsLoading(item.id),
+                  canManage: canManage,
+                  onEdit: canManage && onEditThought != null
+                      ? () => onEditThought!(item.id)
+                      : null,
+                  onDelete: canManage && onDeleteThought != null
+                      ? () => onDeleteThought!(item.id)
+                      : null,
                 );
               },
             ),
@@ -1033,6 +1163,9 @@ class _ThoughtCard extends StatelessWidget {
     required this.onCommentSubmit,
     required this.onAuthorTap,
     this.commentsLoading = false,
+    this.canManage = false,
+    this.onEdit,
+    this.onDelete,
   });
 
   final _ThoughtItem item;
@@ -1044,6 +1177,9 @@ class _ThoughtCard extends StatelessWidget {
   final VoidCallback onCommentSubmit;
   final void Function(int userId, String nickname) onAuthorTap;
   final bool commentsLoading;
+  final bool canManage;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1113,6 +1249,32 @@ class _ThoughtCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (canManage && (onEdit != null || onDelete != null))
+                    PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.more_horiz_rounded,
+                        color: palette.textMuted,
+                      ),
+                      onSelected: (value) {
+                        if (value == 'edit') onEdit?.call();
+                        if (value == 'delete') onDelete?.call();
+                      },
+                      itemBuilder: (ctx) => [
+                        if (onEdit != null)
+                          PopupMenuItem(
+                            value: 'edit',
+                            child: Text(context.t('thoughts.edit')),
+                          ),
+                        if (onDelete != null)
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Text(
+                              context.t('thoughts.delete'),
+                              style: const TextStyle(color: Colors.redAccent),
+                            ),
+                          ),
+                      ],
+                    ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -1524,6 +1686,7 @@ class _ThoughtItem {
   final _ThoughtAttachment? attachment;
 
   _ThoughtItem copyWith({
+    String? text,
     int? likesCount,
     int? commentsCount,
     List<_ThoughtComment>? comments,
@@ -1533,7 +1696,7 @@ class _ThoughtItem {
       id: id,
       authorUserId: authorUserId,
       author: author,
-      text: text,
+      text: text ?? this.text,
       createdAt: createdAt,
       isFriend: isFriend,
       attachment: attachment,
