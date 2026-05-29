@@ -10,6 +10,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../widgets/glass_bottom_menu_sheet.dart';
 import '../../core/auth/auth_session_store.dart';
 import '../../core/network/api_config.dart';
 import '../../core/network/playlists_api.dart';
@@ -741,47 +742,197 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
     }
   }
 
+  Future<void> _showThoughtManageSheet(String thoughtId) async {
+    _overlayDepth++;
+    await showGlassBottomMenuSheet(
+      context,
+      actions: [
+        GlassMenuAction(
+          icon: Icons.edit_rounded,
+          label: context.t('thoughts.edit'),
+          onTap: () => unawaited(_editThought(thoughtId)),
+        ),
+        GlassMenuAction(
+          icon: Icons.delete_outline_rounded,
+          label: context.t('thoughts.delete'),
+          iconColor: Colors.redAccent,
+          labelStyle: const TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.w600,
+          ),
+          onTap: () => unawaited(_deleteThought(thoughtId)),
+        ),
+      ],
+    );
+    _overlayDepth = max(0, _overlayDepth - 1);
+  }
+
   Future<void> _editThought(String thoughtId) async {
     final index = _items.indexWhere((e) => e.id == thoughtId);
     if (index < 0) return;
     final item = _items[index];
     final controller = TextEditingController(text: item.text);
-    final updated = await showDialog<String>(
+    _ThoughtAttachment? pendingAttachment = item.attachment;
+    _overlayDepth++;
+    final updated = await showDialog<_ComposeResult>(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: Text(context.t('thoughts.edit')),
-          content: TextField(
-            controller: controller,
-            maxLines: 5,
-            decoration: InputDecoration(
-              hintText: context.t('thoughts.placeholder'),
+      useRootNavigator: true,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        final palette = AppPaletteExtension.of(dialogContext).palette;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              16 + MediaQuery.viewInsetsOf(dialogContext).bottom,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppConstants.radiusXLarge),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: palette.cardBackground.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(AppConstants.radiusXLarge),
+                    border: Border.all(
+                      color: palette.textPrimary.withValues(alpha: 0.16),
+                    ),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          context.t('thoughts.edit'),
+                          style: TextStyle(
+                            color: palette.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: controller,
+                          minLines: 3,
+                          maxLines: 6,
+                          decoration: InputDecoration(
+                            hintText: context.t('thoughts.placeholder'),
+                            border: InputBorder.none,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (pendingAttachment != null) ...[
+                          _DraftAttachmentView(
+                            attachment: pendingAttachment!,
+                            onRemove: () =>
+                                setDialogState(() => pendingAttachment = null),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: () async {
+                                final type =
+                                    await _showAttachmentTypePicker(dialogContext);
+                                if (!dialogContext.mounted) return;
+                                if (type == _ThoughtAttachmentType.track) {
+                                  final picked =
+                                      await _pickTrackAttachment(dialogContext);
+                                  if (!dialogContext.mounted) return;
+                                  if (picked != null) {
+                                    setDialogState(() => pendingAttachment = picked);
+                                  }
+                                } else if (type ==
+                                    _ThoughtAttachmentType.playlist) {
+                                  final picked = await _pickPlaylistAttachment(
+                                    dialogContext,
+                                  );
+                                  if (!dialogContext.mounted) return;
+                                  if (picked != null) {
+                                    setDialogState(() => pendingAttachment = picked);
+                                  }
+                                } else if (type == null) {
+                                  setDialogState(() => pendingAttachment = null);
+                                }
+                              },
+                              icon: const Icon(Icons.attach_file_rounded),
+                              label: Text(context.t('thoughts.attach')),
+                            ),
+                            const Spacer(),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  onPressed: () =>
+                                      Navigator.of(dialogContext).pop(),
+                                  icon: const Icon(Icons.close_rounded),
+                                  tooltip: context.t('common.cancel'),
+                                ),
+                                const SizedBox(width: 4),
+                                FilledButton(
+                                  onPressed: () {
+                                    final text = controller.text.trim();
+                                    if (text.isEmpty) return;
+                                    Navigator.of(dialogContext).pop(
+                                      _ComposeResult(
+                                        text: text,
+                                        attachment: pendingAttachment,
+                                      ),
+                                    );
+                                  },
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size(44, 44),
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                  child: const Icon(Icons.check_rounded),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(context.t('common.cancel')),
-            ),
-            FilledButton(
-              onPressed: () {
-                final t = controller.text.trim();
-                if (t.isNotEmpty) Navigator.pop(ctx, t);
-              },
-              child: Text(context.t('common.save')),
-            ),
-          ],
         );
       },
     );
-    controller.dispose();
+    _overlayDepth = max(0, _overlayDepth - 1);
     if (updated == null || !mounted) return;
     final tid = int.tryParse(thoughtId);
     if (tid == null) return;
+    int attachType = 0;
+    int? attachTrack;
+    int? attachPlaylist;
+    final a = updated.attachment;
+    if (a != null) {
+      if (a.type == _ThoughtAttachmentType.track && a.serverTrackId != null) {
+        attachType = 1;
+        attachTrack = a.serverTrackId;
+      } else if (a.type == _ThoughtAttachmentType.playlist) {
+        final sid = parseServerPlaylistId(a.playlistId ?? '');
+        if (sid != null) {
+          attachType = 2;
+          attachPlaylist = sid;
+        }
+      }
+    }
     try {
       final dto = await ThoughtsApi().updateThought(
         thoughtId: tid,
-        bodyText: updated,
+        bodyText: updated.text,
+        attachmentType: attachType,
+        attachmentTrackId: attachTrack,
+        attachmentPlaylistId: attachPlaylist,
       );
       if (!mounted) return;
       setState(() {
@@ -803,23 +954,60 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
   Future<void> _deleteThought(String thoughtId) async {
     final index = _items.indexWhere((e) => e.id == thoughtId);
     if (index < 0) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.t('thoughts.delete')),
-        content: Text(context.t('thoughts.deleteConfirm')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(context.t('common.cancel')),
+    _overlayDepth++;
+    final confirmed = await showGlassCenterSheet<bool>(
+      context,
+      builder: (sheetContext) {
+        final palette = AppPaletteExtension.of(sheetContext).palette;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                context.t('thoughts.delete'),
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                context.t('thoughts.deleteConfirm'),
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetContext, false),
+                      child: Text(context.t('common.cancel')),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext, true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                      ),
+                      child: Text(context.t('common.delete')),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(context.t('common.delete')),
-          ),
-        ],
-      ),
+        );
+      },
     );
+    _overlayDepth = max(0, _overlayDepth - 1);
     if (confirmed != true || !mounted) return;
     final tid = int.tryParse(thoughtId);
     if (tid == null) return;
@@ -902,8 +1090,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
                 isCommentsLoading: _commentsLoading.contains,
                 onCreateTap: _openCreateThoughtDialog,
                 currentUserId: _currentUserId,
-                onEditThought: _editThought,
-                onDeleteThought: _deleteThought,
+                onManageThought: _showThoughtManageSheet,
                 fabBottomInset: AppConstants.shellBottomInset,
                 showComposer: widget.viewedUserId == null,
                 showFeedSwitch: widget.viewedUserId == null,
@@ -936,8 +1123,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
               isCommentsLoading: _commentsLoading.contains,
               onCreateTap: _openCreateThoughtDialog,
               currentUserId: _currentUserId,
-              onEditThought: _editThought,
-              onDeleteThought: _deleteThought,
+              onManageThought: _showThoughtManageSheet,
               fabBottomInset: fabBottomInset,
               showComposer: widget.viewedUserId == null,
               showFeedSwitch: widget.viewedUserId == null,
@@ -969,8 +1155,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
     required this.onCreateTap,
     required this.fabBottomInset,
     this.currentUserId,
-    this.onEditThought,
-    this.onDeleteThought,
+    this.onManageThought,
     this.showComposer = true,
     this.showFeedSwitch = true,
     this.titleOverride,
@@ -991,8 +1176,7 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
   final VoidCallback onCreateTap;
   final double fabBottomInset;
   final int? currentUserId;
-  final Future<void> Function(String thoughtId)? onEditThought;
-  final Future<void> Function(String thoughtId)? onDeleteThought;
+  final Future<void> Function(String thoughtId)? onManageThought;
   final bool showComposer;
   final bool showFeedSwitch;
   final String? titleOverride;
@@ -1058,11 +1242,8 @@ class _ThoughtsScaffoldBody extends StatelessWidget {
                   onAuthorTap: onAuthorTap,
                   commentsLoading: isCommentsLoading(item.id),
                   canManage: canManage,
-                  onEdit: canManage && onEditThought != null
-                      ? () => onEditThought!(item.id)
-                      : null,
-                  onDelete: canManage && onDeleteThought != null
-                      ? () => onDeleteThought!(item.id)
+                  onManage: canManage && onManageThought != null
+                      ? () => onManageThought!(item.id)
                       : null,
                 );
               },
@@ -1164,8 +1345,7 @@ class _ThoughtCard extends StatelessWidget {
     required this.onAuthorTap,
     this.commentsLoading = false,
     this.canManage = false,
-    this.onEdit,
-    this.onDelete,
+    this.onManage,
   });
 
   final _ThoughtItem item;
@@ -1178,8 +1358,7 @@ class _ThoughtCard extends StatelessWidget {
   final void Function(int userId, String nickname) onAuthorTap;
   final bool commentsLoading;
   final bool canManage;
-  final VoidCallback? onEdit;
-  final VoidCallback? onDelete;
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1249,31 +1428,19 @@ class _ThoughtCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (canManage && (onEdit != null || onDelete != null))
-                    PopupMenuButton<String>(
+                  if (canManage && onManage != null)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
                       icon: Icon(
                         Icons.more_horiz_rounded,
                         color: palette.textMuted,
                       ),
-                      onSelected: (value) {
-                        if (value == 'edit') onEdit?.call();
-                        if (value == 'delete') onDelete?.call();
-                      },
-                      itemBuilder: (ctx) => [
-                        if (onEdit != null)
-                          PopupMenuItem(
-                            value: 'edit',
-                            child: Text(context.t('thoughts.edit')),
-                          ),
-                        if (onDelete != null)
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Text(
-                              context.t('thoughts.delete'),
-                              style: const TextStyle(color: Colors.redAccent),
-                            ),
-                          ),
-                      ],
+                      onPressed: onManage,
                     ),
                 ],
               ),

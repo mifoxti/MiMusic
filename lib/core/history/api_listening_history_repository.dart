@@ -93,19 +93,9 @@ class ApiListeningHistoryRepository extends ListeningHistoryRepository {
 
   @override
   void clear() {
+    // События в БД не удаляем — нужны для чартов; только сброс локального кэша.
     _entries.clear();
     notifyListeners();
-    unawaited(_clearOnServer());
-  }
-
-  Future<void> _clearOnServer() async {
-    final acc = await AuthSessionStore.readAccount();
-    if (acc?.userId == null || !acc!.isLoggedIn) return;
-    try {
-      await _api.clearHistory();
-    } catch (e, st) {
-      debugPrint('Listening history clear failed: $e\n$st');
-    }
   }
 
   ListeningHistoryEntry _entryFromDto(ListeningHistoryItemDto dto) {

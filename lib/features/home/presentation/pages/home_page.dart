@@ -359,11 +359,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  String _historySubtitle(HomeSection section) {
+  String _historySubtitle() {
     final h = widget.listeningHistoryRepository.entries;
     if (h.isEmpty) {
-      final mock = section.historyArtists.join(', ');
-      return mock.isEmpty ? context.t('home.listenPrompt') : mock;
+      return context.t('history.emptyHint');
     }
     return h.take(3).map((e) => e.title).join(' · ');
   }
@@ -479,7 +478,7 @@ class _HomePageState extends State<HomePage> {
                       listenable: widget.listeningHistoryRepository,
                       builder: (context, _) {
                         return HistorySection(
-                          subtitle: _historySubtitle(section),
+                          subtitle: _historySubtitle(),
                           onTap: () => _openListeningHistory(context),
                         );
                       },

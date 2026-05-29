@@ -23,6 +23,9 @@ void setListeningHistoryRepository(ListeningHistoryRepository? repo) {
   _listeningHistoryRepository = repo;
 }
 
+ListeningHistoryRepository? get listeningHistoryRepository =>
+    _listeningHistoryRepository;
+
 /// Обработчик аудио для audio_service: воспроизведение через just_audio,
 /// уведомление в шторке (Android) и Control Center (iOS) с управлением.
 class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
@@ -46,6 +49,15 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   StreamSubscription<Duration?>? _durationSub;
   StreamSubscription<bool>? _shuffleModeSub;
   StreamSubscription<LoopMode>? _loopModeSub;
+
+  /// Не дублировать запись в историю при pause→play того же трека.
+  String? _lastHistoryRecordedKey;
+
+  /// Синхронизация с [AudioPlayerService.playTrack], чтобы не дублировать запись.
+  void markListeningHistoryRecorded(String key) {
+    if (key.isEmpty) return;
+    _lastHistoryRecordedKey = key;
+  }
 
   /// На web [positionStream] часто почти не эмитит во время воспроизведения — UI не получает прогресс.
   Timer? _webPositionPoll;
@@ -137,6 +149,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       ),
     );
     _syncWebPositionPoll();
+    if (state.playing && state.processingState == ProcessingState.ready) {
+      _recordListeningHistoryOnce();
+    }
     if (state.processingState == ProcessingState.completed) {
       _stopWebPositionPoll();
       playbackState.add(
@@ -205,7 +220,10 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final idx = state?.currentIndex ?? 0;
     if (idx != _queueIndex && idx >= 0 && idx < _queue.length) {
       _queueIndex = idx;
-      _updateMediaItemFromQueue();
+      unawaited(_updateMediaItemFromQueue());
+      if (_player.playing) {
+        _recordListeningHistoryOnce();
+      }
     }
   }
 
@@ -286,6 +304,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _stopWebPositionPoll();
     await _player.stop();
     _concatenatingSourceUsed = false;
+    _lastHistoryRecordedKey = null;
     mediaItem.add(null);
     playbackState.add(
       playbackState.value.copyWith(
@@ -323,6 +342,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         _queueIndex = 0;
       }
       await _updateMediaItemFromQueue();
+      if (_player.playing) _recordListeningHistoryOnce();
       return;
     }
     if (_queueIndex >= _queue.length - 1) {
@@ -351,6 +371,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       await _player.seekToPrevious();
       _queueIndex = _player.currentIndex ?? _queueIndex - 1;
       await _updateMediaItemFromQueue();
+      if (_player.playing) _recordListeningHistoryOnce();
       return;
     }
     if (_queueIndex <= 0) {
@@ -371,7 +392,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   bool get _useConcatenatingSource =>
       _queue.length > 1 && _concatenatingSourceUsed;
 
-  void _recordListeningHistoryFromQueue() {
+  void _recordListeningHistoryOnce() {
     final repo = _listeningHistoryRepository;
     if (repo == null) return;
     if (_queue.isEmpty || _queueIndex < 0 || _queueIndex >= _queue.length) {
@@ -381,8 +402,11 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final path = t['path'] as String? ?? '';
     if (path.isEmpty) return;
     final stableId = (t['itemId'] as String?)?.trim();
+    final key = (stableId != null && stableId.isNotEmpty) ? stableId : path;
+    if (key == _lastHistoryRecordedKey) return;
+    _lastHistoryRecordedKey = key;
     repo.recordPlayback(
-      playablePath: (stableId != null && stableId.isNotEmpty) ? stableId : path,
+      playablePath: key,
       title: t['title'] as String? ?? '',
       artist: t['artist'] as String?,
       coverAssetPath: t['artPath'] as String?,
@@ -419,7 +443,6 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         bufferedPosition: _player.bufferedPosition,
       ),
     );
-    _recordListeningHistoryFromQueue();
   }
 
   Future<void> _playFromQueue() async {
@@ -777,7 +800,6 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
           bufferedPosition: _player.bufferedPosition,
         ),
       );
-      _recordListeningHistoryFromQueue();
     } catch (e) {
       playbackState.add(
         playbackState.value.copyWith(

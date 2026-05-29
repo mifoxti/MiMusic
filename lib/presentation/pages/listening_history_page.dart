@@ -10,7 +10,6 @@ import '../../core/history/api_listening_history_repository.dart';
 import '../../core/history/listening_history_entry.dart';
 import '../../core/history/listening_history_repository.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
 import '../../core/player/player_dock_host.dart';
@@ -128,22 +127,6 @@ class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
           elevation: 0,
           centerTitle: true,
           iconTheme: IconThemeData(color: palette.textPrimary),
-          actions: [
-            ListenableBuilder(
-              listenable: widget.listeningHistoryRepository,
-              builder: (context, _) {
-                if (widget.listeningHistoryRepository.entries.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-                return IconButton(
-                  onPressed: () {
-                    _showHistoryActionsDialog();
-                  },
-                  icon: const Icon(Icons.more_horiz_rounded),
-                );
-              },
-            ),
-          ],
         ),
         body: ListenableBuilder(
           listenable: widget.listeningHistoryRepository,
@@ -153,14 +136,26 @@ class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: Text(
-                    context.t('history.empty'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: palette.textSecondary,
-                      height: 1.4,
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.history_rounded,
+                        size: 56,
+                        color: palette.textMuted.withValues(alpha: 0.7),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        context.t('history.empty'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: palette.textPrimary,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -208,48 +203,6 @@ class _ListeningHistoryPageState extends State<ListeningHistoryPage> {
     );
   }
 
-  Future<void> _showHistoryActionsDialog() async {
-    await showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.38),
-      builder: (ctx) {
-        final isDark = Theme.of(ctx).brightness == Brightness.dark;
-        final p = AppPaletteExtension.of(ctx).palette;
-        final glassTint = AppGlass.tint(isDark);
-        final borderGlass = AppGlass.border(isDark);
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: AppGlass.blurredTintLayer(
-              isDark: isDark,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: borderGlass, width: 1),
-                  color: glassTint,
-                  boxShadow: AppGlass.cardShadows(isDark),
-                ),
-                child: ListTile(
-                  leading: Icon(Icons.delete_outline_rounded, color: p.accent),
-                  title: Text(
-                    context.t('history.clear'),
-                    style: TextStyle(color: p.textPrimary),
-                  ),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    widget.listeningHistoryRepository.clear();
-                  },
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
 
 class _HistoryTrackTile extends StatelessWidget {

@@ -45,9 +45,4 @@ class ListeningHistoryApi {
         .map((e) => ListeningHistoryItemDto.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
   }
-
-  Future<void> clearHistory() async {
-    final dio = await _authDio();
-    await dio.delete<void>('/me/listening-history');
-  }
 }

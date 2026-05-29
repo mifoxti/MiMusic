@@ -181,6 +181,20 @@ class AudioPlayerService extends ChangeNotifier {
   /// Путь для воспроизведения: файл (если загружен в студии) или asset.
   static String playablePath(Track t) => t.audioFilePath ?? t.assetPath;
 
+  void _recordListeningHistoryForTrack(Track track) {
+    final repo = listeningHistoryRepository;
+    if (repo == null) return;
+    final key = track.assetPath.trim();
+    if (key.isEmpty) return;
+    repo.recordPlayback(
+      playablePath: key,
+      title: track.title,
+      artist: track.artist,
+      coverAssetPath: track.coverFallbackPath,
+    );
+    _handler.markListeningHistoryRecorded(key);
+  }
+
   /// Загружает и воспроизводит трек. Показывает медиа-уведомление на Android/iOS.
   /// [queue] — очередь для кнопок предыдущий/следующий в уведомлении.
   ///
@@ -199,6 +213,9 @@ class AudioPlayerService extends ChangeNotifier {
     _currentTrack = track;
     _activeQueue = _normalizeQueue(track, queue);
     notifyListeners();
+    if (autoPlay) {
+      _recordListeningHistoryForTrack(track);
+    }
     String? artUri;
     if (track.coverBytes != null && track.coverBytes!.isNotEmpty) {
       artUri = await _coverBytesToFileUri(track.coverBytes!);

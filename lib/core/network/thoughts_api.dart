@@ -200,11 +200,20 @@ class ThoughtsApi {
   Future<ThoughtFeedItemDto> updateThought({
     required int thoughtId,
     required String bodyText,
+    required int attachmentType,
+    int? attachmentTrackId,
+    int? attachmentPlaylistId,
   }) async {
     final dio = await _authDio();
+    final body = <String, dynamic>{
+      'bodyText': bodyText,
+      'attachmentType': attachmentType,
+      if (attachmentTrackId != null) 'attachmentTrackId': attachmentTrackId,
+      if (attachmentPlaylistId != null) 'attachmentPlaylistId': attachmentPlaylistId,
+    };
     final res = await dio.put<Map<String, dynamic>>(
       '/thoughts/$thoughtId',
-      data: {'bodyText': bodyText},
+      data: body,
     );
     final data = res.data;
     if (data == null) {
