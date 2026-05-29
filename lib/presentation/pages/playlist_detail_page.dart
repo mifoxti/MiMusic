@@ -9,6 +9,7 @@ import '../../core/auth/auth_session_store.dart';
 import '../../core/network/api_config.dart';
 import '../../core/network/playlists_api.dart';
 import '../../core/network/tracks_api.dart';
+import '../../core/offline/download_feedback.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/platform/cover_pick_save.dart';
@@ -55,6 +56,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   int _playlistLikesCount = 0;
   bool _playlistLiked = false;
   bool _likeBusy = false;
+  bool _playlistDownloadBusy = false;
 
   @override
   void initState() {
@@ -303,6 +305,17 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     if (mounted) await _load();
   }
 
+  Future<void> _downloadWholePlaylist() async {
+    final sid = parseServerPlaylistId(widget.playlistId);
+    if (sid == null || _tracks.isEmpty) return;
+    setState(() => _playlistDownloadBusy = true);
+    final result = await widget.audioPlayerService.offlineDownloads
+        .downloadPlaylist(sid);
+    if (!mounted) return;
+    setState(() => _playlistDownloadBusy = false);
+    showPlaylistDownloadSnackBar(context, result);
+  }
+
   Future<void> _togglePlaylistLike() async {
     final id = parseServerPlaylistId(widget.playlistId);
     if (id == null || !_detailIsPublic || !_sessionLoggedIn || _likeBusy) return;
@@ -356,6 +369,23 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
           centerTitle: true,
           iconTheme: IconThemeData(color: palette.textPrimary),
           actions: [
+            if (_playlist != null &&
+                parseServerPlaylistId(widget.playlistId) != null &&
+                _tracks.isNotEmpty)
+              IconButton(
+                tooltip: context.t('download.playlistAction'),
+                onPressed: _playlistDownloadBusy ? null : _downloadWholePlaylist,
+                icon: _playlistDownloadBusy
+                    ? SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: palette.accent,
+                        ),
+                      )
+                    : Icon(Icons.download_rounded, color: palette.textPrimary),
+              ),
             if (_playlist != null && _detailIsPublic && _sessionLoggedIn)
               IconButton(
                 tooltip: Localizations.localeOf(context).languageCode == 'en' ? 'Like' : 'Лайк',
@@ -813,10 +843,10 @@ class _PlaylistTrackTile extends StatelessWidget {
     return ListenableBuilder(
       listenable: audioPlayerService,
       builder: (context, _) {
-        final path = AudioPlayerService.playablePath(track);
-        final liked = audioPlayerService.isPathLiked(path);
-        final downloading = audioPlayerService.isTrackDownloading(path);
-        final downloaded = audioPlayerService.isTrackDownloaded(path);
+        final trackKey = track.assetPath;
+        final liked = audioPlayerService.isPathLiked(trackKey);
+        final downloading = audioPlayerService.isTrackDownloading(trackKey);
+        final downloaded = audioPlayerService.isTrackDownloaded(trackKey);
 
         return Material(
           color: palette.cardBackground.withValues(alpha: 0.9),
@@ -877,20 +907,15 @@ class _PlaylistTrackTile extends StatelessWidget {
                   ),
                   onSelected: (value) async {
                     if (value == 'fav') {
-                      if (path.isEmpty) return;
-                      await audioPlayerService.toggleLikePath(path);
+                      if (trackKey.isEmpty) return;
+                      await audioPlayerService.toggleLikePath(trackKey);
                       return;
                     }
                     if (value == 'dl') {
-                      if (path.isEmpty || downloading || downloaded) return;
-                      await audioPlayerService.cacheTrackMock(track);
+                      if (trackKey.isEmpty || downloading || downloaded) return;
+                      final result = await audioPlayerService.downloadTrack(track);
                       if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          behavior: SnackBarBehavior.floating,
-                          content: Text(context.t('playlists.track.cachedMock')),
-                        ),
-                      );
+                      showTrackDownloadSnackBar(context, result);
                       return;
                     }
                     if (value == 'pl') {
@@ -908,7 +933,7 @@ class _PlaylistTrackTile extends StatelessWidget {
                   itemBuilder: (ctx) => [
                     PopupMenuItem<String>(
                       value: 'fav',
-                      enabled: path.isNotEmpty,
+                      enabled: trackKey.isNotEmpty,
                       child: Text(
                         liked
                             ? context.t('playlists.track.removeFromFavorites')
@@ -918,7 +943,7 @@ class _PlaylistTrackTile extends StatelessWidget {
                     PopupMenuItem<String>(
                       value: 'dl',
                       enabled:
-                          path.isNotEmpty && !downloading && !downloaded,
+                          trackKey.isNotEmpty && !downloading && !downloaded,
                       child: Text(context.t('playlists.track.download')),
                     ),
                     PopupMenuItem<String>(

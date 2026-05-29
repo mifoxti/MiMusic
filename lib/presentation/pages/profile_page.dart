@@ -29,6 +29,7 @@ import 'settings_page.dart';
 import 'studio_page.dart';
 import 'thoughts_page.dart';
 import 'open_rooms_page.dart';
+import 'saved_page.dart';
 
 /// Страница профиля: коллапсирующий header с обложкой и аватаром + "поднимающийся" bottom-sheet.
 class ProfilePage extends StatefulWidget {
@@ -68,11 +69,18 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   String? _serverNickname;
   String? _avatarPathOverride;
+  int? _tracksStat;
+  int? _playlistsStat;
+  int? _friendsStat;
+  bool _statsLoading = true;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_primeFromCacheAndSync()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_primeFromCacheAndSync());
+      unawaited(_loadStats());
+    });
   }
 
   /// Сначала кэш (быстрый UI), затем сеть; [setState] только если данные изменились.
@@ -109,6 +117,26 @@ class _ProfilePageState extends State<ProfilePage> {
         }
       });
     } catch (_) {}
+  }
+
+  Future<void> _loadStats() async {
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.trim().isEmpty) {
+      if (mounted) setState(() => _statsLoading = false);
+      return;
+    }
+    try {
+      final stats = await ProfileApi().fetchMeStats();
+      if (!mounted) return;
+      setState(() {
+        _tracksStat = stats.tracksCount;
+        _playlistsStat = stats.playlistsCount;
+        _friendsStat = stats.friendsCount;
+        _statsLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _statsLoading = false);
+    }
   }
 
   String get _profileNickname =>
@@ -464,65 +492,101 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildActionRow(BuildContext context, AppColorPalette palette) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _ActionCard(
-            icon: Icons.playlist_play_rounded,
-            label: Localizations.localeOf(context).languageCode == 'en' ? 'Playlists' : 'Плейлисты',
-            onTap: () {
-              Navigator.of(context).push(
-                ShellMaterialPageRoute<void>(
-                  builder: (context) => PlaylistsPage(
-                    audioPlayerService: widget.audioPlayerService,
-                    repository: widget.playlistsRepository,
-                  ),
-                ),
-              );
-            },
-            palette: palette,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _ActionCard(
+                icon: Icons.playlist_play_rounded,
+                label: Localizations.localeOf(context).languageCode == 'en'
+                    ? 'Playlists'
+                    : 'Плейлисты',
+                onTap: () {
+                  Navigator.of(context).push(
+                    ShellMaterialPageRoute<void>(
+                      builder: (context) => PlaylistsPage(
+                        audioPlayerService: widget.audioPlayerService,
+                        repository: widget.playlistsRepository,
+                      ),
+                    ),
+                  );
+                },
+                palette: palette,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ActionCard(
+                icon: Icons.people_rounded,
+                label: Localizations.localeOf(context).languageCode == 'en'
+                    ? 'Friends'
+                    : 'Друзья',
+                onTap: () {
+                  Navigator.of(context).push(
+                    ShellMaterialPageRoute<void>(
+                      builder: (_) => FriendsPage(
+                        currentUsername: _profileNickname,
+                        audioPlayerService: widget.audioPlayerService,
+                      ),
+                    ),
+                  );
+                },
+                palette: palette,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionCard(
-            icon: Icons.people_rounded,
-            label: Localizations.localeOf(context).languageCode == 'en' ? 'Friends' : 'Друзья',
-            onTap: () {
-              Navigator.of(context).push(
-                ShellMaterialPageRoute<void>(
-                  builder: (_) => FriendsPage(
-                    currentUsername: _profileNickname,
-                    audioPlayerService: widget.audioPlayerService,
-                  ),
-                ),
-              );
-            },
-            palette: palette,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionCard(
-            icon: Icons.favorite_rounded,
-            label: Localizations.localeOf(context).languageCode == 'en' ? 'Favorites' : 'Избранное',
-            onTap: () {
-              Navigator.of(context).push(
-                ShellMaterialPageRoute<void>(
-                  builder: (context) => FavoritesPage(
-                    audioPlayerService: widget.audioPlayerService,
-                  ),
-                ),
-              );
-            },
-            palette: palette,
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _ActionCard(
+                icon: Icons.favorite_rounded,
+                label: Localizations.localeOf(context).languageCode == 'en'
+                    ? 'Favorites'
+                    : 'Избранное',
+                onTap: () {
+                  Navigator.of(context).push(
+                    ShellMaterialPageRoute<void>(
+                      builder: (context) => FavoritesPage(
+                        audioPlayerService: widget.audioPlayerService,
+                      ),
+                    ),
+                  );
+                },
+                palette: palette,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ActionCard(
+                icon: Icons.download_rounded,
+                label: context.t('profile.saved'),
+                onTap: () {
+                  Navigator.of(context).push(
+                    ShellMaterialPageRoute<void>(
+                      builder: (_) => SavedPage(
+                        audioPlayerService: widget.audioPlayerService,
+                        offlineDownloads: widget.audioPlayerService.offlineDownloads,
+                      ),
+                    ),
+                  );
+                },
+                palette: palette,
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
   Widget _buildStatsSection(BuildContext context, AppColorPalette palette) {
+    String fmt(int? v) {
+      if (_statsLoading) return '…';
+      return '${v ?? 0}';
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
@@ -532,19 +596,19 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _StatItem(value: '128', label: Localizations.localeOf(context).languageCode == 'en' ? 'tracks' : 'треков', palette: palette),
+          _StatItem(value: fmt(_tracksStat), label: Localizations.localeOf(context).languageCode == 'en' ? 'tracks' : 'треков', palette: palette),
           Container(
             width: 1,
             height: 32,
             color: palette.textMuted.withValues(alpha: 0.4),
           ),
-          _StatItem(value: '12', label: Localizations.localeOf(context).languageCode == 'en' ? 'playlists' : 'плейлистов', palette: palette),
+          _StatItem(value: fmt(_playlistsStat), label: Localizations.localeOf(context).languageCode == 'en' ? 'playlists' : 'плейлистов', palette: palette),
           Container(
             width: 1,
             height: 32,
             color: palette.textMuted.withValues(alpha: 0.4),
           ),
-          _StatItem(value: '8', label: Localizations.localeOf(context).languageCode == 'en' ? 'friends' : 'друзей', palette: palette),
+          _StatItem(value: fmt(_friendsStat), label: Localizations.localeOf(context).languageCode == 'en' ? 'friends' : 'друзей', palette: palette),
         ],
       ),
     );

@@ -318,7 +318,7 @@ class _ForYouPageState extends State<ForYouPage> {
                                   track: t,
                                   palette: palette,
                                   isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                                    AudioPlayerService.playablePath(t),
+                                    t.assetPath,
                                   ),
                                   onTap: () => _onServerRecTap(t),
                                 );
@@ -371,7 +371,7 @@ class _ForYouPageState extends State<ForYouPage> {
                             track: queue[index],
                             palette: palette,
                             isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                              AudioPlayerService.playablePath(queue[index]),
+                              queue[index].assetPath,
                             ),
                             onTap: () => _onTrackTap(queue[index]),
                           );

@@ -67,10 +67,15 @@ class _StudioPageState extends State<StudioPage> {
     final overrides = await _repo.getTrackMetadataOverrides();
     final customPaths = await _repo.getCustomTrackPaths();
     if (!mounted) return;
+
     final customTracks = <Track>[];
+    final linkedServerIds = <int>{};
     for (final id in customPaths) {
       final o = overrides[id];
-      final artistStr = (o != null && o.displayArtist.isNotEmpty) ? o.displayArtist : o?.artist;
+      final sid = o?.serverTrackId ?? TracksApi().parseServerTrackId(id);
+      if (sid != null) linkedServerIds.add(sid);
+      final artistStr =
+          (o != null && o.displayArtist.isNotEmpty) ? o.displayArtist : o?.artist;
       customTracks.add(Track(
         assetPath: id,
         title: o?.title ?? context.t('playlists.untitled'),
@@ -79,11 +84,26 @@ class _StudioPageState extends State<StudioPage> {
         audioFilePath: o?.audioFilePath,
       ));
     }
+
+    final serverTracks = <Track>[];
+    final acc = await AuthSessionStore.readAccount();
+    final loggedIn = acc != null && acc.sessionToken.trim().isNotEmpty;
+    if (loggedIn) {
+      try {
+        final remote = await TracksApi().fetchMyUploadedTracks();
+        for (final item in remote) {
+          if (linkedServerIds.contains(item.id)) continue;
+          serverTracks.add(item.toTrack());
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
     setState(() {
       _albums = albums;
       _overrides = overrides;
       _customPaths = customPaths;
-      _tracks = customTracks;
+      _tracks = [...customTracks, ...serverTracks];
       _loading = false;
     });
   }
@@ -575,6 +595,20 @@ class _TracksTab extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(track.artistDisplay.isEmpty ? '—' : track.artistDisplay, style: TextStyle(fontSize: 12, color: palette.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      if (track.assetPath.startsWith('server_track_')) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.cloud_done_rounded, size: 12, color: palette.accent),
+                            const SizedBox(width: 4),
+                            Text(
+                              context.t('studio.onServer'),
+                              style: TextStyle(fontSize: 11, color: palette.accent),
+                            ),
+                          ],
+                        ),
+                      ],
                       if (overrides[track.assetPath]?.genres.isNotEmpty ?? false) ...[
                         const SizedBox(height: 4),
                         Wrap(

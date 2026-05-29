@@ -252,7 +252,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                           return FavoriteTrackItem(
                             track: track,
                             isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                              AudioPlayerService.playablePath(track),
+                              track.assetPath,
                             ),
                             onTap: () => _onTrackTap(track),
                             onRemoveFavorite: () => _onRemoveFavorite(track),

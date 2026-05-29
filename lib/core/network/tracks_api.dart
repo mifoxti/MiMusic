@@ -96,6 +96,20 @@ class TracksApi {
         .toList();
   }
 
+  /// Треки, выгруженные текущим пользователем ([GET /me/tracks]).
+  Future<List<ServerTrackListItem>> fetchMyUploadedTracks({int limit = 100}) async {
+    final dio = await createAuthenticatedDio();
+    final res = await dio.get<List<dynamic>>(
+      '/me/tracks',
+      queryParameters: {'limit': limit},
+    );
+    final data = res.data;
+    if (data == null) return [];
+    return data
+        .map((e) => ServerTrackListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
   Future<ServerTrackListItem> fetchTrackById(int trackId) async {
     final res = await _dio.get<Map<String, dynamic>>('/tracks/$trackId');
     final data = res.data;

@@ -17,6 +17,7 @@ import 'core/history/api_listening_history_repository.dart';
 import 'core/history/listening_history_repository.dart';
 import 'core/l10n/app_localization.dart';
 import 'core/notifications/local_notifications_service.dart';
+import 'core/offline/offline_download_repository.dart';
 import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
 import 'core/settings/settings_repository.dart';
@@ -191,6 +192,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
   /// Сбрасывает кэш [Image] для аватара, если путь к файлу тот же, а содержимое изменилось.
   int _shellSettingsDisplayGeneration = 0;
   AudioPlayerService? _audioPlayerService;
+  OfflineDownloadRepository? _offlineDownloadRepository;
   GetHomeSectionUseCase? _getHomeSectionUseCase;
   final PlaylistsRepository _playlistsRepository = SessionAwarePlaylistsRepository();
 
@@ -242,9 +244,13 @@ class _MiMusicAppState extends State<MiMusicApp> {
 
   void _ensurePlayerServices() {
     if (_audioPlayerService != null) return;
+    _offlineDownloadRepository ??= OfflineDownloadRepository(
+      settingsRepository: widget.settingsRepository,
+    );
     _audioPlayerService = AudioPlayerService(
       audioHandler: widget.audioHandler,
       settingsRepository: widget.settingsRepository,
+      offlineDownloads: _offlineDownloadRepository!,
     );
     _getHomeSectionUseCase = GetHomeSectionUseCase(HomeRepositoryImpl());
   }
@@ -271,6 +277,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
     // Сначала убираем MainShell с ListenableBuilder(audio), иначе один кадр с disposed ChangeNotifier — красный FlutterError.
     final player = _audioPlayerService;
     _audioPlayerService = null;
+    _offlineDownloadRepository = null;
     _getHomeSectionUseCase = null;
     setState(() => _gate = _AppGate.auth);
     WidgetsBinding.instance.addPostFrameCallback((_) {

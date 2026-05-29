@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../../core/cache/cache_size.dart';
+import '../../core/offline/offline_download_repository.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
@@ -99,10 +100,15 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
   Future<void> _refreshSize() async {
     setState(() => _loading = true);
     final n = await getAppCacheSizeBytes();
+    final offlineRepo = OfflineDownloadRepository(
+      settingsRepository: widget.settingsRepository,
+    );
+    await offlineRepo.ensureLoaded();
+    final offline = await offlineRepo.getOfflineDownloadsSizeBytes();
     if (!mounted) return;
     setState(() {
-      _usedBytes = n;
-      _displayUsedBytes = n;
+      _usedBytes = n + offline;
+      _displayUsedBytes = n + offline;
       _loading = false;
     });
   }

@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/audio/track.dart';
+import '../../../../core/offline/download_feedback.dart';
 import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/network/playlists_api.dart';
 import '../../../../core/network/tracks_api.dart';
@@ -83,9 +84,9 @@ class FullPlayerDockPanel extends StatelessWidget {
               ),
             );
           }
-          final playable = AudioPlayerService.playablePath(track);
-          final downloading = audioPlayerService.isTrackDownloading(playable);
-          final downloaded = audioPlayerService.isTrackDownloaded(playable);
+          final trackKey = track.assetPath;
+          final downloading = audioPlayerService.isTrackDownloading(trackKey);
+          final downloaded = audioPlayerService.isTrackDownloaded(trackKey);
 
           final clampedPosition = position.inMilliseconds.clamp(
             0,
@@ -163,23 +164,10 @@ class FullPlayerDockPanel extends StatelessWidget {
                       onPressed: downloading || downloaded
                           ? null
                           : () async {
-                              final isEn =
-                                  Localizations.localeOf(
-                                    context,
-                                  ).languageCode ==
-                                  'en';
-                              await audioPlayerService.cacheTrackMock(track);
+                              final result =
+                                  await audioPlayerService.downloadTrack(track);
                               if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  behavior: SnackBarBehavior.floating,
-                                  content: Text(
-                                    isEn
-                                        ? 'Track is cached locally (mock).'
-                                        : 'Трек закеширован локально (mock).',
-                                  ),
-                                ),
-                              );
+                              showTrackDownloadSnackBar(context, result);
                             },
                     ),
                     IconButton(

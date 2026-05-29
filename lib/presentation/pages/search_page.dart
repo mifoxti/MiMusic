@@ -674,7 +674,7 @@ class _SearchPageState extends State<SearchPage> {
                     track: track,
                     palette: palette,
                     isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                      AudioPlayerService.playablePath(track),
+                      track.assetPath,
                     ),
                     onTap: () => _onTrackTap(track, tracks),
                   ),

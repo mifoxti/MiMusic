@@ -30,6 +30,26 @@ class MeProfileRemote {
   }
 }
 
+class MeStatsRemote {
+  const MeStatsRemote({
+    required this.tracksCount,
+    required this.playlistsCount,
+    required this.friendsCount,
+  });
+
+  final int tracksCount;
+  final int playlistsCount;
+  final int friendsCount;
+
+  factory MeStatsRemote.fromJson(Map<String, dynamic> j) {
+    return MeStatsRemote(
+      tracksCount: (j['tracksCount'] as num?)?.toInt() ?? 0,
+      playlistsCount: (j['playlistsCount'] as num?)?.toInt() ?? 0,
+      friendsCount: (j['friendsCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class ProfileApi {
   Future<MeProfileRemote> fetchMe() async {
     final dio = await createAuthenticatedDio();
@@ -37,6 +57,14 @@ class ProfileApi {
     final data = res.data;
     if (data == null) throw StateError('Empty /me');
     return MeProfileRemote.fromJson(data);
+  }
+
+  Future<MeStatsRemote> fetchMeStats() async {
+    final dio = await createAuthenticatedDio();
+    final res = await dio.get<Map<String, dynamic>>('/me/stats');
+    final data = res.data;
+    if (data == null) throw StateError('Empty /me/stats');
+    return MeStatsRemote.fromJson(data);
   }
 
   /// Смена пароля учётной записи на сервере ([PUT /me/password]).

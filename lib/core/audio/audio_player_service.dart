@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../auth/auth_session_store.dart';
 import '../network/profile_api.dart';
 import '../network/tracks_api.dart';
+import '../offline/offline_download_repository.dart';
 import '../settings/settings_repository.dart';
 import '../social/colisten_controller.dart';
 import '../social/listening_room_session.dart';
@@ -21,14 +22,19 @@ class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
     required AudioHandler audioHandler,
     required SettingsRepository settingsRepository,
+    required OfflineDownloadRepository offlineDownloads,
   }) : _handler = audioHandler as MiMusicAudioHandler,
-       _settingsRepository = settingsRepository {
+       _settingsRepository = settingsRepository,
+       _offlineDownloads = offlineDownloads {
     _listenToHandler();
+    unawaited(_bootstrapOfflineState());
     unawaited(syncTrackLikesFromServer());
+    _offlineDownloads.addListener(_onOfflineDownloadsChanged);
   }
 
   final MiMusicAudioHandler _handler;
   final SettingsRepository _settingsRepository;
+  final OfflineDownloadRepository _offlineDownloads;
 
   StreamSubscription<PlaybackState>? _playbackStateSub;
   StreamSubscription<MediaItem?>? _mediaItemSub;
@@ -41,9 +47,17 @@ class AudioPlayerService extends ChangeNotifier {
   bool _guestLocalPauseActive = false;
   int _playbackMirrorSuppressUntilMs = 0;
   List<Track> _activeQueue = const [];
-  final Set<String> _downloadingPaths = <String>{};
-  final Set<String> _downloadedPaths = <String>{};
-  final Map<String, Timer> _downloadTimers = <String, Timer>{};
+
+  Future<void> _bootstrapOfflineState() async {
+    await _offlineDownloads.ensureLoaded();
+    notifyListeners();
+  }
+
+  void _onOfflineDownloadsChanged() {
+    notifyListeners();
+  }
+
+  OfflineDownloadRepository get offlineDownloads => _offlineDownloads;
 
   Track? get currentTrack => _currentTrack;
   bool get isPlaying => _isPlaying;
@@ -74,8 +88,13 @@ class AudioPlayerService extends ChangeNotifier {
   /// Очередь из нескольких треков (для shuffle / repeat all).
   bool get hasMultiTrackQueue => _handler.hasMultiTrackQueue;
   List<Track> get activeQueue => List.unmodifiable(_activeQueue);
-  Set<String> get downloadedPaths => Set.unmodifiable(_downloadedPaths);
-  Set<String> get downloadingPaths => Set.unmodifiable(_downloadingPaths);
+  Set<String> get downloadedPaths {
+    return _offlineDownloads.downloadedTracks
+        .map((t) => t.assetKey)
+        .toSet();
+  }
+
+  Set<String> get downloadingPaths => _offlineDownloads.downloadingKeys;
 
   /// Путь текущего трека в очереди (как в плеере).
   String? get currentPlayablePath => _handler.currentPlayablePath;
@@ -86,10 +105,10 @@ class AudioPlayerService extends ChangeNotifier {
       path.isNotEmpty && dislikedPaths.contains(path);
 
   bool isTrackDownloading(String path) =>
-      path.isNotEmpty && _downloadingPaths.contains(path);
+      path.isNotEmpty && _offlineDownloads.isDownloading(path);
 
   bool isTrackDownloaded(String path) =>
-      path.isNotEmpty && _downloadedPaths.contains(path);
+      path.isNotEmpty && _offlineDownloads.isDownloaded(path);
 
   void _listenToHandler() {
     _handler.likedPathsNotifier.addListener(_onLikedPathsChanged);
@@ -179,7 +198,22 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// Путь для воспроизведения: файл (если загружен в студии) или asset.
-  static String playablePath(Track t) => t.audioFilePath ?? t.assetPath;
+  static String playablePath(Track t) {
+    final local = t.audioFilePath;
+    if (local != null &&
+        local.isNotEmpty &&
+        !local.startsWith('http://') &&
+        !local.startsWith('https://')) {
+      return local;
+    }
+    return local ?? t.assetPath;
+  }
+
+  String resolvedPlayablePath(Track t) {
+    final offline = _offlineDownloads.localPathForAssetKey(t.assetPath);
+    if (offline != null && offline.isNotEmpty) return offline;
+    return playablePath(t);
+  }
 
   void _recordListeningHistoryForTrack(Track track) {
     final repo = listeningHistoryRepository;
@@ -220,11 +254,11 @@ class AudioPlayerService extends ChangeNotifier {
     if (track.coverBytes != null && track.coverBytes!.isNotEmpty) {
       artUri = await _coverBytesToFileUri(track.coverBytes!);
     }
-    final path = playablePath(track);
+    final path = resolvedPlayablePath(track);
     final queueMaps = queue
         ?.map(
           (t) => {
-            'path': playablePath(t),
+            'path': resolvedPlayablePath(t),
             'itemId': t.assetPath,
             'title': t.title,
             'artist': t.artist,
@@ -276,7 +310,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   List<Track> _normalizeQueue(Track track, List<Track>? queue) {
     if (queue == null || queue.isEmpty) return [track];
-    final hasTrack = queue.any((e) => playablePath(e) == playablePath(track));
+    final hasTrack = queue.any((e) => e.assetPath == track.assetPath);
     if (hasTrack) return List<Track>.from(queue);
     return [track, ...queue];
   }
@@ -285,7 +319,7 @@ class AudioPlayerService extends ChangeNotifier {
     return tracks
         .map(
           (t) => {
-            'path': playablePath(t),
+            'path': resolvedPlayablePath(t),
             'itemId': t.assetPath,
             'title': t.title,
             'artist': t.artist,
@@ -310,8 +344,8 @@ class AudioPlayerService extends ChangeNotifier {
     }
     final resumeAt = position;
     final wasPlaying = isPlaying;
-    final path = playablePath(current);
-    final inQueue = nextQueue.any((t) => playablePath(t) == path);
+    final path = resolvedPlayablePath(current);
+    final inQueue = nextQueue.any((t) => resolvedPlayablePath(t) == path);
     if (!inQueue) {
       await playTrack(
         nextQueue.first,
@@ -410,7 +444,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> addToQueue(Track track) async {
     final updated = List<Track>.from(_activeQueue);
-    if (updated.any((e) => playablePath(e) == playablePath(track))) return;
+    if (updated.any((e) => e.assetPath == track.assetPath)) return;
     updated.add(track);
     if (_currentTrack == null) {
       await playTrack(track, queue: updated, leaveListeningRoomSession: false);
@@ -433,24 +467,13 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
-  /// UX-заглушка скачивания: имитирует загрузку и помечает трек как закешированный.
-  Future<void> cacheTrackMock(Track track) async {
-    final path = playablePath(track);
-    if (path.isEmpty ||
-        _downloadedPaths.contains(path) ||
-        _downloadingPaths.contains(path)) {
-      return;
-    }
-    _downloadingPaths.add(path);
-    notifyListeners();
-    _downloadTimers[path]?.cancel();
-    _downloadTimers[path] = Timer(const Duration(seconds: 2), () {
-      _downloadingPaths.remove(path);
-      _downloadedPaths.add(path);
-      _downloadTimers.remove(path);
-      notifyListeners();
-    });
+  /// Скачивает серверный трек в локальное хранилище с учётом лимита кэша.
+  Future<DownloadTrackResult> downloadTrack(Track track) {
+    return _offlineDownloads.downloadTrack(track);
   }
+
+  /// @deprecated Используйте [downloadTrack].
+  Future<DownloadTrackResult> cacheTrackMock(Track track) => downloadTrack(track);
 
   static Future<String?> _coverBytesToFileUri(List<int> bytes) async {
     try {
@@ -820,14 +843,11 @@ class AudioPlayerService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _offlineDownloads.removeListener(_onOfflineDownloadsChanged);
     if (ColistenController.instance.isConnected ||
         ListeningRoomSession.instance.active) {
       unawaited(ColistenController.instance.disconnect());
     }
-    for (final timer in _downloadTimers.values) {
-      timer.cancel();
-    }
-    _downloadTimers.clear();
     _handler.likedPathsNotifier.removeListener(_onLikedPathsChanged);
     _handler.dislikedPathsNotifier.removeListener(_onLikedPathsChanged);
     _handler.shuffleModeNotifier.removeListener(_onLikedPathsChanged);
