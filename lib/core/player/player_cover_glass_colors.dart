@@ -24,25 +24,6 @@ class PlayerCoverGlassColors {
     bottomRight: Color(0xFF1E2228),
   );
 
-  static PlayerCoverGlassColors lerp(
-    PlayerCoverGlassColors a,
-    PlayerCoverGlassColors b,
-    double t,
-  ) {
-    final x = t.clamp(0.0, 1.0);
-    Color blend(Color ca, Color cb) {
-      final la = HSLColor.fromColor(ca);
-      final lb = HSLColor.fromColor(cb);
-      return HSLColor.lerp(la, lb, x)!.toColor();
-    }
-    return PlayerCoverGlassColors(
-      topLeft: blend(a.topLeft, b.topLeft),
-      topRight: blend(a.topRight, b.topRight),
-      bottomLeft: blend(a.bottomLeft, b.bottomLeft),
-      bottomRight: blend(a.bottomRight, b.bottomRight),
-    );
-  }
-
   bool isCloseTo(PlayerCoverGlassColors other, {double epsilon = 0.02}) {
     return _close(topLeft, other.topLeft, epsilon) &&
         _close(topRight, other.topRight, epsilon) &&
@@ -68,6 +49,22 @@ class PlayerCoverGlassColors {
       topRight: Color.lerp(center, topRight, s)!,
       bottomLeft: Color.lerp(center, bottomLeft, s)!,
       bottomRight: Color.lerp(center, bottomRight, s)!,
+    );
+  }
+
+  /// Угловая дымка для [PlayerGlassShell] (альфа ниже, чем у hazeCorners).
+  PlayerCoverGlassColors glassLayerTint({
+    required bool isDark,
+    bool seeThrough = false,
+  }) {
+    final cornerAlpha = seeThrough
+        ? (isDark ? 0.48 : 0.40)
+        : (isDark ? 0.62 : 0.52);
+    return PlayerCoverGlassColors(
+      topLeft: topLeft.withValues(alpha: cornerAlpha),
+      topRight: topRight.withValues(alpha: cornerAlpha),
+      bottomLeft: bottomLeft.withValues(alpha: cornerAlpha),
+      bottomRight: bottomRight.withValues(alpha: cornerAlpha),
     );
   }
 

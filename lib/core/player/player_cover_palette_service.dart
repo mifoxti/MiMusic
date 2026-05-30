@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../audio/audio_player_service.dart';
 import '../audio/track.dart';
@@ -20,7 +21,8 @@ class PlayerCoverPaletteService extends ChangeNotifier {
   PlayerCoverGlassColors? _toColors;
   Uint8List? _fromCover;
   Uint8List? _toCover;
-  double _crossfade = 1.0;
+  double _crossfadeRaw = 1.0;
+  double _shellCrossfade = 1.0;
 
   final Map<String, PlayerCoverGlassColors> _cache = {};
   final Map<String, Uint8List> _coverBytesCache = {};
@@ -32,6 +34,7 @@ class PlayerCoverPaletteService extends ChangeNotifier {
 
   static const _frameMs = 16;
   static const _crossfadeMs = 380;
+  static const _maxCacheEntries = 48;
 
   /// Палитра для акцентов UI (целевая при переходе).
   PlayerCoverGlassColors get colors => _toColors ?? _shown;
@@ -40,8 +43,7 @@ class PlayerCoverPaletteService extends ChangeNotifier {
 
   PlayerCoverGlassColors get shellBackColors => _fromColors ?? _shown;
   PlayerCoverGlassColors get shellFrontColors => _toColors ?? _shown;
-  double get shellCrossfade =>
-      Curves.easeInOut.transform(_crossfade.clamp(0.0, 1.0));
+  double get shellCrossfade => _shellCrossfade;
   Uint8List? get shellBackCover => _fromCover ?? _shownCover;
   Uint8List? get shellFrontCover => _toCover ?? _shownCover;
 
@@ -64,7 +66,6 @@ class PlayerCoverPaletteService extends ChangeNotifier {
     _lastTrackKey = null;
     _loadingKey = null;
     _resetTo(PlayerCoverGlassColors.fallback, coverBytes: null);
-    notifyListeners();
   }
 
   @override
@@ -99,6 +100,7 @@ class PlayerCoverPaletteService extends ChangeNotifier {
       final cachedBytes = _coverBytesCache[cacheKey];
       if (cached != null && cachedBytes != null) {
         if (gen != _generation) return;
+        _touchCache(cacheKey);
         _beginCrossfade(cached, cacheKey: cacheKey, coverBytes: cachedBytes);
         return;
       }
@@ -112,19 +114,43 @@ class PlayerCoverPaletteService extends ChangeNotifier {
       if (extracted == null) return;
 
       final palette = extracted.softened(strength: 0.88);
-      _cache[cacheKey] = palette;
-      _coverBytesCache[cacheKey] = bytes;
-      if (_cache.length > 48) {
-        final old = _cache.keys.first;
-        _cache.remove(old);
-        _coverBytesCache.remove(old);
-      }
+      _rememberCache(cacheKey, palette, bytes);
       _beginCrossfade(palette, cacheKey: cacheKey, coverBytes: bytes);
     } catch (_) {
       // Оставляем текущее оформление.
     } finally {
       if (_loadingKey == cacheKey) _loadingKey = null;
     }
+  }
+
+  void _rememberCache(
+    String cacheKey,
+    PlayerCoverGlassColors palette,
+    Uint8List bytes,
+  ) {
+    _cache.remove(cacheKey);
+    _coverBytesCache.remove(cacheKey);
+    _cache[cacheKey] = palette;
+    _coverBytesCache[cacheKey] = bytes;
+    while (_cache.length > _maxCacheEntries) {
+      final oldest = _cache.keys.first;
+      _cache.remove(oldest);
+      _coverBytesCache.remove(oldest);
+    }
+  }
+
+  void _touchCache(String cacheKey) {
+    final colors = _cache.remove(cacheKey);
+    final bytes = _coverBytesCache.remove(cacheKey);
+    if (colors == null || bytes == null) return;
+    _cache[cacheKey] = colors;
+    _coverBytesCache[cacheKey] = bytes;
+  }
+
+  void _setCrossfadeRaw(double value) {
+    final raw = value.clamp(0.0, 1.0);
+    _crossfadeRaw = raw;
+    _shellCrossfade = Curves.easeInOut.transform(raw);
   }
 
   void _beginCrossfade(
@@ -148,19 +174,18 @@ class PlayerCoverPaletteService extends ChangeNotifier {
     _fromCover = _shownCover;
     _toColors = target;
     _toCover = nextCover;
-    _crossfade = 0.0;
+    _setCrossfadeRaw(0.0);
 
     final steps = (_crossfadeMs / _frameMs).ceil().clamp(1, 120);
     var step = 0;
     _animTimer = Timer.periodic(const Duration(milliseconds: _frameMs), (_) {
       step++;
-      _crossfade = (step / steps).clamp(0.0, 1.0);
-      if (_crossfade >= 1.0) {
+      _setCrossfadeRaw(step / steps);
+      if (_crossfadeRaw >= 1.0) {
         _animTimer?.cancel();
         _animTimer = null;
         notifyListeners();
-        // Кадр с t=1 (старый слой уже 0%) — затем один слой без скачка яркости.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
           if (_fromColors == null || _toColors != target) return;
           _resetTo(target, coverBytes: nextCover);
         });
@@ -172,8 +197,8 @@ class PlayerCoverPaletteService extends ChangeNotifier {
   }
 
   void _settleInFlightCrossfade() {
-    if (_toColors == null || _crossfade >= 1.0) return;
-    if (_crossfade >= 0.5) {
+    if (_toColors == null || _crossfadeRaw >= 1.0) return;
+    if (_crossfadeRaw >= 0.5) {
       _shown = _toColors!;
       _shownCover = _toCover;
     } else if (_fromColors != null) {
@@ -184,23 +209,31 @@ class PlayerCoverPaletteService extends ChangeNotifier {
     _toColors = null;
     _fromCover = null;
     _toCover = null;
-    _crossfade = 1.0;
+    _setCrossfadeRaw(1.0);
   }
 
   void _resetTo(PlayerCoverGlassColors target, {Uint8List? coverBytes}) {
     _animTimer?.cancel();
     _animTimer = null;
+
+    final nextCover = target.isCloseTo(PlayerCoverGlassColors.fallback)
+        ? null
+        : coverBytes;
+    final unchanged =
+        _shown.isCloseTo(target) &&
+        _shownCover == nextCover &&
+        _fromColors == null &&
+        _toColors == null &&
+        _crossfadeRaw >= 1.0;
+    if (unchanged) return;
+
     _shown = target;
-    if (target.isCloseTo(PlayerCoverGlassColors.fallback)) {
-      _shownCover = null;
-    } else {
-      _shownCover = coverBytes;
-    }
+    _shownCover = nextCover;
     _fromColors = null;
     _toColors = null;
     _fromCover = null;
     _toCover = null;
-    _crossfade = 1.0;
+    _setCrossfadeRaw(1.0);
     notifyListeners();
   }
 }

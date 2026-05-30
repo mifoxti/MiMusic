@@ -31,14 +31,18 @@ class PlayerCornerHazeLayer extends StatelessWidget {
     );
 
     if (blurSigma > 0.5) {
-      layer = ImageFiltered(
-        imageFilter: ImageFilter.blur(
-          sigmaX: blurSigma,
-          sigmaY: blurSigma,
-          tileMode: TileMode.decal,
+      layer = RepaintBoundary(
+        child: ImageFiltered(
+          imageFilter: ImageFilter.blur(
+            sigmaX: blurSigma,
+            sigmaY: blurSigma,
+            tileMode: TileMode.decal,
+          ),
+          child: layer,
         ),
-        child: layer,
       );
+    } else {
+      layer = RepaintBoundary(child: layer);
     }
     return layer;
   }

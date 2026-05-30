@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'player_corner_gradient.dart';
 import 'player_cover_glass_colors.dart';
 
+/// Декод обложки для фона: сильный blur, полный размер не нужен.
+const int _kShellCoverDecodeSide = 192;
+
 /// Фон плеера: blur контента приложения + размытая обложка + 4 угловых цвета + лёгкая вуаль.
 class PlayerGlassShell extends StatelessWidget {
   const PlayerGlassShell({
@@ -46,6 +49,8 @@ class PlayerGlassShell extends StatelessWidget {
     final sigma = blurSigma ?? 0;
     final t = crossfade.clamp(0.0, 1.0);
     final blend = underColors != null;
+    final backOpacity = blend ? (1.0 - t).clamp(0.0, 1.0) : 0.0;
+    final frontOpacity = blend ? t : 1.0;
 
     return ClipRRect(
       borderRadius: radius,
@@ -74,27 +79,35 @@ class PlayerGlassShell extends StatelessWidget {
                   ),
                 ),
               ),
-            if (blend)
-              Positioned.fill(
-                child: Opacity(
-                  opacity: (1.0 - t).clamp(0.0, 1.0),
-                  child: _GlassBackdropLayer(
-                    colors: underColors!,
-                    coverBytes: underCoverBytes,
-                    isDark: isDark,
-                    seeThrough: seeThrough,
-                  ),
-                ),
-              ),
-            Positioned.fill(
-              child: Opacity(
-                opacity: blend ? t : 1.0,
-                child: _GlassBackdropLayer(
-                  colors: colors,
-                  coverBytes: coverBytes,
-                  isDark: isDark,
-                  seeThrough: seeThrough,
-                ),
+            RepaintBoundary(
+              child: Stack(
+                fit: StackFit.passthrough,
+                children: [
+                  if (blend && backOpacity > 0)
+                    Positioned.fill(
+                      child: Opacity(
+                        opacity: backOpacity,
+                        child: _GlassBackdropLayer(
+                          colors: underColors!,
+                          coverBytes: underCoverBytes,
+                          isDark: isDark,
+                          seeThrough: seeThrough,
+                        ),
+                      ),
+                    ),
+                  if (frontOpacity > 0)
+                    Positioned.fill(
+                      child: Opacity(
+                        opacity: frontOpacity,
+                        child: _GlassBackdropLayer(
+                          colors: colors,
+                          coverBytes: coverBytes,
+                          isDark: isDark,
+                          seeThrough: seeThrough,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             child,
@@ -118,16 +131,22 @@ class _GlassBackdropLayer extends StatelessWidget {
   final bool isDark;
   final bool seeThrough;
 
+  static final ImageFilter _coverBlurExpanded = ImageFilter.blur(
+    sigmaX: 52,
+    sigmaY: 52,
+    tileMode: TileMode.decal,
+  );
+  static final ImageFilter _coverBlurSeeThrough = ImageFilter.blur(
+    sigmaX: 40,
+    sigmaY: 40,
+    tileMode: TileMode.decal,
+  );
+
   @override
   Widget build(BuildContext context) {
-    final cornerAlpha = seeThrough
-        ? (isDark ? 0.48 : 0.40)
-        : (isDark ? 0.62 : 0.52);
-    final cornerTint = PlayerCoverGlassColors(
-      topLeft: colors.topLeft.withValues(alpha: cornerAlpha),
-      topRight: colors.topRight.withValues(alpha: cornerAlpha),
-      bottomLeft: colors.bottomLeft.withValues(alpha: cornerAlpha),
-      bottomRight: colors.bottomRight.withValues(alpha: cornerAlpha),
+    final cornerTint = colors.glassLayerTint(
+      isDark: isDark,
+      seeThrough: seeThrough,
     );
     final scrimAlpha = seeThrough
         ? (isDark ? 0.10 : 0.06)
@@ -136,6 +155,8 @@ class _GlassBackdropLayer extends StatelessWidget {
         ? (isDark ? 0.03 : 0.04)
         : (isDark ? 0.05 : 0.07);
     final coverOpacity = seeThrough ? 0.38 : 1.0;
+    final coverBlur =
+        seeThrough ? _coverBlurSeeThrough : _coverBlurExpanded;
 
     return Stack(
       fit: StackFit.expand,
@@ -145,16 +166,14 @@ class _GlassBackdropLayer extends StatelessWidget {
             child: Opacity(
               opacity: coverOpacity,
               child: ImageFiltered(
-                imageFilter: ImageFilter.blur(
-                  sigmaX: seeThrough ? 40 : 52,
-                  sigmaY: seeThrough ? 40 : 52,
-                  tileMode: TileMode.decal,
-                ),
+                imageFilter: coverBlur,
                 child: Image.memory(
                   coverBytes!,
                   fit: BoxFit.cover,
+                  cacheWidth: _kShellCoverDecodeSide,
+                  cacheHeight: _kShellCoverDecodeSide,
                   gaplessPlayback: true,
-                  filterQuality: FilterQuality.medium,
+                  filterQuality: FilterQuality.low,
                 ),
               ),
             ),
