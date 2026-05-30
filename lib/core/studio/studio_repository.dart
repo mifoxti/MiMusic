@@ -26,6 +26,26 @@ class TrackMetadataOverride {
   /// Соавторы трека (дополнительные имена к основному [artist]).
   final List<String> coAuthors;
 
+  TrackMetadataOverride copyWith({
+    String? title,
+    String? artist,
+    String? coverPath,
+    List<String>? genres,
+    String? audioFilePath,
+    List<String>? coAuthors,
+    int? serverTrackId,
+  }) {
+    return TrackMetadataOverride(
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      coverPath: coverPath ?? this.coverPath,
+      genres: genres ?? this.genres,
+      audioFilePath: audioFilePath ?? this.audioFilePath,
+      coAuthors: coAuthors ?? this.coAuthors,
+      serverTrackId: serverTrackId ?? this.serverTrackId,
+    );
+  }
+
   /// Строка для отображения: исполнитель и соавторы через запятую.
   String get displayArtist {
     final parts = <String>[];

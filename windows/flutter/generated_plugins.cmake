@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   audio_service_win
+  audiotags
   url_launcher_windows
 )
 

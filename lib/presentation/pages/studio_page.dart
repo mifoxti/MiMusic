@@ -76,19 +76,52 @@ class _StudioPageState extends State<StudioPage> {
     await _load();
   }
 
+  void _addLinkedServerId(Set<int> linked, int? serverId) {
+    if (serverId != null) linked.add(serverId);
+  }
+
+  /// Локальный `custom_*`, привязанный к id на сервере (обложка и файл живут здесь).
+  String? _customAssetPathForServerId(int serverId) {
+    for (final id in _customPaths) {
+      if (_overrides[id]?.serverTrackId == serverId) return id;
+    }
+    return null;
+  }
+
+  String _editorAssetPathForTrack(Track? track) {
+    if (track == null) {
+      return 'custom_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    final sid = TracksApi().resolveServerTrackId(
+      assetPath: track.assetPath,
+      audioFilePath: track.audioFilePath,
+      metadataServerTrackId: _overrides[track.assetPath]?.serverTrackId,
+    );
+    if (sid != null) {
+      final linked = _customAssetPathForServerId(sid);
+      if (linked != null) return linked;
+    }
+    return track.assetPath;
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     final albums = await _repo.getAlbums();
-    final overrides = await _repo.getTrackMetadataOverrides();
+    var overrides = await _repo.getTrackMetadataOverrides();
     final customPaths = await _repo.getCustomTrackPaths();
     if (!mounted) return;
 
-    final customTracks = <Track>[];
     final linkedServerIds = <int>{};
+    for (final o in overrides.values) {
+      _addLinkedServerId(linkedServerIds, o.serverTrackId);
+    }
+    for (final id in customPaths) {
+      _addLinkedServerId(linkedServerIds, TracksApi().parseServerTrackId(id));
+    }
+
+    final customTracks = <Track>[];
     for (final id in customPaths) {
       final o = overrides[id];
-      final sid = o?.serverTrackId ?? TracksApi().parseServerTrackId(id);
-      if (sid != null) linkedServerIds.add(sid);
       final artistStr =
           (o != null && o.displayArtist.isNotEmpty) ? o.displayArtist : o?.artist;
       customTracks.add(Track(
@@ -111,9 +144,34 @@ class _StudioPageState extends State<StudioPage> {
         showOfflineSheet: false,
       );
       if (remote != null) {
+        final unmatched = <ServerTrackListItem>[];
         for (final item in remote) {
           playCounts[item.id] = item.playCount;
           if (linkedServerIds.contains(item.id)) continue;
+          unmatched.add(item);
+        }
+
+        final orphanCustomIds = customPaths
+            .where((id) => overrides[id]?.serverTrackId == null)
+            .toList();
+        if (orphanCustomIds.length == 1 && unmatched.length == 1) {
+          final customId = orphanCustomIds.first;
+          final o = overrides[customId];
+          final serverItem = unmatched.first;
+          final localTitle = (o?.title ?? '').trim().toLowerCase();
+          final remoteTitle = serverItem.title.trim().toLowerCase();
+          if (localTitle.isNotEmpty &&
+              localTitle == remoteTitle &&
+              o != null) {
+            final repaired = o.copyWith(serverTrackId: serverItem.id);
+            await _repo.saveTrackMetadataOverride(customId, repaired);
+            overrides = {...overrides, customId: repaired};
+            linkedServerIds.add(serverItem.id);
+            unmatched.clear();
+          }
+        }
+
+        for (final item in unmatched) {
           serverTracks.add(item.toTrack());
         }
       }
@@ -146,6 +204,49 @@ class _StudioPageState extends State<StudioPage> {
       audioFilePath: track.audioFilePath,
       metadataServerTrackId: _overrides[track.assetPath]?.serverTrackId,
     );
+  }
+
+  /// Свежие overrides + поиск по привязанному custom и по названию (если upload прошёл без serverTrackId).
+  Future<int?> _resolveServerIdForDelete(Track track) async {
+    final overrides = await _repo.getTrackMetadataOverrides();
+    final customPaths = await _repo.getCustomTrackPaths();
+    final api = TracksApi();
+    var sid = api.resolveServerTrackId(
+      assetPath: track.assetPath,
+      audioFilePath: track.audioFilePath,
+      metadataServerTrackId: overrides[track.assetPath]?.serverTrackId,
+    );
+    if (sid != null) return sid;
+    sid = api.parseServerTrackId(track.assetPath);
+    if (sid != null) return sid;
+    for (final id in customPaths) {
+      final linked = overrides[id]?.serverTrackId;
+      if (linked != null && id == track.assetPath) return linked;
+    }
+    if (track.assetPath.startsWith('custom_')) {
+      final o = overrides[track.assetPath];
+      final title = (o?.title ?? track.title).trim().toLowerCase();
+      if (title.isNotEmpty) {
+        try {
+          final mine = await TracksApi().fetchMyUploadedTracks(limit: 200);
+          final matches =
+              mine.where((t) => t.title.trim().toLowerCase() == title).toList();
+          if (matches.length == 1) return matches.first.id;
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  String? _customAssetPathForServerIdIn(
+    Map<String, TrackMetadataOverride> overrides,
+    Iterable<String> customPaths,
+    int serverId,
+  ) {
+    for (final id in customPaths) {
+      if (overrides[id]?.serverTrackId == serverId) return id;
+    }
+    return null;
   }
 
   void _openTrackStats(Track track) {
@@ -411,7 +512,16 @@ class _StudioPageState extends State<StudioPage> {
         );
         return;
       }
-      await _repo.saveTrackMetadataOverride(result.assetPath, null);
+      await _repo.saveTrackMetadataOverride(
+        result.assetPath,
+        TrackMetadataOverride(
+          coverPath: meta.coverPath,
+          genres: meta.genres,
+          audioFilePath: meta.audioFilePath,
+          coAuthors: meta.coAuthors,
+          serverTrackId: sid,
+        ),
+      );
     } else {
       await _repo.saveTrackMetadataOverride(result.assetPath, meta);
     }
@@ -433,11 +543,7 @@ class _StudioPageState extends State<StudioPage> {
     );
     if (confirm != true || !mounted) return;
 
-    final sid = TracksApi().resolveServerTrackId(
-      assetPath: track.assetPath,
-      audioFilePath: track.audioFilePath,
-      metadataServerTrackId: _overrides[track.assetPath]?.serverTrackId,
-    );
+    final sid = await _resolveServerIdForDelete(track);
     final acc = await AuthSessionStore.readAccount();
     final hasToken = acc != null && acc.sessionToken.trim().isNotEmpty;
     if (sid != null && hasToken) {
@@ -455,24 +561,56 @@ class _StudioPageState extends State<StudioPage> {
       await widget.audioPlayerService.removeFromFavorites('server_track_$sid');
     }
 
-    final customPaths = _customPaths.where((p) => p != track.assetPath).toList();
+    final freshOverrides = await _repo.getTrackMetadataOverrides();
+    var customPaths = await _repo.getCustomTrackPaths();
+    customPaths = customPaths.where((p) => p != track.assetPath).toList();
+    final keysToClear = <String>{track.assetPath};
+    if (sid != null) {
+      final linkedCustom = _customAssetPathForServerIdIn(
+        freshOverrides,
+        customPaths,
+        sid,
+      ) ??
+          _customAssetPathForServerId(sid);
+      if (linkedCustom != null) {
+        keysToClear.add(linkedCustom);
+        customPaths = customPaths.where((p) => p != linkedCustom).toList();
+      }
+      keysToClear.add('server_track_$sid');
+    }
     await _repo.saveCustomTrackPaths(customPaths);
-    await _repo.saveTrackMetadataOverride(track.assetPath, null);
+    for (final key in keysToClear) {
+      await _repo.saveTrackMetadataOverride(key, null);
+    }
     final albums = _albums.map((a) => a.copyWith(
-      trackAssetPaths: a.trackAssetPaths.where((p) => p != track.assetPath).toList(),
+      trackAssetPaths: a.trackAssetPaths.where((p) => !keysToClear.contains(p)).toList(),
     )).toList();
     await _repo.saveAlbums(albums);
     _load();
   }
 
   Future<({String assetPath, TrackMetadataOverride metadata})?> _showTrackDialog({Track? track}) {
-    final id = track?.assetPath ?? 'custom_${DateTime.now().millisecondsSinceEpoch}';
-    final o = track != null ? _overrides[track.assetPath] : null;
+    final id = _editorAssetPathForTrack(track);
+    final o = _overrides[id] ??
+        (track != null ? _overrides[track.assetPath] : null);
+    final editorTrack = track != null && track.assetPath == id
+        ? track
+        : (track != null
+            ? Track(
+                assetPath: id,
+                title: o?.title ?? track.title,
+                artist: o?.displayArtist.isNotEmpty == true
+                    ? o!.displayArtist
+                    : (o?.artist ?? track.artist),
+                coverAssetPath: o?.coverPath ?? track.coverAssetPath,
+                audioFilePath: o?.audioFilePath ?? track.audioFilePath,
+              )
+            : null);
     return Navigator.of(context, rootNavigator: true).push(
       ShellMaterialPageRoute<({String assetPath, TrackMetadataOverride metadata})>(
         builder: (_) => StudioTrackEditorPage(
           assetPath: id,
-          track: track,
+          track: editorTrack,
           metadataOverride: o,
           nickname: widget.currentUserNickname,
           suggestArtists: _artistSuggestions,

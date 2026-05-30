@@ -49,6 +49,7 @@ dependencies:
   crypto: ^3.0.6
   dio: ^5.7.0
   web_socket_channel: ^3.0.2
+  audiotags: ^1.4.5
 
 dev_dependencies:
   flutter_test:

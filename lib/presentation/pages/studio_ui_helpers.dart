@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -62,6 +64,67 @@ InputDecoration studioGlassFieldDecoration({
       ),
     ),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+  );
+}
+
+/// Квадратный превью обложки из байтов (в т.ч. с сервера).
+Widget studioCoverPreviewFromBytes(AppColorPalette palette, Uint8List bytes, double size) {
+  final brokenPlaceholder = Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: palette.primaryDark.withValues(alpha: 0.5),
+      borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+    ),
+    child: Icon(Icons.broken_image_rounded, color: palette.textMuted),
+  );
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+    child: SizedBox(
+      width: size,
+      height: size,
+      child: Image.memory(
+        bytes,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, e, st) => brokenPlaceholder,
+      ),
+    ),
+  );
+}
+
+/// Квадратная обложка в стеклянной рамке; ширина = блок [studioGlassPanel] (горизонтальный отступ 20).
+Widget studioGlassSquareCover({
+  required BuildContext context,
+  required AppColorPalette palette,
+  String? coverPath,
+  Uint8List? coverBytes,
+  Widget? emptyPlaceholder,
+}) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20),
+    child: studioGlassPanel(
+      context: context,
+      padding: EdgeInsets.zero,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final side = constraints.maxWidth;
+          final Widget preview;
+          if (coverPath != null && coverPath.isNotEmpty) {
+            preview = studioDialogCoverPreview(palette, coverPath, side);
+          } else if (coverBytes != null && coverBytes.isNotEmpty) {
+            preview = studioCoverPreviewFromBytes(palette, coverBytes, side);
+          } else if (emptyPlaceholder != null) {
+            preview = SizedBox(width: side, height: side, child: emptyPlaceholder);
+          } else {
+            preview = studioDialogCoverPreview(palette, '', side);
+          }
+          return AspectRatio(aspectRatio: 1, child: preview);
+        },
+      ),
+    ),
   );
 }
 

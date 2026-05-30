@@ -16,73 +16,35 @@ import '../../domain/repositories/home_repository.dart';
 class HomeRepositoryImpl implements HomeRepository {
   @override
   Future<HomeSection> getHomeSection() async {
-    final liveRoom = await _loadFriendListeningRoom();
     final acc = await AuthSessionStore.readAccount();
     final loggedIn =
         acc != null && acc.sessionToken.trim().isNotEmpty && acc.userId != null;
 
-    var latestReleases = const <ReleaseItem>[];
-    var recommendedServerTracks = const <HomeRecommendedTrack>[];
-    var recommendedPlaylists = const <RecommendedPlaylist>[];
-    var recommendedArtists = const <ListeningFriend>[];
+    final roomFuture = _loadFriendListeningRoom();
+    final releasesFuture = loggedIn ? _loadLatestReleases() : Future.value(const <ReleaseItem>[]);
+    final recFuture = loggedIn
+        ? _loadRecommendedTracks()
+        : Future.value(const <HomeRecommendedTrack>[]);
+    final playlistsFuture = loggedIn && acc.userId != null
+        ? _loadRecommendedPlaylistsAndArtists(acc.userId!)
+        : Future.value((
+            playlists: const <RecommendedPlaylist>[],
+            artists: const <ListeningFriend>[],
+          ));
 
-    if (loggedIn) {
-      try {
-        final catalog = await TracksApi().fetchTracks(limit: 8);
-        latestReleases = catalog
-            .map(
-              (t) => ReleaseItem(
-                title: t.title,
-                coverUrl: t.coverUrl(),
-                trackId: t.id,
-                artist: t.artist,
-              ),
-            )
-            .toList();
-      } catch (_) {}
+    final results = await Future.wait<Object?>([
+      roomFuture,
+      releasesFuture,
+      recFuture,
+      playlistsFuture,
+    ]);
 
-      try {
-        final rec = await RecommendationsApi().fetchRecommendedTracks(limit: 12);
-        recommendedServerTracks = rec
-            .map(
-              (t) => HomeRecommendedTrack(
-                id: t.id,
-                title: t.title,
-                artist: t.artist,
-                coverUrl: t.coverUrl(),
-                score: t.score,
-              ),
-            )
-            .toList();
-      } catch (_) {}
-
-      try {
-        final public = await PlaylistsApi().fetchPublicPlaylists(limit: 8);
-        recommendedPlaylists = public
-            .map(
-              (p) => RecommendedPlaylist(
-                id: 'srv:${p.id}',
-                title: p.title ?? 'Playlist',
-                coverUrl: playlistCoverUrl(p.id),
-              ),
-            )
-            .toList();
-        final myUserId = acc.userId;
-        final seen = <int>{};
-        recommendedArtists = public
-            .where((p) => myUserId == null || p.ownerUserId != myUserId)
-            .where((p) => seen.add(p.ownerUserId))
-            .take(6)
-            .map(
-              (p) => ListeningFriend(
-                username: p.ownerNickname ?? 'user_${p.ownerUserId}',
-                avatarUrl: userAvatarUrl(p.ownerUserId),
-                userId: p.ownerUserId,
-              ),
-            )
-            .toList();
-      } catch (_) {}
-    }
+    final liveRoom = results[0] as _FriendRoomPreview?;
+    final latestReleases = results[1]! as List<ReleaseItem>;
+    final recommendedServerTracks = results[2]! as List<HomeRecommendedTrack>;
+    final plBundle = results[3]! as ({List<RecommendedPlaylist> playlists, List<ListeningFriend> artists});
+    final recommendedPlaylists = plBundle.playlists;
+    final recommendedArtists = plBundle.artists;
 
     final historyArtists = latestReleases
         .map((e) => (e.artist ?? '').trim())
@@ -100,6 +62,78 @@ class HomeRepositoryImpl implements HomeRepository {
       recommendedArtists: recommendedArtists,
       isPlaying: true,
     );
+  }
+
+  Future<List<ReleaseItem>> _loadLatestReleases() async {
+    try {
+      final catalog = await TracksApi().fetchTracks(limit: 8);
+      return catalog
+          .map(
+            (t) => ReleaseItem(
+              title: t.title,
+              coverUrl: t.coverUrl(),
+              trackId: t.id,
+              artist: t.artist,
+            ),
+          )
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<HomeRecommendedTrack>> _loadRecommendedTracks() async {
+    try {
+      final rec = await RecommendationsApi().fetchRecommendedTracks(limit: 12);
+      return rec
+          .map(
+            (t) => HomeRecommendedTrack(
+              id: t.id,
+              title: t.title,
+              artist: t.artist,
+              coverUrl: t.coverUrl(),
+              score: t.score,
+            ),
+          )
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<({List<RecommendedPlaylist> playlists, List<ListeningFriend> artists})>
+      _loadRecommendedPlaylistsAndArtists(int myUserId) async {
+    try {
+      final public = await PlaylistsApi().fetchPublicPlaylists(limit: 8);
+      final playlists = public
+          .map(
+            (p) => RecommendedPlaylist(
+              id: 'srv:${p.id}',
+              title: p.title ?? 'Playlist',
+              coverUrl: playlistCoverUrl(p.id),
+            ),
+          )
+          .toList();
+      final seen = <int>{};
+      final artists = public
+          .where((p) => p.ownerUserId != myUserId)
+          .where((p) => seen.add(p.ownerUserId))
+          .take(6)
+          .map(
+            (p) => ListeningFriend(
+              username: p.ownerNickname ?? 'user_${p.ownerUserId}',
+              avatarUrl: userAvatarUrl(p.ownerUserId),
+              userId: p.ownerUserId,
+            ),
+          )
+          .toList();
+      return (playlists: playlists, artists: artists);
+    } catch (_) {
+      return (
+        playlists: const <RecommendedPlaylist>[],
+        artists: const <ListeningFriend>[],
+      );
+    }
   }
 
   Future<_FriendRoomPreview?> _loadFriendListeningRoom() async {

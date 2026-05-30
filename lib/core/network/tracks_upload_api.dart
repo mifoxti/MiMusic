@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import 'authenticated_dio.dart';
 
@@ -35,6 +35,53 @@ class UploadTrackResult {
       customCoverApplied: json['customCoverApplied'] as bool? ?? false,
     );
   }
+}
+
+/// Человекочитаемая причина ошибки загрузки (тело ответа Ktor или сеть).
+String tracksUploadErrorDetail(Object error) {
+  if (error is DioException) {
+    if (error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout) {
+      return 'Таймаут при отправке файла — проверьте сеть или попробуйте позже';
+    }
+    if (error.type == DioExceptionType.receiveTimeout) {
+      return 'Сервер долго обрабатывает файл (конвертация) — попробуйте ещё раз';
+    }
+    if (error.type == DioExceptionType.connectionError) {
+      return 'Нет связи с сервером';
+    }
+    final data = error.response?.data;
+    if (data is String && data.trim().isNotEmpty) {
+      final t = data.trim();
+      return t.length > 220 ? '${t.substring(0, 217)}…' : t;
+    }
+    if (data is Map) {
+      final msg = data['message'] ?? data['error'];
+      if (msg is String && msg.trim().isNotEmpty) return msg.trim();
+    }
+    final code = error.response?.statusCode;
+    if (code == 401) return 'Сессия истекла — войдите снова';
+    if (code == 503) return 'На сервере недоступна конвертация (ffmpeg)';
+    if (code != null) return 'HTTP $code';
+  }
+  return error.toString();
+}
+
+Map<String, dynamic> _parseUploadResponseData(dynamic data) {
+  if (data is Map<String, dynamic>) return data;
+  if (data is Map) return Map<String, dynamic>.from(data);
+  if (data is String && data.trim().isNotEmpty) {
+    return jsonDecode(data) as Map<String, dynamic>;
+  }
+  throw StateError('Empty or invalid upload response');
+}
+
+Future<Dio> _dioForTrackUpload() async {
+  final dio = await createAuthenticatedDio();
+  dio.options.connectTimeout = const Duration(seconds: 30);
+  dio.options.sendTimeout = const Duration(minutes: 10);
+  dio.options.receiveTimeout = const Duration(minutes: 10);
+  return dio;
 }
 
 class TracksUploadApi {
@@ -73,7 +120,6 @@ class TracksUploadApi {
   }
 
   /// Одна загрузка: аудио (mp3/wav/m4a), поля `title`/`artist`, жанры; опционально обложка `cover`.
-  /// Сервер конвертирует в AAC; встроенная обложка — best-effort из исходного MP3.
   Future<UploadTrackResult> uploadTrack({
     required File audioFile,
     String? title,
@@ -82,11 +128,14 @@ class TracksUploadApi {
     required List<String> genreSlugs,
     bool normalizeGenreWeights = false,
   }) async {
-    final dio = await createAuthenticatedDio();
+    final dio = await _dioForTrackUpload();
+    final audioPath = audioFile.path;
     final map = <String, dynamic>{
       'file': await MultipartFile.fromFile(
-        audioFile.path,
-        filename: audioFile.uri.pathSegments.isNotEmpty ? audioFile.uri.pathSegments.last : 'track.m4a',
+        audioPath,
+        filename: audioFile.uri.pathSegments.isNotEmpty
+            ? audioFile.uri.pathSegments.last
+            : 'track.m4a',
       ),
       'genreSlugs': jsonEncode(genreSlugs),
       'genreNormalizeWeights': normalizeGenreWeights ? 'true' : 'false',
@@ -98,29 +147,34 @@ class TracksUploadApi {
       map['artist'] = artist.trim();
     }
     if (coverFile != null) {
+      final coverPath = coverFile.path;
       map['cover'] = await MultipartFile.fromFile(
-        coverFile.path,
-        filename: coverFile.uri.pathSegments.isNotEmpty ? coverFile.uri.pathSegments.last : 'cover.png',
+        coverPath,
+        filename: coverFile.uri.pathSegments.isNotEmpty
+            ? coverFile.uri.pathSegments.last
+            : 'cover.jpg',
       );
     }
     final form = FormData.fromMap(map);
-    final res = await dio.post<Map<String, dynamic>>('/upload/track', data: form);
-    final data = res.data;
-    if (data == null) {
-      throw StateError('Empty upload response');
+    if (kDebugMode) {
+      debugPrint('TracksUploadApi: POST /upload/track file=$audioPath');
     }
-    return UploadTrackResult.fromJson(data);
+    final res = await dio.post<dynamic>('/upload/track', data: form);
+    return UploadTrackResult.fromJson(_parseUploadResponseData(res.data));
   }
 
   Future<void> uploadTrackCover({
     required int trackId,
     required File imageFile,
   }) async {
-    final dio = await createAuthenticatedDio();
+    final dio = await _dioForTrackUpload();
+    final coverPath = imageFile.path;
     final form = FormData.fromMap({
       'file': await MultipartFile.fromFile(
-        imageFile.path,
-        filename: imageFile.uri.pathSegments.isNotEmpty ? imageFile.uri.pathSegments.last : 'cover.png',
+        coverPath,
+        filename: imageFile.uri.pathSegments.isNotEmpty
+            ? imageFile.uri.pathSegments.last
+            : 'cover.jpg',
       ),
     });
     await dio.post<void>('/upload/tracks/$trackId/cover', data: form);
