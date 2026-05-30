@@ -10,10 +10,17 @@ import 'player_cover_glass_colors.dart';
 import 'player_cover_image_provider.dart';
 
 /// Палитра стекла плеера: 4 угла обложки + байты обложки для фона.
+///
+/// Смена оформления — кроссфейд двух готовых слоёв (без смешивания RGB/HSL).
 class PlayerCoverPaletteService extends ChangeNotifier {
-  PlayerCoverGlassColors _display = PlayerCoverGlassColors.fallback;
-  PlayerCoverGlassColors _target = PlayerCoverGlassColors.fallback;
-  Uint8List? _displayCoverBytes;
+  PlayerCoverGlassColors _shown = PlayerCoverGlassColors.fallback;
+  Uint8List? _shownCover;
+
+  PlayerCoverGlassColors? _fromColors;
+  PlayerCoverGlassColors? _toColors;
+  Uint8List? _fromCover;
+  Uint8List? _toCover;
+  double _crossfade = 1.0;
 
   final Map<String, PlayerCoverGlassColors> _cache = {};
   final Map<String, Uint8List> _coverBytesCache = {};
@@ -23,8 +30,23 @@ class PlayerCoverPaletteService extends ChangeNotifier {
   String? _lastTrackKey;
   String? _loadingKey;
 
-  PlayerCoverGlassColors get colors => _display;
-  Uint8List? get coverBytes => _displayCoverBytes;
+  static const _frameMs = 16;
+  static const _crossfadeMs = 380;
+
+  /// Палитра для акцентов UI (целевая при переходе).
+  PlayerCoverGlassColors get colors => _toColors ?? _shown;
+
+  bool get isCrossfading => _fromColors != null;
+
+  PlayerCoverGlassColors get shellBackColors => _fromColors ?? _shown;
+  PlayerCoverGlassColors get shellFrontColors => _toColors ?? _shown;
+  double get shellCrossfade =>
+      Curves.easeInOut.transform(_crossfade.clamp(0.0, 1.0));
+  Uint8List? get shellBackCover => _fromCover ?? _shownCover;
+  Uint8List? get shellFrontCover => _toCover ?? _shownCover;
+
+  /// Совместимость: активная обложка нижнего слоя.
+  Uint8List? get coverBytes => shellBackCover;
 
   void attach(AudioPlayerService audio) {
     _audio?.removeListener(_onAudioChanged);
@@ -41,9 +63,7 @@ class PlayerCoverPaletteService extends ChangeNotifier {
     _generation++;
     _lastTrackKey = null;
     _loadingKey = null;
-    _displayCoverBytes = null;
-    _display = PlayerCoverGlassColors.fallback;
-    _target = PlayerCoverGlassColors.fallback;
+    _resetTo(PlayerCoverGlassColors.fallback, coverBytes: null);
     notifyListeners();
   }
 
@@ -58,15 +78,14 @@ class PlayerCoverPaletteService extends ChangeNotifier {
     if (track == null) {
       _lastTrackKey = null;
       _loadingKey = null;
-      _displayCoverBytes = null;
-      _setTarget(PlayerCoverGlassColors.fallback);
+      _beginCrossfade(PlayerCoverGlassColors.fallback, coverBytes: null);
       return;
     }
     final key = coverPaletteCacheKey(track);
     if (key == _loadingKey) return;
     if (key == _lastTrackKey &&
-        _displayCoverBytes != null &&
-        !_display.isCloseTo(PlayerCoverGlassColors.fallback)) {
+        _shownCover != null &&
+        !_shown.isCloseTo(PlayerCoverGlassColors.fallback)) {
       return;
     }
     unawaited(_loadForTrack(track, key));
@@ -80,9 +99,7 @@ class PlayerCoverPaletteService extends ChangeNotifier {
       final cachedBytes = _coverBytesCache[cacheKey];
       if (cached != null && cachedBytes != null) {
         if (gen != _generation) return;
-        _lastTrackKey = cacheKey;
-        _displayCoverBytes = cachedBytes;
-        _setTarget(cached);
+        _beginCrossfade(cached, cacheKey: cacheKey, coverBytes: cachedBytes);
         return;
       }
 
@@ -94,39 +111,96 @@ class PlayerCoverPaletteService extends ChangeNotifier {
       if (gen != _generation) return;
       if (extracted == null) return;
 
-      final colors = extracted.softened(strength: 0.88);
-      _cache[cacheKey] = colors;
+      final palette = extracted.softened(strength: 0.88);
+      _cache[cacheKey] = palette;
       _coverBytesCache[cacheKey] = bytes;
       if (_cache.length > 48) {
         final old = _cache.keys.first;
         _cache.remove(old);
         _coverBytesCache.remove(old);
       }
-      _lastTrackKey = cacheKey;
-      _displayCoverBytes = bytes;
-      _setTarget(colors);
+      _beginCrossfade(palette, cacheKey: cacheKey, coverBytes: bytes);
     } catch (_) {
-      // Оставляем текущую палитру.
+      // Оставляем текущее оформление.
     } finally {
       if (_loadingKey == cacheKey) _loadingKey = null;
     }
   }
 
-  void _setTarget(PlayerCoverGlassColors target) {
-    _target = target;
-    _animTimer?.cancel();
-    if (_display.isCloseTo(_target)) return;
+  void _beginCrossfade(
+    PlayerCoverGlassColors target, {
+    String? cacheKey,
+    Uint8List? coverBytes,
+  }) {
+    if (cacheKey != null) _lastTrackKey = cacheKey;
 
-    _animTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
-      _display = PlayerCoverGlassColors.lerp(_display, _target, 0.12);
-      notifyListeners();
-      if (_display.isCloseTo(_target)) {
-        _display = _target;
+    _animTimer?.cancel();
+    _settleInFlightCrossfade();
+
+    final nextCover = coverBytes ?? _shownCover;
+    if (target.isCloseTo(_shown) &&
+        (nextCover == null || nextCover == _shownCover)) {
+      _resetTo(target, coverBytes: nextCover);
+      return;
+    }
+
+    _fromColors = _shown;
+    _fromCover = _shownCover;
+    _toColors = target;
+    _toCover = nextCover;
+    _crossfade = 0.0;
+
+    final steps = (_crossfadeMs / _frameMs).ceil().clamp(1, 120);
+    var step = 0;
+    _animTimer = Timer.periodic(const Duration(milliseconds: _frameMs), (_) {
+      step++;
+      _crossfade = (step / steps).clamp(0.0, 1.0);
+      if (_crossfade >= 1.0) {
         _animTimer?.cancel();
         _animTimer = null;
         notifyListeners();
+        // Кадр с t=1 (старый слой уже 0%) — затем один слой без скачка яркости.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_fromColors == null || _toColors != target) return;
+          _resetTo(target, coverBytes: nextCover);
+        });
+        return;
       }
+      notifyListeners();
     });
+    notifyListeners();
+  }
+
+  void _settleInFlightCrossfade() {
+    if (_toColors == null || _crossfade >= 1.0) return;
+    if (_crossfade >= 0.5) {
+      _shown = _toColors!;
+      _shownCover = _toCover;
+    } else if (_fromColors != null) {
+      _shown = _fromColors!;
+      _shownCover = _fromCover;
+    }
+    _fromColors = null;
+    _toColors = null;
+    _fromCover = null;
+    _toCover = null;
+    _crossfade = 1.0;
+  }
+
+  void _resetTo(PlayerCoverGlassColors target, {Uint8List? coverBytes}) {
+    _animTimer?.cancel();
+    _animTimer = null;
+    _shown = target;
+    if (target.isCloseTo(PlayerCoverGlassColors.fallback)) {
+      _shownCover = null;
+    } else {
+      _shownCover = coverBytes;
+    }
+    _fromColors = null;
+    _toColors = null;
+    _fromCover = null;
+    _toCover = null;
+    _crossfade = 1.0;
     notifyListeners();
   }
 }

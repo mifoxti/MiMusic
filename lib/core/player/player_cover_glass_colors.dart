@@ -30,11 +30,16 @@ class PlayerCoverGlassColors {
     double t,
   ) {
     final x = t.clamp(0.0, 1.0);
+    Color blend(Color ca, Color cb) {
+      final la = HSLColor.fromColor(ca);
+      final lb = HSLColor.fromColor(cb);
+      return HSLColor.lerp(la, lb, x)!.toColor();
+    }
     return PlayerCoverGlassColors(
-      topLeft: Color.lerp(a.topLeft, b.topLeft, x)!,
-      topRight: Color.lerp(a.topRight, b.topRight, x)!,
-      bottomLeft: Color.lerp(a.bottomLeft, b.bottomLeft, x)!,
-      bottomRight: Color.lerp(a.bottomRight, b.bottomRight, x)!,
+      topLeft: blend(a.topLeft, b.topLeft),
+      topRight: blend(a.topRight, b.topRight),
+      bottomLeft: blend(a.bottomLeft, b.bottomLeft),
+      bottomRight: blend(a.bottomRight, b.bottomRight),
     );
   }
 
@@ -112,4 +117,51 @@ class PlayerCoverGlassColors {
   }
 
   Color border(bool isDark) => AppGlass.border(isDark);
+
+  /// Самый насыщенный угол обложки — база для акцента UI.
+  Color vividCorner() {
+    Color best = topLeft;
+    var bestScore = -1.0;
+    for (final c in [topLeft, topRight, bottomLeft, bottomRight]) {
+      final hsl = HSLColor.fromColor(c);
+      final score =
+          hsl.saturation * (1.0 - (hsl.lightness - 0.5).abs() * 1.4);
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  /// Акцент кнопок, сика и автора: из обложки, но контрастнее фона.
+  Color contrastAccent(bool isDark) {
+    final hsl = HSLColor.fromColor(vividCorner());
+    final sat = (hsl.saturation + 0.42).clamp(0.58, 1.0);
+    final light = isDark
+        ? (hsl.lightness + 0.32).clamp(0.68, 0.94)
+        : (hsl.lightness - 0.22).clamp(0.26, 0.48);
+    return hsl.withSaturation(sat).withLightness(light).toColor();
+  }
+
+  /// Вторичные иконки (очередь, меню) — тот же тон, чуть приглушённее.
+  Color contrastAccentSoft(bool isDark) {
+    final base = contrastAccent(isDark);
+    return isDark
+        ? Color.lerp(base, Colors.white, 0.18)!
+        : Color.lerp(base, Colors.black, 0.12)!;
+  }
+
+  /// Подписи времени у сика.
+  Color contrastAccentMuted(bool isDark) {
+    return contrastAccent(isDark).withValues(alpha: isDark ? 0.72 : 0.78);
+  }
+
+  /// Название трека — тот же тон, максимально заметный на стекле.
+  Color titleAccent(bool isDark) {
+    final base = contrastAccent(isDark);
+    return isDark
+        ? Color.lerp(base, Colors.white, 0.52)!
+        : Color.lerp(base, const Color(0xFF101218), 0.28)!;
+  }
 }

@@ -70,7 +70,8 @@ class ExpandablePlayerDock extends StatelessWidget {
             )!;
             final borderW = u >= 0.995 ? 0.0 : 1.0;
             final isDark = Theme.of(context).brightness == Brightness.dark;
-            final coverGlass = playerCoverPalette.colors;
+            final palette = playerCoverPalette;
+            final crossfading = palette.isCrossfading;
             // Размытие контента под плеером (как у мини): раньше, чем раньше — с ~35% разворота.
             final blurSigma = u < 0.35
                 ? 0.0
@@ -103,8 +104,13 @@ class ExpandablePlayerDock extends StatelessWidget {
                   height: rect.height,
                   child: RepaintBoundary(
                     child: PlayerGlassShell(
-                      colors: coverGlass,
-                      coverBytes: playerCoverPalette.coverBytes,
+                      colors: palette.shellFrontColors,
+                      coverBytes: palette.shellFrontCover,
+                      underColors:
+                          crossfading ? palette.shellBackColors : null,
+                      underCoverBytes:
+                          crossfading ? palette.shellBackCover : null,
+                      crossfade: palette.shellCrossfade,
                       isDark: isDark,
                       seeThrough: u > 0.35,
                       borderRadius: radius,
@@ -134,6 +140,7 @@ class ExpandablePlayerDock extends StatelessWidget {
                                   ),
                                   child: FullPlayerDockPanel(
                                     audioPlayerService: audioPlayerService,
+                                    playerCoverPalette: playerCoverPalette,
                                     onCollapse: onCollapse,
                                     playlistsRepository:
                                         playlistsRepository,

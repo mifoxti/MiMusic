@@ -13,8 +13,11 @@ import '../../../../core/network/tracks_api.dart';
 import '../../../../core/social/colisten_controller.dart';
 import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/player/full_player_visibility.dart';
+import '../../../../core/player/player_cover_glass_colors.dart';
+import '../../../../core/player/player_cover_palette_service.dart';
 import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/player/shell_navigator_host.dart';
@@ -30,11 +33,13 @@ class FullPlayerDockPanel extends StatelessWidget {
   const FullPlayerDockPanel({
     super.key,
     required this.audioPlayerService,
+    this.playerCoverPalette,
     required this.onCollapse,
     required this.playlistsRepository,
   });
 
   final AudioPlayerService audioPlayerService;
+  final PlayerCoverPaletteService? playerCoverPalette;
   final VoidCallback onCollapse;
   final PlaylistsRepository playlistsRepository;
 
@@ -47,8 +52,12 @@ class FullPlayerDockPanel extends StatelessWidget {
         listenable: Listenable.merge([
           audioPlayerService,
           ListeningRoomSession.instance,
+          ?playerCoverPalette,
         ]),
         builder: (context, _) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          final coverColors =
+              playerCoverPalette?.colors ?? PlayerCoverGlassColors.fallback;
           final track = audioPlayerService.currentTrack;
           final position = audioPlayerService.position;
           final duration = audioPlayerService.duration ?? Duration.zero;
@@ -76,6 +85,17 @@ class FullPlayerDockPanel extends StatelessWidget {
           final guestControlSurface = guestMode
               ? const Color(0xFF3B1A57).withValues(alpha: 0.82)
               : Colors.white.withValues(alpha: 0.18);
+          final trackAccent =
+              roomActive ? roomAccent : coverColors.contrastAccent(isDark);
+          final trackTitleAccent = roomActive
+              ? palette.textPrimary
+              : coverColors.titleAccent(isDark);
+          final trackAccentSoft = roomActive
+              ? roomAccent.withValues(alpha: 0.82)
+              : coverColors.contrastAccentSoft(isDark);
+          final trackAccentMuted = roomActive
+              ? roomAccent.withValues(alpha: 0.72)
+              : coverColors.contrastAccentMuted(isDark);
           if (track == null) {
             return Center(
               child: Text(
@@ -127,7 +147,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                       ),
                     IconButton(
                       icon: const Icon(Icons.queue_music_rounded),
-                      color: roomActive ? roomAccent : palette.textSecondary,
+                      color: roomActive ? roomAccent : trackAccentSoft,
                       tooltip:
                           Localizations.localeOf(context).languageCode == 'en'
                           ? 'Queue'
@@ -156,7 +176,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                   ? Icons.download_done_rounded
                                   : Icons.download_rounded,
                             ),
-                      color: roomActive ? roomAccent : palette.textSecondary,
+                      color: roomActive ? roomAccent : trackAccentSoft,
                       tooltip:
                           Localizations.localeOf(context).languageCode == 'en'
                           ? (downloaded ? 'Cached' : 'Download track')
@@ -176,7 +196,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.more_vert_rounded),
-                      color: roomActive ? roomAccent : palette.textSecondary,
+                      color: roomActive ? roomAccent : trackAccentSoft,
                       onPressed: () => showFullPlayerTrackMenu(
                         context,
                         audioPlayerService: audioPlayerService,
@@ -203,8 +223,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                           placeholder: Container(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(32),
-                              color: (roomActive ? roomAccent : palette.accent)
-                                  .withValues(alpha: 0.9),
+                              color: trackAccent.withValues(alpha: 0.9),
                             ),
                             alignment: Alignment.center,
                             child: Icon(
@@ -225,8 +244,20 @@ class FullPlayerDockPanel extends StatelessWidget {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 26,
-                                fontWeight: FontWeight.w700,
-                                color: palette.textPrimary,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.4,
+                                height: 1.12,
+                                color: trackTitleAccent,
+                                shadows: roomActive
+                                    ? null
+                                    : [
+                                        Shadow(
+                                          color: trackTitleAccent.withValues(
+                                            alpha: isDark ? 0.35 : 0.2,
+                                          ),
+                                          blurRadius: 12,
+                                        ),
+                                      ],
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -271,9 +302,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                       fontWeight: FontWeight.w500,
                                       color: track.artistDisplay.trim().isEmpty
                                           ? palette.textMuted
-                                          : (roomActive
-                                                ? roomAccent
-                                                : palette.accent),
+                                          : trackAccent,
                                     ),
                                   ),
                                 ),
@@ -282,10 +311,8 @@ class FullPlayerDockPanel extends StatelessWidget {
                             const SizedBox(height: 24),
                             _PlayerSeekBar(
                               audioPlayerService: audioPlayerService,
-                              palette: palette,
-                              accentColor: roomActive
-                                  ? roomAccent
-                                  : palette.accent,
+                              accentColor: trackAccent,
+                              timeLabelColor: trackAccentMuted,
                               disabledColor: guestDisabledColor,
                               enabled:
                                   !roomActive || roomSession.canControlSeek,
@@ -307,7 +334,9 @@ class FullPlayerDockPanel extends StatelessWidget {
                                       roomActive && !roomSession.canControlSkip
                                       ? null
                                       : audioPlayerService.skipToPrevious,
-                                  foregroundColor: guestEnabledColor,
+                                  foregroundColor: roomActive
+                                      ? guestEnabledColor
+                                      : trackAccent,
                                   disabledColor: guestDisabledColor,
                                   backgroundColor: guestControlSurface,
                                 ),
@@ -319,9 +348,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                       ? null
                                       : audioPlayerService.togglePlayPause,
                                   iconOverride: null,
-                                  foregroundColor: roomActive
-                                      ? roomAccent
-                                      : palette.textPrimary,
+                                  foregroundColor: trackAccent,
                                   disabledColor: guestDisabledColor,
                                 ),
                                 const SizedBox(width: 20),
@@ -331,7 +358,9 @@ class FullPlayerDockPanel extends StatelessWidget {
                                       roomActive && !roomSession.canControlSkip
                                       ? null
                                       : audioPlayerService.skipToNext,
-                                  foregroundColor: guestEnabledColor,
+                                  foregroundColor: roomActive
+                                      ? guestEnabledColor
+                                      : trackAccent,
                                   disabledColor: guestDisabledColor,
                                   backgroundColor: guestControlSurface,
                                 ),
@@ -394,25 +423,17 @@ class FullPlayerDockPanel extends StatelessWidget {
                                   vertical: 10,
                                 ),
                                 decoration: BoxDecoration(
-                                  color:
-                                      (roomActive ? roomAccent : palette.accent)
-                                          .withValues(alpha: 0.2),
+                                  color: trackAccent.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color:
-                                        (roomActive
-                                                ? roomAccent
-                                                : palette.accent)
-                                            .withValues(alpha: 0.45),
+                                    color: trackAccent.withValues(alpha: 0.45),
                                   ),
                                 ),
                                 child: Row(
                                   children: [
                                     Icon(
                                       Icons.groups_rounded,
-                                      color: roomActive
-                                          ? roomAccent
-                                          : palette.accent,
+                                      color: trackAccent,
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
@@ -441,9 +462,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                         icon: const Icon(
                                           Icons.settings_rounded,
                                         ),
-                                        color: roomActive
-                                            ? roomAccent
-                                            : palette.accent,
+                                        color: trackAccent,
                                         onPressed: () {
                                           _showRoomManageSheet(
                                             context: context,
@@ -466,50 +485,26 @@ class FullPlayerDockPanel extends StatelessWidget {
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton.icon(
-                                    onPressed: () {
-                                      if (FullPlayerVisibility.open.value) {
-                                        PlayerDockHost.collapse();
-                                      }
-                                      Navigator.of(context).push(
-                                        ShellMaterialPageRoute<void>(
-                                          settings: const RouteSettings(
-                                            name: ListeningRoomPage.routeName,
-                                          ),
-                                          builder: (_) => ListeningRoomPage(
-                                            audioPlayerService:
-                                                audioPlayerService,
-                                          ),
+                                child: _ListenTogetherGlassButton(
+                                  label: context.t('player.listenTogether'),
+                                  accentColor: trackAccent,
+                                  isDark: isDark,
+                                  onPressed: () {
+                                    if (FullPlayerVisibility.open.value) {
+                                      PlayerDockHost.collapse();
+                                    }
+                                    Navigator.of(context).push(
+                                      ShellMaterialPageRoute<void>(
+                                        settings: const RouteSettings(
+                                          name: ListeningRoomPage.routeName,
                                         ),
-                                      );
-                                    },
-                                    icon: const Icon(
-                                      Icons.groups_rounded,
-                                      size: 22,
-                                    ),
-                                    label: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 4,
-                                      ),
-                                      child: Text(
-                                        context.t('player.listenTogether'),
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
+                                        builder: (_) => ListeningRoomPage(
+                                          audioPlayerService:
+                                              audioPlayerService,
                                         ),
                                       ),
-                                    ),
-                                    style: FilledButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                    ),
-                                  ),
+                                    );
+                                  },
                                 ),
                               ),
                             const SizedBox(height: 16),
@@ -531,7 +526,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                         palette: palette,
                                         accentWhenOn: guestMode
                                             ? guestEnabledColor
-                                            : palette.textSecondary,
+                                            : trackAccentSoft,
                                         backgroundColor: guestMode
                                             ? guestControlSurface
                                             : null,
@@ -552,8 +547,8 @@ class FullPlayerDockPanel extends StatelessWidget {
                                         accentColor: roomActive
                                             ? roomAccent
                                             : (loop != LoopMode.off
-                                                  ? palette.accent
-                                                  : palette.textSecondary),
+                                                  ? trackAccent
+                                                  : trackAccentSoft),
                                         disabledColor: guestDisabledColor,
                                         backgroundColor: guestControlSurface,
                                       ),
@@ -580,8 +575,8 @@ class FullPlayerDockPanel extends StatelessWidget {
                                         accentColor: roomActive
                                             ? roomAccent
                                             : (shuffleOn
-                                                  ? palette.accent
-                                                  : palette.textSecondary),
+                                                  ? trackAccent
+                                                  : trackAccentSoft),
                                         disabledColor: guestDisabledColor,
                                         backgroundColor: guestControlSurface,
                                       ),
@@ -597,9 +592,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                         onPressed: () =>
                                             audioPlayerService.toggleLike(),
                                         palette: palette,
-                                        accentWhenOn: roomActive
-                                            ? roomAccent
-                                            : palette.accent,
+                                        accentWhenOn: trackAccent,
                                         backgroundColor: guestMode
                                             ? guestControlSurface
                                             : null,
@@ -1616,12 +1609,84 @@ class _LikeCircle extends StatelessWidget {
   }
 }
 
+/// «Слушать вместе» — стекло и акцент обложки, как у остальных контролов плеера.
+class _ListenTogetherGlassButton extends StatelessWidget {
+  const _ListenTogetherGlassButton({
+    required this.label,
+    required this.accentColor,
+    required this.isDark,
+    required this.onPressed,
+  });
+
+  final String label;
+  final Color accentColor;
+  final bool isDark;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final border = Color.lerp(AppGlass.border(isDark), accentColor, 0.4)!;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: AppGlass.blurredTintLayer(
+            isDark: isDark,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: border, width: 1.25),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    accentColor.withValues(alpha: isDark ? 0.28 : 0.18),
+                    AppGlass.tint(isDark),
+                  ],
+                ),
+                boxShadow: [
+                  ...AppGlass.cardShadows(isDark),
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.18),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.groups_rounded, size: 22, color: accentColor),
+                  const SizedBox(width: 10),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: accentColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Слайдер прогресса: при перетаскивании локальное значение (важно для web и плавного scrub).
 class _PlayerSeekBar extends StatefulWidget {
   const _PlayerSeekBar({
     required this.audioPlayerService,
-    required this.palette,
     required this.accentColor,
+    required this.timeLabelColor,
     required this.disabledColor,
     required this.enabled,
     required this.clampedPositionMs,
@@ -1631,8 +1696,8 @@ class _PlayerSeekBar extends StatefulWidget {
   });
 
   final AudioPlayerService audioPlayerService;
-  final AppColorPalette palette;
   final Color accentColor;
+  final Color timeLabelColor;
   final Color disabledColor;
   final bool enabled;
   final int clampedPositionMs;
@@ -1650,7 +1715,6 @@ class _PlayerSeekBarState extends State<_PlayerSeekBar> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
     final maxV = widget.sliderMax <= 0 ? 1.0 : widget.sliderMax;
     final fromService = widget.sliderValueFromService.clamp(0.0, maxV);
     final thumb = _dragging ? _dragValue.clamp(0.0, maxV) : fromService;
@@ -1669,7 +1733,7 @@ class _PlayerSeekBarState extends State<_PlayerSeekBar> {
                 ? widget.accentColor
                 : widget.disabledColor,
             inactiveTrackColor: widget.enabled
-                ? palette.cardBackground.withValues(alpha: 0.7)
+                ? widget.accentColor.withValues(alpha: 0.24)
                 : widget.disabledColor.withValues(alpha: 0.55),
             disabledThumbColor: widget.disabledColor,
             disabledActiveTrackColor: widget.disabledColor,
@@ -1719,11 +1783,11 @@ class _PlayerSeekBarState extends State<_PlayerSeekBar> {
                         : widget.clampedPositionMs,
                   ),
                 ),
-                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                style: TextStyle(fontSize: 12, color: widget.timeLabelColor),
               ),
               Text(
                 _formatDurationLabel(widget.duration),
-                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                style: TextStyle(fontSize: 12, color: widget.timeLabelColor),
               ),
             ],
           ),
@@ -1810,7 +1874,7 @@ class _PlayPauseButton extends StatelessWidget {
             enabled ? Colors.white.withValues(alpha: 0.8) : disabledColor,
           ];
     final iconColor = enabled
-        ? (isDark ? palette.playbackButtonIcon : foregroundColor)
+        ? foregroundColor
         : disabledColor.withValues(alpha: 0.55);
     final shadowColor = isDark
         ? Colors.black.withValues(alpha: 0.4)

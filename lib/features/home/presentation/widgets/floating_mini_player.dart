@@ -44,6 +44,12 @@ class MiniPlayerInterior extends StatelessWidget {
     const coverSize = 48.0;
     final useCoverPalette =
         !collaborativeMode && playerCoverPalette != null;
+    final coverAccent = useCoverPalette
+        ? playerCoverPalette!.colors.contrastAccent(isDark)
+        : palette.textPrimary;
+    final titleAccent = useCoverPalette
+        ? playerCoverPalette!.colors.titleAccent(isDark)
+        : palette.textPrimary;
     final sessionAccent = collaborativeGuestMode
         ? const Color(0xFFC084FC)
         : const Color(0xFF5FD1FF);
@@ -220,7 +226,7 @@ class MiniPlayerInterior extends StatelessWidget {
                             size: 28,
                             color: collaborativeMode
                                 ? sessionAccent
-                                : palette.textPrimary,
+                                : coverAccent,
                           ),
                         ),
                       ),
@@ -242,8 +248,11 @@ class MiniPlayerInterior extends StatelessWidget {
                                 track.title,
                                 style: TextStyle(
                                   fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                  color: palette.textPrimary,
+                                  fontWeight: FontWeight.w800,
+                                  color: collaborativeMode
+                                      ? palette.textPrimary
+                                      : titleAccent,
+                                  letterSpacing: -0.2,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -382,11 +391,19 @@ class FloatingMiniPlayer extends StatelessWidget {
     return ListenableBuilder(
       listenable: playerCoverPalette,
       builder: (context, _) {
+        final crossfading = playerCoverPalette.isCrossfading;
         return Material(
           color: Colors.transparent,
           child: PlayerGlassShell(
-            colors: playerCoverPalette.colors,
-            coverBytes: playerCoverPalette.coverBytes,
+            colors: playerCoverPalette.shellFrontColors,
+            coverBytes: playerCoverPalette.shellFrontCover,
+            underColors: crossfading
+                ? playerCoverPalette.shellBackColors
+                : null,
+            underCoverBytes: crossfading
+                ? playerCoverPalette.shellBackCover
+                : null,
+            crossfade: playerCoverPalette.shellCrossfade,
             isDark: isDark,
             borderRadius: BorderRadius.circular(radius),
             blurSigma: 0,
