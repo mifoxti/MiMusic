@@ -79,35 +79,37 @@ class PlayerGlassShell extends StatelessWidget {
                   ),
                 ),
               ),
-            RepaintBoundary(
-              child: Stack(
-                fit: StackFit.passthrough,
-                children: [
-                  if (blend && backOpacity > 0)
-                    Positioned.fill(
-                      child: Opacity(
-                        opacity: backOpacity,
-                        child: _GlassBackdropLayer(
-                          colors: underColors!,
-                          coverBytes: underCoverBytes,
-                          isDark: isDark,
-                          seeThrough: seeThrough,
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (blend && backOpacity > 0)
+                      Positioned.fill(
+                        child: Opacity(
+                          opacity: backOpacity,
+                          child: _GlassBackdropLayer(
+                            colors: underColors!,
+                            coverBytes: underCoverBytes,
+                            isDark: isDark,
+                            seeThrough: seeThrough,
+                          ),
                         ),
                       ),
-                    ),
-                  if (frontOpacity > 0)
-                    Positioned.fill(
-                      child: Opacity(
-                        opacity: frontOpacity,
-                        child: _GlassBackdropLayer(
-                          colors: colors,
-                          coverBytes: coverBytes,
-                          isDark: isDark,
-                          seeThrough: seeThrough,
+                    if (frontOpacity > 0)
+                      Positioned.fill(
+                        child: Opacity(
+                          opacity: frontOpacity,
+                          child: _GlassBackdropLayer(
+                            colors: colors,
+                            coverBytes: coverBytes,
+                            isDark: isDark,
+                            seeThrough: seeThrough,
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
             child,
