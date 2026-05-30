@@ -231,6 +231,15 @@ class _MainShellState extends State<MainShell>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      unawaited(widget.audioPlayerService.notifyAppBackgrounded());
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.audioPlayerService.removeListener(_onAudioServiceChanged);

@@ -412,7 +412,7 @@ class _FriendCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      friend.trackTitle.isEmpty
+                      !friend.online || friend.trackTitle.isEmpty
                           ? (Localizations.localeOf(context).languageCode == 'en'
                                 ? 'Not listening now'
                                 : 'Сейчас ничего не слушает')

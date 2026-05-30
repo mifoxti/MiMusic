@@ -56,13 +56,35 @@ class ArtistProfileDto {
   const ArtistProfileDto({
     required this.thoughts,
     required this.songs,
+    this.registeredUserId,
+    this.isRegistered = false,
+    this.heroCoverArt,
   });
 
   final String thoughts;
   final List<ArtistSongDto> songs;
+  final int? registeredUserId;
+  final bool isRegistered;
+  final Uint8List? heroCoverArt;
 
   factory ArtistProfileDto.fromJson(Map<String, dynamic> j) {
     final raw = j['songs'];
+    Uint8List? heroBytes;
+    final rawHero = j['heroCoverArt'];
+    if (rawHero is String && rawHero.isNotEmpty) {
+      try {
+        heroBytes = Uint8List.fromList(base64Decode(rawHero));
+      } catch (_) {}
+    }
+    if (heroBytes == null && raw is List && raw.isNotEmpty) {
+      final first = Map<String, dynamic>.from(raw.first as Map);
+      final cover = first['coverArt'];
+      if (cover is String && cover.isNotEmpty) {
+        try {
+          heroBytes = Uint8List.fromList(base64Decode(cover));
+        } catch (_) {}
+      }
+    }
     return ArtistProfileDto(
       thoughts: j['thoughts'] as String? ?? '',
       songs: raw is List
@@ -72,6 +94,9 @@ class ArtistProfileDto {
               )
               .toList()
           : const [],
+      registeredUserId: (j['registeredUserId'] as num?)?.toInt(),
+      isRegistered: j['isRegistered'] as bool? ?? false,
+      heroCoverArt: heroBytes,
     );
   }
 }

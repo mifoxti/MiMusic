@@ -666,6 +666,9 @@ class AudioPlayerService extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Сбрасывает «сейчас слушает» на сервере при уходе приложения в фон.
+  Future<void> notifyAppBackgrounded() => _clearNowPlayingOnServer();
+
   Future<void> skipToNext() async {
     final room = ListeningRoomSession.instance;
     if (room.active && !room.canControlSkip) return;

@@ -145,6 +145,7 @@ class UserPublicProfileDto {
     required this.nickname,
     this.bio,
     this.avatarStorageKey,
+    this.online = false,
     this.nowPlaying,
     this.publicPlaylists = const [],
     this.uploadedTracks = const [],
@@ -155,6 +156,7 @@ class UserPublicProfileDto {
   final String nickname;
   final String? bio;
   final String? avatarStorageKey;
+  final bool online;
   final UserNowPlayingDto? nowPlaying;
   final List<UserPublicPlaylistDto> publicPlaylists;
   final List<UserUploadedTrackDto> uploadedTracks;
@@ -162,6 +164,7 @@ class UserPublicProfileDto {
 
   factory UserPublicProfileDto.fromJson(Map<String, dynamic> j) {
     final np = j['nowPlaying'];
+    final online = j['online'] as bool? ?? false;
     final pl = j['publicPlaylists'];
     final tr = j['uploadedTracks'];
     final th = j['recentThoughts'];
@@ -170,7 +173,10 @@ class UserPublicProfileDto {
       nickname: j['nickname'] as String? ?? '',
       bio: j['bio'] as String?,
       avatarStorageKey: j['avatarStorageKey'] as String?,
-      nowPlaying: np is Map<String, dynamic> ? UserNowPlayingDto.fromJson(np) : null,
+      online: online,
+      nowPlaying: online && np is Map<String, dynamic>
+          ? UserNowPlayingDto.fromJson(np)
+          : null,
       publicPlaylists: pl is List
           ? pl.map((e) => UserPublicPlaylistDto.fromJson(Map<String, dynamic>.from(e as Map))).toList()
           : const [],

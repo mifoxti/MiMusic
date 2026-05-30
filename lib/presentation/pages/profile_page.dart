@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:ui';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
@@ -12,7 +10,6 @@ import '../../core/network/server_connectivity.dart';
 import '../../core/profile/me_profile_avatar_disk.dart';
 import '../../core/profile/me_profile_cache.dart';
 import '../../features/playlists/domain/repositories/playlists_repository.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
@@ -21,6 +18,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/network/notifications_api.dart';
 import '../../core/platform/platform.dart';
 import '../../core/player/shell_route_back_guard.dart';
+import '../widgets/collapsing_profile_shell.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/server_me_avatar.dart';
 import '../widgets/user_avatar.dart';
@@ -61,11 +59,6 @@ class ProfilePage extends StatefulWidget {
   final int settingsDisplayGeneration;
   final AudioPlayerService audioPlayerService;
   final PlaylistsRepository playlistsRepository;
-
-  /// Пропорция фона: высота = ширина * коэффициент (обложка не растягивается).
-  static const double _coverAspectRatio = 1.25;
-  static const double _avatarMaxSize = 84;
-  static const double _avatarMinSize = 40;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -172,279 +165,148 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    final size = MediaQuery.sizeOf(context);
-    final topPadding = MediaQuery.paddingOf(context).top;
-    // Высота обложки по пропорции, но не больше ~58% экрана.
-    final coverHeight = (size.width * ProfilePage._coverAspectRatio).clamp(260.0, size.height * 0.58);
-    final expandedHeight = coverHeight + 96;
-    final collapsedHeight = kToolbarHeight + topPadding + 12;
-    final hasMiniPlayer = widget.audioPlayerService.currentTrack != null;
-    final bottomContentInset = hasMiniPlayer
-        ? AppConstants.shellBottomInsetWithMiniPlayer
-        : AppConstants.shellBottomInset;
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
 
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-      slivers: [
-        CupertinoSliverRefreshControl(onRefresh: _refreshProfileFromUser),
-        SliverAppBar(
-          pinned: true,
-          automaticallyImplyLeading: false,
-          expandedHeight: expandedHeight,
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          forceMaterialTransparency: true,
-          flexibleSpace: LayoutBuilder(
-            builder: (context, constraints) {
-              final currentHeight = constraints.maxHeight;
-              final t = ((currentHeight - collapsedHeight) / (expandedHeight - collapsedHeight))
-                  .clamp(0.0, 1.0);
-              final easedT = Curves.easeInOut.transform(t);
-              final avatarSize = lerpDouble(ProfilePage._avatarMinSize, ProfilePage._avatarMaxSize, t)!;
-              final titleSize = lerpDouble(18, 28, t)!;
-              final alignment = Alignment.lerp(
-                const Alignment(-0.9, -0.2),
-                const Alignment(0, 0.7),
-                t,
-              )!;
-              // Плавное смещение ника и скрытие кнопки \"Мысли\" при прокрутке.
-              final nicknameOffsetY = lerpDouble(
-                0,
-                -10,
-                easedT,
-              )!;
-              final buttonVisibility = easedT;
-
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Обложка
-                  _buildCoverBackground(context, palette, size.width, coverHeight),
-                  // Градиент для плавного перехода к панели
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.35),
-                          Colors.transparent,
-                          palette.cardBackground.withValues(alpha: 0.98),
-                        ],
-                        stops: const [0.0, 0.45, 1.0],
-                      ),
-                    ),
+    return CollapsingProfileShell(
+      title: _profileNickname,
+      audioPlayerService: widget.audioPlayerService,
+      onRefresh: _refreshProfileFromUser,
+      cover: LayoutBuilder(
+        builder: (context, constraints) => _buildCoverBackground(
+          context,
+          palette,
+          constraints.maxWidth,
+          constraints.maxHeight,
+        ),
+      ),
+      avatar: LayoutBuilder(
+        builder: (context, constraints) {
+          final side = constraints.biggest.shortestSide;
+          return UserAvatar(
+            key: ValueKey(
+              'profile-avatar-${_profileAvatarPath ?? ''}-${widget.settingsDisplayGeneration}',
+            ),
+            avatarPath: _profileAvatarPath,
+            size: side,
+            palette: palette,
+            serverAvatarCacheRevision: widget.settingsDisplayGeneration,
+          );
+        },
+      ),
+      trailingActions: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ProfileNotificationBell(
+            audioPlayerService: widget.audioPlayerService,
+            profileNickname: _profileNickname,
+          ),
+          const SizedBox(width: 4),
+          GlassIconButton(
+            icon: Icons.settings_rounded,
+            onPressed: () async {
+              await Navigator.of(context).push<void>(
+                ShellMaterialPageRoute<void>(
+                  builder: (context) => SettingsPage(
+                    themeMode: widget.themeMode,
+                    onThemeChanged: widget.onThemeChanged,
+                    onLanguageChanged: widget.onLanguageChanged,
+                    settingsRepository: widget.settingsRepository,
+                    initialSettings: widget.initialSettings,
+                    audioPlayerService: widget.audioPlayerService,
                   ),
-                  // Кнопка настроек
-                  Positioned(
-                    top: topPadding + 8,
-                    right: 8,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _ProfileNotificationBell(
-                          audioPlayerService: widget.audioPlayerService,
-                          profileNickname: _profileNickname,
-                        ),
-                        const SizedBox(width: 4),
-                        GlassIconButton(
-                          icon: Icons.settings_rounded,
-                          onPressed: () async {
-                            await Navigator.of(context).push<void>(
-                              ShellMaterialPageRoute<void>(
-                                builder: (context) => SettingsPage(
-                                  themeMode: widget.themeMode,
-                                  onThemeChanged: widget.onThemeChanged,
-                                  onLanguageChanged: widget.onLanguageChanged,
-                                  settingsRepository: widget.settingsRepository,
-                                  initialSettings: widget.initialSettings,
-                                  audioPlayerService: widget.audioPlayerService,
-                                ),
-                              ),
-                            );
-                            if (!context.mounted) return;
-                            await widget.onShellSettingsReload();
-                          },
-                        ),
-                      ],
-                    ),
+                ),
+              );
+              if (!context.mounted) return;
+              await widget.onShellSettingsReload();
+            },
+          ),
+        ],
+      ),
+      headerActions: GlassPillButton(
+        label: context.t('profile.thoughts'),
+        onTap: () {
+          Navigator.of(context).push(
+            ShellMaterialPageRoute<void>(
+              builder: (_) => ThoughtsPage(
+                currentUsername: _profileNickname,
+                audioPlayerService: widget.audioPlayerService,
+              ),
+            ),
+          );
+        },
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildActionRow(context, palette),
+          const SizedBox(height: 24),
+          _buildStatsSection(context, palette),
+          const SizedBox(height: 20),
+          GlassTapCard(
+            title: isEn ? 'Open rooms' : 'Открытые комнаты',
+            subtitle: isEn
+                ? 'Browse rooms and connect to live sessions'
+                : 'Список комнат и быстрое подключение',
+            icon: Icons.groups_rounded,
+            onTap: () {
+              Navigator.of(context).push(
+                ShellMaterialPageRoute<void>(
+                  builder: (_) => OpenRoomsPage(
+                    currentUsername: _profileNickname,
+                    audioPlayerService: widget.audioPlayerService,
                   ),
-                  // Аватар + ник + кнопка "Мысли" — плавно переходят из центра вниз в левый верхний угол.
-                  Align(
-                    alignment: alignment,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: lerpDouble(16, 24, t)!,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          UserAvatar(
-                            key: ValueKey(
-                              'profile-avatar-${_profileAvatarPath ?? ''}-${widget.settingsDisplayGeneration}',
-                            ),
-                            avatarPath: _profileAvatarPath,
-                            size: avatarSize,
-                            palette: palette,
-                            serverAvatarCacheRevision: widget.settingsDisplayGeneration,
-                          ),
-                          const SizedBox(width: 14),
-                          Transform.translate(
-                            offset: Offset(0, nicknameOffsetY),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _profileNickname,
-                                  style: TextStyle(
-                                    fontSize: titleSize,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                    letterSpacing: -0.3,
-                                    shadows: [
-                                      Shadow(
-                                        color: Colors.black.withValues(alpha: 0.4),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                SizedBox(height: 8 * buttonVisibility),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  heightFactor:
-                                      buttonVisibility == 0 ? 0.001 : buttonVisibility,
-                                  child: Opacity(
-                                    opacity: buttonVisibility,
-                                    child: GlassPillButton(
-                                      label: context.t('profile.thoughts'),
-                                      onTap: () {
-                                        Navigator.of(context).push(
-                                          ShellMaterialPageRoute<void>(
-                                            builder: (_) => ThoughtsPage(
-                                              currentUsername: _profileNickname,
-                                              audioPlayerService: widget.audioPlayerService,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               );
             },
           ),
-        ),
-        // Поднимающийся "bottom-sheet": сама панель скроллится вместе с контентом.
-        SliverToBoxAdapter(
-          child: Container(
-            decoration: BoxDecoration(
-              color: palette.cardBackground,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppConstants.radiusXLarge),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, -4),
+          const SizedBox(height: 12),
+          GlassTapCard(
+            title: context.t('albums.myTitle'),
+            subtitle: isEn ? 'Albums on the server' : 'Альбомы на сервере',
+            icon: Icons.library_music_rounded,
+            onTap: () {
+              Navigator.of(context).push(
+                ShellMaterialPageRoute<void>(
+                  builder: (_) => MyAlbumsPage(
+                    audioPlayerService: widget.audioPlayerService,
+                  ),
                 ),
-              ],
-            ),
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(24, 20, 24, bottomContentInset),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildActionRow(context, palette),
-                  const SizedBox(height: 24),
-                  _buildStatsSection(context, palette),
-                  const SizedBox(height: 20),
-                  GlassTapCard(
-                    title: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Open rooms'
-                        : 'Открытые комнаты',
-                    subtitle: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Browse rooms and connect to live sessions'
-                        : 'Список комнат и быстрое подключение',
-                    icon: Icons.groups_rounded,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        ShellMaterialPageRoute<void>(
-                          builder: (_) => OpenRoomsPage(
-                            currentUsername: _profileNickname,
-                            audioPlayerService: widget.audioPlayerService,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  GlassTapCard(
-                    title: context.t('albums.myTitle'),
-                    subtitle: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Albums on the server'
-                        : 'Альбомы на сервере',
-                    icon: Icons.library_music_rounded,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        ShellMaterialPageRoute<void>(
-                          builder: (_) => MyAlbumsPage(
-                            audioPlayerService: widget.audioPlayerService,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  GlassTapCard(
-                    title: Localizations.localeOf(context).languageCode == 'en' ? 'Studio' : 'Студия',
-                    subtitle: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Create and edit albums and tracks'
-                        : 'Создание и редактирование альбомов и треков',
-                    icon: Icons.album_rounded,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        ShellMaterialPageRoute<void>(
-                          builder: (context) => StudioPage(
-                            currentUserNickname: _profileNickname,
-                            audioPlayerService: widget.audioPlayerService,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  GlassTapCard(
-                    title: context.t('profile.genrePrefs'),
-                    subtitle: context.t('profile.genrePrefsSub'),
-                    icon: Icons.tune_rounded,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        ShellMaterialPageRoute<void>(
-                          builder: (_) => const GenrePreferencesPage(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
+              );
+            },
           ),
-        ),
-      ],
+          const SizedBox(height: 12),
+          GlassTapCard(
+            title: isEn ? 'Studio' : 'Студия',
+            subtitle: isEn
+                ? 'Create and edit albums and tracks'
+                : 'Создание и редактирование альбомов и треков',
+            icon: Icons.album_rounded,
+            onTap: () {
+              Navigator.of(context).push(
+                ShellMaterialPageRoute<void>(
+                  builder: (context) => StudioPage(
+                    currentUserNickname: _profileNickname,
+                    audioPlayerService: widget.audioPlayerService,
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          GlassTapCard(
+            title: context.t('profile.genrePrefs'),
+            subtitle: context.t('profile.genrePrefsSub'),
+            icon: Icons.tune_rounded,
+            onTap: () {
+              Navigator.of(context).push(
+                ShellMaterialPageRoute<void>(
+                  builder: (_) => const GenrePreferencesPage(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 

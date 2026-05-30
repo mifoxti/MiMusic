@@ -14,7 +14,7 @@ class RemoteFriendsRepository implements FriendsRepository {
     final rows = await _api.fetchFriends();
     final bust = DateTime.now().millisecondsSinceEpoch;
     return rows.map((r) {
-      final np = r.nowPlaying;
+      final np = r.online ? r.nowPlaying : null;
       return FriendListeningState(
         userId: r.id,
         username: r.username,

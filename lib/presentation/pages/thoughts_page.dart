@@ -85,6 +85,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
         subtitle: (dto.attachmentTrackArtist ?? '').trim().isEmpty ? null : dto.attachmentTrackArtist!.trim(),
         trackAssetPath: 'server_track_$tid',
         serverTrackId: tid,
+        coverImageUrl: '${ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '')}/tracks/$tid/cover',
       );
     } else if (at == 2 && dto.attachmentPlaylistId != null) {
       final pid = dto.attachmentPlaylistId!;
@@ -93,6 +94,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
         title: (dto.attachmentPlaylistTitle ?? '').trim().isEmpty ? '—' : dto.attachmentPlaylistTitle!.trim(),
         subtitle: null,
         playlistId: 'srv:$pid',
+        coverImageUrl: playlistCoverUrl(pid),
       );
     }
     final ts = dto.createdAt;
@@ -562,6 +564,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
       subtitle: (selected.artist ?? '').trim().isEmpty ? null : selected.artist,
       trackAssetPath: 'server_track_${selected.id}',
       serverTrackId: selected.id,
+      coverImageUrl: selected.coverUrl(),
     );
   }
 
@@ -650,6 +653,7 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
       title: title,
       subtitle: '${selected.trackCount} $tracksWord',
       playlistId: 'srv:${selected.id}',
+      coverImageUrl: playlistCoverUrl(selected.id),
     );
   }
 
@@ -2027,42 +2031,71 @@ class _AttachmentCard extends StatelessWidget {
             color: palette.primaryDark.withValues(alpha: 0.34),
             borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
           ),
-          child: Row(
-            children: [
-              Icon(
+          child: _AttachmentPreviewRow(attachment: attachment),
+        ),
+      ),
+    );
+  }
+}
+
+class _AttachmentPreviewRow extends StatelessWidget {
+  const _AttachmentPreviewRow({required this.attachment});
+
+  final _ThoughtAttachment attachment;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    final coverUrl = attachment.coverImageUrl;
+    return Row(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppConstants.radiusSmall),
+          child: buildCoverImage(
+            imageUrl: coverUrl,
+            width: 48,
+            height: 48,
+            borderRadius: BorderRadius.circular(AppConstants.radiusSmall),
+            placeholder: Container(
+              width: 48,
+              height: 48,
+              color: palette.accent.withValues(alpha: 0.25),
+              alignment: Alignment.center,
+              child: Icon(
                 attachment.type == _ThoughtAttachmentType.track
                     ? Icons.music_note_rounded
                     : Icons.playlist_play_rounded,
                 color: palette.accent,
+                size: 26,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      attachment.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.textPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if ((attachment.subtitle ?? '').isNotEmpty)
-                      Text(
-                        attachment.subtitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: palette.textSecondary, fontSize: 12),
-                      ),
-                  ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                attachment.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+              if ((attachment.subtitle ?? '').isNotEmpty)
+                Text(
+                  attachment.subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: palette.textSecondary, fontSize: 12),
+                ),
             ],
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -2087,20 +2120,7 @@ class _DraftAttachmentView extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            attachment.type == _ThoughtAttachmentType.track
-                ? Icons.music_note_rounded
-                : Icons.playlist_play_rounded,
-            color: palette.accent,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              attachment.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          Expanded(child: _AttachmentPreviewRow(attachment: attachment)),
           IconButton(
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.close_rounded),
@@ -2285,6 +2305,7 @@ class _ThoughtAttachment {
     this.trackAssetPath,
     this.playlistId,
     this.serverTrackId,
+    this.coverImageUrl,
   });
 
   final _ThoughtAttachmentType type;
@@ -2293,4 +2314,5 @@ class _ThoughtAttachment {
   final String? trackAssetPath;
   final String? playlistId;
   final int? serverTrackId;
+  final String? coverImageUrl;
 }
