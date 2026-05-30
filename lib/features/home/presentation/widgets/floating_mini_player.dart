@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/audio/track.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/player/player_corner_gradient.dart';
+import '../../../../core/player/player_cover_palette_service.dart';
+import '../../../../core/player/player_glass_shell.dart';
 import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/track_cover.dart';
@@ -11,6 +14,7 @@ class MiniPlayerInterior extends StatelessWidget {
   const MiniPlayerInterior({
     super.key,
     required this.track,
+    this.playerCoverPalette,
     this.trackProgress = 0.5,
     this.isPlaying = true,
     this.collaborativeMode = false,
@@ -21,6 +25,7 @@ class MiniPlayerInterior extends StatelessWidget {
   });
 
   final Track track;
+  final PlayerCoverPaletteService? playerCoverPalette;
   final double trackProgress;
   final bool isPlaying;
   final bool collaborativeMode;
@@ -37,74 +42,150 @@ class MiniPlayerInterior extends StatelessWidget {
     const coverRadius = AppConstants.radiusMedium;
     const height = 64.0;
     const coverSize = 48.0;
-    final glassTint = AppGlass.tint(isDark);
-    final borderGlass = AppGlass.border(isDark);
-    final progressRemainGlass = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.white.withValues(alpha: 0.2);
+    final useCoverPalette =
+        !collaborativeMode && playerCoverPalette != null;
     final sessionAccent = collaborativeGuestMode
         ? const Color(0xFFC084FC)
-        : collaborativeMode
-        ? const Color(0xFF5FD1FF)
-        : palette.accent;
+        : const Color(0xFF5FD1FF);
     final guestSurface = const Color(0xFF3B1A57).withValues(alpha: 0.72);
-    final progressPlayedGlass = Color.alphaBlend(
-      sessionAccent.withValues(
-        alpha: collaborativeGuestMode ? 0.42 : (isDark ? 0.28 : 0.22),
-      ),
-      glassTint,
-    );
+
+    Widget progressLayer() {
+      final progressRemainGlass = isDark
+          ? Colors.white.withValues(alpha: 0.06)
+          : Colors.white.withValues(alpha: 0.2);
+      final glassTint = AppGlass.tint(isDark);
+      final borderGlass = AppGlass.border(isDark);
+      final progressPlayedGlass = collaborativeMode
+          ? Color.alphaBlend(
+              sessionAccent.withValues(
+                alpha: collaborativeGuestMode ? 0.42 : (isDark ? 0.28 : 0.22),
+              ),
+              glassTint,
+            )
+          : null;
+
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final progress = trackProgress.clamp(0.0, 1.0);
+          final maxW = constraints.maxWidth;
+          final progressWidth = (maxW * progress).clamp(0.0, maxW);
+          final roundedLeft = Radius.circular(radius);
+          final notAtEnd = progressWidth < maxW - 0.5;
+
+          Widget remainFill() {
+            if (!useCoverPalette) {
+              return DecoratedBox(
+                decoration: BoxDecoration(color: progressRemainGlass),
+                child: const SizedBox.expand(),
+              );
+            }
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(
+                  color: isDark
+                      ? Colors.black.withValues(alpha: 0.26)
+                      : Colors.white.withValues(alpha: 0.36),
+                ),
+                PlayerCornerHazeLayer(
+                  colors: playerCoverPalette!.colors
+                      .softened(strength: 0.88)
+                      .progressRemainCorners(isDark),
+                  blurSigma: isDark ? 16 : 12,
+                  radius: 1.15,
+                ),
+              ],
+            );
+          }
+
+          Widget playedFill() {
+            if (collaborativeMode) {
+              return Container(
+                width: progressWidth,
+                height: double.infinity,
+                decoration: BoxDecoration(
+                  color: progressPlayedGlass,
+                  borderRadius: BorderRadius.horizontal(
+                    left: roundedLeft,
+                    right: notAtEnd ? Radius.zero : roundedLeft,
+                  ),
+                  border: notAtEnd
+                      ? Border(
+                          right: BorderSide(color: borderGlass, width: 1),
+                        )
+                      : null,
+                ),
+              );
+            }
+            final progressEdge = isDark
+                ? Colors.white.withValues(alpha: 0.32)
+                : Colors.white.withValues(alpha: 0.5);
+            final corners = playerCoverPalette!.colors
+                .softened(strength: 0.52)
+                .progressPlayedCorners(isDark);
+            return SizedBox(
+              width: progressWidth,
+              height: double.infinity,
+              child: ClipRRect(
+                borderRadius: BorderRadius.horizontal(
+                  left: roundedLeft,
+                  right: notAtEnd ? Radius.zero : roundedLeft,
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    PlayerCornerHazeLayer(
+                      colors: corners,
+                      blurSigma: isDark ? 30 : 24,
+                      radius: 1.28,
+                    ),
+                    if (notAtEnd)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Container(
+                          width: 1,
+                          color: progressEdge,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return Stack(
+            alignment: Alignment.centerLeft,
+            clipBehavior: Clip.hardEdge,
+            children: [
+              if (notAtEnd)
+                Positioned(
+                  left: progressWidth,
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: remainFill(),
+                )
+              else if (!useCoverPalette)
+                Positioned.fill(child: remainFill()),
+              if (progressWidth > 0) playedFill(),
+            ],
+          );
+        },
+      );
+    }
+
     final leadingIcon = collaborativeGuestMode && guestLocalPauseActive
         ? Icons.volume_off_rounded
         : isPlaying
         ? Icons.pause_rounded
         : Icons.play_arrow_rounded;
-    return SizedBox(
+
+    final interior = SizedBox(
       height: height,
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
-          Positioned.fill(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final progress = trackProgress.clamp(0.0, 1.0);
-                final maxW = constraints.maxWidth;
-                final progressWidth = (maxW * progress).clamp(0.0, maxW);
-                final roundedLeft = Radius.circular(radius);
-                final notAtEnd = progressWidth < maxW - 0.5;
-                return Stack(
-                  alignment: Alignment.centerLeft,
-                  clipBehavior: Clip.hardEdge,
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(color: progressRemainGlass),
-                      child: const SizedBox.expand(),
-                    ),
-                    if (progressWidth > 0)
-                      Container(
-                        width: progressWidth,
-                        height: double.infinity,
-                        decoration: BoxDecoration(
-                          color: progressPlayedGlass,
-                          borderRadius: BorderRadius.horizontal(
-                            left: roundedLeft,
-                            right: notAtEnd ? Radius.zero : roundedLeft,
-                          ),
-                          border: notAtEnd
-                              ? Border(
-                                  right: BorderSide(
-                                    color: borderGlass,
-                                    width: 1,
-                                  ),
-                                )
-                              : null,
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
+          Positioned.fill(child: progressLayer()),
           Positioned(
             left: 0,
             right: 0,
@@ -215,6 +296,13 @@ class MiniPlayerInterior extends StatelessWidget {
         ],
       ),
     );
+
+    if (!useCoverPalette) return interior;
+
+    return ListenableBuilder(
+      listenable: playerCoverPalette!,
+      builder: (context, _) => interior,
+    );
   }
 }
 
@@ -224,6 +312,7 @@ class FloatingMiniPlayer extends StatelessWidget {
   const FloatingMiniPlayer({
     super.key,
     required this.track,
+    required this.playerCoverPalette,
     this.trackProgress = 0.5,
     this.isPlaying = true,
     this.collaborativeMode = false,
@@ -234,6 +323,7 @@ class FloatingMiniPlayer extends StatelessWidget {
   });
 
   final Track track;
+  final PlayerCoverPaletteService playerCoverPalette;
 
   /// Прогресс трека 0.0..1.0.
   final double trackProgress;
@@ -254,39 +344,64 @@ class FloatingMiniPlayer extends StatelessWidget {
     final guestCollaborativeTint = isDark
         ? const Color(0xFF2A2F38).withValues(alpha: 0.56)
         : const Color(0xFFE8EBF0).withValues(alpha: 0.70);
-    final glassTint = collaborativeMode
-        ? (collaborativeGuestMode
-              ? guestCollaborativeTint
-              : hostCollaborativeTint)
-        : AppGlass.tint(isDark);
-    final borderGlass = AppGlass.border(isDark);
-    return Material(
-      color: Colors.transparent,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        clipBehavior: Clip.antiAlias,
-        child: AppGlass.blurredTintLayer(
-          isDark: isDark,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(radius),
-              border: Border.all(color: borderGlass, width: 1),
-              color: glassTint,
-              boxShadow: AppGlass.cardShadows(isDark),
+
+    if (collaborativeMode) {
+      final glassTint = collaborativeGuestMode
+          ? guestCollaborativeTint
+          : hostCollaborativeTint;
+      return Material(
+        color: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          clipBehavior: Clip.antiAlias,
+          child: AppGlass.blurredTintLayer(
+            isDark: isDark,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(radius),
+                border: Border.all(color: AppGlass.border(isDark), width: 1),
+                color: glassTint,
+                boxShadow: AppGlass.cardShadows(isDark),
+              ),
+              child: MiniPlayerInterior(
+                track: track,
+                trackProgress: trackProgress,
+                isPlaying: isPlaying,
+                collaborativeMode: true,
+                collaborativeGuestMode: collaborativeGuestMode,
+                guestLocalPauseActive: guestLocalPauseActive,
+                onTap: onTap,
+                onPlayPause: onPlayPause,
+              ),
             ),
+          ),
+        ),
+      );
+    }
+
+    return ListenableBuilder(
+      listenable: playerCoverPalette,
+      builder: (context, _) {
+        return Material(
+          color: Colors.transparent,
+          child: PlayerGlassShell(
+            colors: playerCoverPalette.colors,
+            coverBytes: playerCoverPalette.coverBytes,
+            isDark: isDark,
+            borderRadius: BorderRadius.circular(radius),
+            blurSigma: 0,
+            boxShadow: AppGlass.cardShadows(isDark),
             child: MiniPlayerInterior(
               track: track,
+              playerCoverPalette: playerCoverPalette,
               trackProgress: trackProgress,
               isPlaying: isPlaying,
-              collaborativeMode: collaborativeMode,
-              collaborativeGuestMode: collaborativeGuestMode,
-              guestLocalPauseActive: guestLocalPauseActive,
               onTap: onTap,
               onPlayPause: onPlayPause,
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

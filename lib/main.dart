@@ -26,6 +26,7 @@ import 'core/settings/local_settings_repository.dart';
 import 'core/settings/settings_repository.dart';
 import 'features/playlists/data/repositories/session_aware_playlists_repository.dart';
 import 'features/playlists/domain/repositories/playlists_repository.dart';
+import 'core/player/player_cover_palette_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'features/home/data/repositories/home_repository_impl.dart';
@@ -202,6 +203,8 @@ class _MiMusicAppState extends State<MiMusicApp> {
   /// Сбрасывает кэш [Image] для аватара, если путь к файлу тот же, а содержимое изменилось.
   int _shellSettingsDisplayGeneration = 0;
   AudioPlayerService? _audioPlayerService;
+  final PlayerCoverPaletteService _playerCoverPalette =
+      PlayerCoverPaletteService();
   OfflineDownloadRepository? _offlineDownloadRepository;
   GetHomeSectionUseCase? _getHomeSectionUseCase;
   final PlaylistsRepository _playlistsRepository = SessionAwarePlaylistsRepository();
@@ -269,6 +272,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
       settingsRepository: widget.settingsRepository,
       offlineDownloads: _offlineDownloadRepository!,
     );
+    _playerCoverPalette.attach(_audioPlayerService!);
     _getHomeSectionUseCase = GetHomeSectionUseCase(HomeRepositoryImpl());
   }
 
@@ -294,6 +298,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
     if (!mounted) return;
     // Сначала убираем MainShell с ListenableBuilder(audio), иначе один кадр с disposed ChangeNotifier — красный FlutterError.
     final player = _audioPlayerService;
+    _playerCoverPalette.detach();
     _audioPlayerService = null;
     _offlineDownloadRepository = null;
     _getHomeSectionUseCase = null;
@@ -377,6 +382,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
           child: MainShell(
             getHomeSectionUseCase: homeCase,
             audioPlayerService: audio,
+            playerCoverPalette: _playerCoverPalette,
             themeMode: _themeMode,
             onThemeChanged: _onThemeChanged,
             onLanguageChanged: _onLanguageChanged,

@@ -4,6 +4,8 @@ import '../../../../core/audio/audio_player_service.dart';
 import '../../../playlists/domain/repositories/playlists_repository.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/social/listening_room_session.dart';
+import '../../../../core/player/player_cover_palette_service.dart';
+import '../../../../core/player/player_glass_shell.dart';
 import '../../../../core/theme/app_glass.dart';
 import '../../../home/presentation/widgets/floating_mini_player.dart';
 import '../pages/full_player_page.dart';
@@ -30,12 +32,14 @@ class ExpandablePlayerDock extends StatelessWidget {
     super.key,
     required this.expandController,
     required this.audioPlayerService,
+    required this.playerCoverPalette,
     required this.onCollapse,
     required this.playlistsRepository,
   });
 
   final AnimationController expandController;
   final AudioPlayerService audioPlayerService;
+  final PlayerCoverPaletteService playerCoverPalette;
   final VoidCallback onCollapse;
   final PlaylistsRepository playlistsRepository;
 
@@ -48,7 +52,10 @@ class ExpandablePlayerDock extends StatelessWidget {
         final begin = collapsedMiniRectInOverlay(overlaySize);
 
         return ListenableBuilder(
-          listenable: expandController,
+          listenable: Listenable.merge([
+            expandController,
+            playerCoverPalette,
+          ]),
           builder: (context, _) {
             final raw = expandController.value.clamp(0.0, 1.0);
             // Пока док полностью свёрнут, не перехватываем тапы по экрану — иначе блокируются
@@ -63,14 +70,13 @@ class ExpandablePlayerDock extends StatelessWidget {
             )!;
             final borderW = u >= 0.995 ? 0.0 : 1.0;
             final isDark = Theme.of(context).brightness == Brightness.dark;
-            final glassTint = AppGlass.tint(isDark);
-            final borderGlass = AppGlass.border(isDark);
-            // BackdropFilter на всём кадре дорогой: размытие только ближе к полному развороту.
-            final blurSigma = u < 0.82
+            final coverGlass = playerCoverPalette.colors;
+            // Размытие контента под плеером (как у мини): раньше, чем раньше — с ~35% разворота.
+            final blurSigma = u < 0.35
                 ? 0.0
                 : AppGlass.blurSigma *
                       Curves.easeOut.transform(
-                        ((u - 0.82) / 0.18).clamp(0.0, 1.0),
+                        ((u - 0.35) / 0.65).clamp(0.0, 1.0),
                       );
 
             return Stack(
@@ -85,7 +91,7 @@ class ExpandablePlayerDock extends StatelessWidget {
                       behavior: HitTestBehavior.opaque,
                       onTap: onCollapse,
                       child: ColoredBox(
-                        color: Colors.black.withValues(alpha: 0.42 * u),
+                        color: Colors.black.withValues(alpha: 0.14 * u),
                       ),
                     ),
                   ),
@@ -96,51 +102,46 @@ class ExpandablePlayerDock extends StatelessWidget {
                   width: rect.width,
                   height: rect.height,
                   child: RepaintBoundary(
-                    child: ClipRRect(
+                    child: PlayerGlassShell(
+                      colors: coverGlass,
+                      coverBytes: playerCoverPalette.coverBytes,
+                      isDark: isDark,
+                      seeThrough: u > 0.35,
                       borderRadius: radius,
-                      clipBehavior: Clip.antiAlias,
-                      child: AppGlass.blurredTintLayerWithSigma(
-                        sigma: blurSigma,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: radius,
-                            border: borderW > 0
-                                ? Border.all(color: borderGlass, width: borderW)
-                                : null,
-                            color: glassTint,
-                            boxShadow: u < 0.98
-                                ? AppGlass.cardShadows(isDark)
-                                : null,
+                      showBorder: borderW > 0,
+                      borderWidth: borderW,
+                      blurSigma: blurSigma,
+                      boxShadow: u < 0.98
+                          ? AppGlass.cardShadows(isDark)
+                          : null,
+                      child: Stack(
+                        clipBehavior: Clip.hardEdge,
+                        fit: StackFit.expand,
+                        children: [
+                          _DockMiniLayer(
+                            u: u,
+                            audioPlayerService: audioPlayerService,
+                            playerCoverPalette: playerCoverPalette,
                           ),
-                          child: Stack(
-                            clipBehavior: Clip.hardEdge,
-                            fit: StackFit.expand,
-                            children: [
-                              _DockMiniLayer(
-                                u: u,
-                                audioPlayerService: audioPlayerService,
-                              ),
-                              if (u > 0.14)
-                                Positioned.fill(
-                                  child: IgnorePointer(
-                                    ignoring: u < 0.22,
-                                    child: Opacity(
-                                      opacity: ((u - 0.14) / 0.72).clamp(
-                                        0.0,
-                                        1.0,
-                                      ),
-                                      child: FullPlayerDockPanel(
-                                        audioPlayerService: audioPlayerService,
-                                        onCollapse: onCollapse,
-                                        playlistsRepository:
-                                            playlistsRepository,
-                                      ),
-                                    ),
+                          if (u > 0.14)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                ignoring: u < 0.22,
+                                child: Opacity(
+                                  opacity: ((u - 0.14) / 0.72).clamp(
+                                    0.0,
+                                    1.0,
+                                  ),
+                                  child: FullPlayerDockPanel(
+                                    audioPlayerService: audioPlayerService,
+                                    onCollapse: onCollapse,
+                                    playlistsRepository:
+                                        playlistsRepository,
                                   ),
                                 ),
-                            ],
-                          ),
-                        ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -156,10 +157,15 @@ class ExpandablePlayerDock extends StatelessWidget {
 
 /// Только слой мини (прогресс), чтобы перерисовки позиции трека не трогали весь док.
 class _DockMiniLayer extends StatelessWidget {
-  const _DockMiniLayer({required this.u, required this.audioPlayerService});
+  const _DockMiniLayer({
+    required this.u,
+    required this.audioPlayerService,
+    required this.playerCoverPalette,
+  });
 
   final double u;
   final AudioPlayerService audioPlayerService;
+  final PlayerCoverPaletteService playerCoverPalette;
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +176,7 @@ class _DockMiniLayer extends StatelessWidget {
       listenable: Listenable.merge([
         audioPlayerService,
         ListeningRoomSession.instance,
+        playerCoverPalette,
       ]),
       builder: (context, _) {
         final dur = audioPlayerService.duration;
@@ -192,6 +199,7 @@ class _DockMiniLayer extends StatelessWidget {
                   track: track,
                   trackProgress: progress,
                   isPlaying: audioPlayerService.isPlaying,
+                  playerCoverPalette: playerCoverPalette,
                   collaborativeMode: ListeningRoomSession.instance.active,
                   collaborativeGuestMode:
                       ListeningRoomSession.instance.active &&

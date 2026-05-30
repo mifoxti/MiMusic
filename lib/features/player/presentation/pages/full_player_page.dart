@@ -76,7 +76,6 @@ class FullPlayerDockPanel extends StatelessWidget {
           final guestControlSurface = guestMode
               ? const Color(0xFF3B1A57).withValues(alpha: 0.82)
               : Colors.white.withValues(alpha: 0.18);
-
           if (track == null) {
             return Center(
               child: Text(
@@ -550,7 +549,11 @@ class FullPlayerDockPanel extends StatelessWidget {
                                             : () => audioPlayerService
                                                   .cycleLoopMode(),
                                         palette: palette,
-                                        accentColor: roomAccent,
+                                        accentColor: roomActive
+                                            ? roomAccent
+                                            : (loop != LoopMode.off
+                                                  ? palette.accent
+                                                  : palette.textSecondary),
                                         disabledColor: guestDisabledColor,
                                         backgroundColor: guestControlSurface,
                                       ),
@@ -574,7 +577,11 @@ class FullPlayerDockPanel extends StatelessWidget {
                                                   .toggleShuffle()
                                             : null,
                                         palette: palette,
-                                        accentColor: roomAccent,
+                                        accentColor: roomActive
+                                            ? roomAccent
+                                            : (shuffleOn
+                                                  ? palette.accent
+                                                  : palette.textSecondary),
                                         disabledColor: guestDisabledColor,
                                         backgroundColor: guestControlSurface,
                                       ),

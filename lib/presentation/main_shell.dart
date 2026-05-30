@@ -17,6 +17,7 @@ import '../core/network/playlists_api.dart';
 import '../core/notifications/local_notifications_service.dart';
 import '../core/notifications/notification_intent.dart';
 import '../core/player/full_player_visibility.dart';
+import '../core/player/player_cover_palette_service.dart';
 import '../core/player/player_dock_host.dart';
 import '../core/player/shell_route_back_guard.dart';
 import '../core/player/shell_navigator_host.dart';
@@ -45,6 +46,7 @@ class MainShell extends StatefulWidget {
     super.key,
     required this.getHomeSectionUseCase,
     required this.audioPlayerService,
+    required this.playerCoverPalette,
     required this.themeMode,
     required this.onThemeChanged,
     required this.onLanguageChanged,
@@ -58,6 +60,7 @@ class MainShell extends StatefulWidget {
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
   final AudioPlayerService audioPlayerService;
+  final PlayerCoverPaletteService playerCoverPalette;
   final ListeningHistoryRepository listeningHistoryRepository;
   final PlaylistsRepository playlistsRepository;
   final ThemeMode themeMode;
@@ -143,6 +146,7 @@ class _MainShellState extends State<MainShell>
   @override
   void initState() {
     super.initState();
+    widget.playerCoverPalette.attach(widget.audioPlayerService);
     WidgetsBinding.instance.addObserver(this);
     final initial = widget.audioPlayerService.currentTrack;
     _lastHadTrack = initial != null;
@@ -551,6 +555,8 @@ class _MainShellState extends State<MainShell>
                                 child: ExpandablePlayerDock(
                                   expandController: _playerDockController,
                                   audioPlayerService: widget.audioPlayerService,
+                                  playerCoverPalette:
+                                      widget.playerCoverPalette,
                                   onCollapse: _collapsePlayerDock,
                                   playlistsRepository:
                                       widget.playlistsRepository,
@@ -603,6 +609,8 @@ class _MainShellState extends State<MainShell>
                                                   : 0.0;
                                               return FloatingMiniPlayer(
                                                 track: t,
+                                                playerCoverPalette:
+                                                    widget.playerCoverPalette,
                                                 trackProgress: progress,
                                                 isPlaying: widget
                                                     .audioPlayerService

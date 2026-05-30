@@ -59,6 +59,7 @@ class RemoteImageCache {
     final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
     if (!url.startsWith(base)) return false;
     if (url.contains('/me/avatar')) return true;
+    if (RegExp(r'/tracks/\d+/cover').hasMatch(url)) return true;
     return url.contains('/users/') && url.contains('/avatar');
   }
 
