@@ -12,4 +12,7 @@ abstract final class AppConstants {
   /// Нижний отступ контента для страниц внутри `MainShell`,
   /// когда поверх контента видны мини-плеер и нижняя навигация.
   static const double shellBottomInsetWithMiniPlayer = 184.0;
+
+  /// CloudTips — поддержка проекта (кнопка в настройках).
+  static const String supportProjectUrl = 'https://pay.cloudtips.ru/p/201f5bfd';
 }

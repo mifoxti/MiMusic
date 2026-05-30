@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/audio/audio_player_service.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
@@ -85,6 +87,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ],
               ),
             ),
+            const SizedBox(height: 14),
+            _SupportProjectButton(palette: palette),
             const SizedBox(height: 14),
             GlassPanel(
               child: Column(
@@ -291,6 +295,112 @@ class _SettingsPageState extends State<SettingsPage> {
     final current = await widget.settingsRepository.getSettings();
     await widget.settingsRepository.saveSettings(
       current.copyWith(languageCode: selected),
+    );
+  }
+}
+
+/// Яркая кнопка перехода на страницу поддержки (CloudTips).
+class _SupportProjectButton extends StatelessWidget {
+  const _SupportProjectButton({required this.palette});
+
+  final AppColorPalette palette;
+
+  Future<void> _open(BuildContext context) async {
+    final uri = Uri.parse(AppConstants.supportProjectUrl);
+    final ok = await canLaunchUrl(uri);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.t('settings.supportProjectError'))),
+      );
+      return;
+    }
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(AppConstants.radiusXLarge);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: [
+          BoxShadow(
+            color: palette.accent.withValues(alpha: 0.45),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _open(context),
+            child: Ink(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    palette.accent,
+                    Color.lerp(palette.accent, Colors.deepOrange, 0.35)!,
+                  ],
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.22),
+                      ),
+                      child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 28),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.t('settings.supportProject'),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            context.t('settings.supportProjectSub'),
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 1.25,
+                              color: Colors.white.withValues(alpha: 0.92),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.open_in_new_rounded,
+                      color: Colors.white.withValues(alpha: 0.95),
+                      size: 24,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
