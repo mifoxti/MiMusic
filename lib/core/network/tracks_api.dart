@@ -16,6 +16,7 @@ class ServerTrackListItem {
     this.durationSec,
     this.genres = const [],
     this.coverBytes,
+    this.playCount = 0,
   });
 
   final int id;
@@ -23,6 +24,7 @@ class ServerTrackListItem {
   final String? artist;
   final int? durationSec;
   final List<String> genres;
+  final int playCount;
 
   /// Растровые байты обложки из поля JSON `cover` (base64), если сервер их отдал.
   final Uint8List? coverBytes;
@@ -45,6 +47,7 @@ class ServerTrackListItem {
       durationSec: (json['duration'] as num?)?.toInt(),
       genres: g is List ? g.map((e) => e.toString()).toList() : const [],
       coverBytes: coverBytes,
+      playCount: (json['playCount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -148,6 +151,23 @@ class TracksApi {
     final sid = resolveServerTrackId(assetPath: assetPath, audioFilePath: audioFilePath);
     if (sid != null) return 'srv:$sid';
     return 'asset:$assetPath';
+  }
+
+  /// [PATCH /tracks/{id}] — title/artist без перезаливки аудио.
+  Future<void> updateTrackMetadata({
+    required int trackId,
+    String? title,
+    String? artist,
+  }) async {
+    final dio = await createAuthenticatedDio();
+    await dio.patch<void>(
+      '/tracks/$trackId',
+      data: {
+        if (title != null) 'title': title,
+        if (artist != null) 'artist': artist,
+      },
+      options: Options(contentType: Headers.jsonContentType),
+    );
   }
 
   /// [DELETE /tracks/{id}] — только для владельца трека; файлы удаляются на сервере.

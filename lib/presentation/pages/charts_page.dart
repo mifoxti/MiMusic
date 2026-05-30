@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
-import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/network/charts_api.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/network/server_connectivity.dart';
+import '../../core/widgets/dual_track_cover_cluster.dart';
 import '../../core/widgets/track_cover.dart';
 import '../../core/player/player_dock_host.dart';
 
@@ -50,39 +52,53 @@ class _ChartsPageState extends State<ChartsPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() => _isLoading = true);
-    final tracks = await loadLocalTracks();
-    if (!mounted) return;
-
-    // Пока нет API: порядок = локальный список, подписи — заглушки.
-    final isEn = Localizations.localeOf(context).languageCode == 'en';
-    final playsMocks = [
-      isEn ? '1.2M plays' : '1,2 млн прослушиваний',
-      isEn ? '982K plays' : '982 тыс. прослушиваний',
-      isEn ? '756K plays' : '756 тыс. прослушиваний',
-    ];
-    const deltaMocks = <String?>[null, null, 'NEW'];
-
-    final entries = <ChartEntry>[];
-    for (var i = 0; i < tracks.length; i++) {
-      entries.add(
-        ChartEntry(
-          rank: i + 1,
-          track: tracks[i],
-          playsLabel: i < playsMocks.length
-              ? playsMocks[i]
-              : (isEn ? '${(340 - i * 12)}K plays' : '${(340 - i * 12)} тыс. прослушиваний'),
-          deltaLabel: i < deltaMocks.length ? deltaMocks[i] : null,
-        ),
-      );
+  String _formatPlayCount(int count, bool isEn) {
+    if (count >= 1000000) {
+      final m = (count / 1000000).toStringAsFixed(1);
+      return isEn ? '${m}M plays' : '$m млн прослушиваний';
     }
+    if (count >= 1000) {
+      final k = (count / 1000).round();
+      return isEn ? '${k}K plays' : '$k тыс. прослушиваний';
+    }
+    return isEn ? '$count plays' : '$count прослушиваний';
+  }
 
-    setState(() {
-      _entries = entries;
-      _chartTracks = tracks;
-      _isLoading = false;
-    });
+  Future<void> _load() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      final dto = await ChartsApi().fetchTopTracks(limit: 30);
+      if (!mounted) return;
+      final isEn = Localizations.localeOf(context).languageCode == 'en';
+      final tracks = <Track>[];
+      final entries = <ChartEntry>[];
+      for (final row in dto) {
+        final track = row.toTrack();
+        tracks.add(track);
+        entries.add(
+          ChartEntry(
+            rank: row.rank,
+            track: track,
+            playsLabel: _formatPlayCount(row.playCount, isEn),
+            deltaLabel: row.isNew ? 'NEW' : null,
+          ),
+        );
+      }
+      setState(() {
+        _entries = entries;
+        _chartTracks = tracks;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+      setState(() {
+        _entries = [];
+        _chartTracks = [];
+        _isLoading = false;
+      });
+    }
   }
 
   void _openFullPlayer() {
@@ -171,11 +187,16 @@ class _ChartsPageState extends State<ChartsPage> {
             final bottomContentInset = hasMiniPlayer
                 ? AppConstants.shellBottomInsetWithMiniPlayer
                 : AppConstants.shellBottomInset;
-            return CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: _buildHeader(palette, topPadding),
+            return RefreshIndicator(
+              onRefresh: _load,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
                 ),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _buildHeader(palette, topPadding),
+                  ),
                 if (_entries.isEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -215,7 +236,8 @@ class _ChartsPageState extends State<ChartsPage> {
                       ),
                     ),
                   ),
-              ],
+                ],
+              ),
             );
           },
         ),
@@ -224,11 +246,16 @@ class _ChartsPageState extends State<ChartsPage> {
   }
 
   Widget _buildHeader(AppColorPalette palette, double topPadding) {
+    final covers = pickTwoTrackCoverSources(_chartTracks);
     return Padding(
       padding: EdgeInsets.fromLTRB(24, 8 + topPadding, 24, 24),
       child: Column(
         children: [
-          _buildChartIconCluster(),
+          DualTrackCoverCluster(
+            covers: covers,
+            placeholderColor: const Color(0xFFC45C3E),
+            placeholderColor2: const Color(0xFF8B3A2E),
+          ),
           const SizedBox(height: 16),
           Text(
             context.t('charts.topTracks'),
@@ -286,38 +313,6 @@ class _ChartsPageState extends State<ChartsPage> {
     );
   }
 
-  Widget _buildChartIconCluster() {
-    const size = 88.0;
-    return SizedBox(
-      width: size + 48,
-      height: size + 48,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          for (var i = 3; i >= 0; i--)
-            Container(
-              width: size + (i * 16.0),
-              height: size + (i * 16.0),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: const Color(0xFFC45C3E).withValues(
-                    alpha: 0.08 + (3 - i) * 0.07,
-                  ),
-                  width: 1.5,
-                ),
-                color: Colors.transparent,
-              ),
-            ),
-          Icon(
-            Icons.show_chart_rounded,
-            size: size * 0.48,
-            color: const Color(0xFFC45C3E).withValues(alpha: 0.85),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ChartTrackTile extends StatelessWidget {

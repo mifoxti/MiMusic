@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
-import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/auth/auth_session_store.dart';
+import '../../core/network/artist_api.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/notifications/local_notifications_service.dart';
@@ -11,8 +12,6 @@ import '../../core/social/friend_request_notifications.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
-import '../../features/home/domain/entities/release_item.dart';
-import '../../features/home/presentation/widgets/releases_section.dart';
 import 'thoughts_page.dart';
 
 /// Экран автора: обложка, имя, «Мысли», популярные треки и релизы (локальные данные + моки).
@@ -37,6 +36,7 @@ class ArtistPage extends StatefulWidget {
 class _ArtistPageState extends State<ArtistPage> {
   static const String _currentUser = 'mifoxti';
   List<Track> _tracks = [];
+  String _thoughtsPreview = '';
   bool _loading = true;
   bool _friendRequestSent = false;
 
@@ -47,37 +47,27 @@ class _ArtistPageState extends State<ArtistPage> {
   }
 
   Future<void> _load() async {
-    final all = await loadLocalTracks();
-    final name = widget.artistName.toLowerCase().trim();
-    final filtered = all.where((t) {
-      final a = (t.artist ?? '').toLowerCase();
-      if (a.isEmpty) return false;
-      return a.contains(name) ||
-          name.contains(a.split(',').first.trim()) ||
-          a.split(' - ').first.contains(name);
-    }).toList();
-    if (mounted) {
+    try {
+      final acc = await AuthSessionStore.readAccount();
+      final profile = await ArtistApi().fetchByName(
+        widget.artistName,
+        userId: acc?.userId,
+      );
+      if (!mounted) return;
       setState(() {
-        _tracks = filtered.isNotEmpty ? filtered : all.take(3).toList();
+        _tracks = profile.songs.map((s) => s.toTrack()).toList();
+        _thoughtsPreview = profile.thoughts;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _tracks = [];
+        _thoughtsPreview = '';
         _loading = false;
       });
     }
   }
-
-  List<ReleaseItem> get _mockAlbums => [
-        ReleaseItem(
-          title: 'SilverDust',
-          coverUrl: widget.coverAssetPath ?? 'assets/images/geoxor.png',
-        ),
-        ReleaseItem(
-          title: 'Heal her',
-          coverUrl: widget.coverAssetPath ?? 'assets/images/geoxor.png',
-        ),
-        ReleaseItem(
-          title: 'Stardust',
-          coverUrl: widget.coverAssetPath ?? 'assets/images/geoxor.png',
-        ),
-      ];
 
   Future<void> _playTrack(Track t) async {
     final s = widget.audioPlayerService;
@@ -302,6 +292,19 @@ class _ArtistPageState extends State<ArtistPage> {
                         ),
                       ),
                       const SizedBox(height: 20),
+                      if (_thoughtsPreview.isNotEmpty) ...[
+                        Text(
+                          _thoughtsPreview,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: palette.textSecondary,
+                            height: 1.4,
+                          ),
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       Text(
                         'Популярные треки',
                         style: TextStyle(
@@ -337,18 +340,6 @@ class _ArtistPageState extends State<ArtistPage> {
                           onPressed: () {},
                           child: const Text('Ещё…'),
                         ),
-                      const SizedBox(height: 8),
-                      ReleasesSection(
-                        releases: _mockAlbums,
-                        onItemTap: (_) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Страница релиза — скоро'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                      ),
                       ],
                     ),
                   ),

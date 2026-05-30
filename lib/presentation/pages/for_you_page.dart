@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
-import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
 import '../../core/auth/auth_session_store.dart';
 import '../../core/network/recommendations_api.dart';
@@ -9,34 +8,28 @@ import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/widgets/track_cover.dart';
-import '../../features/home/domain/entities/friend_playback.dart';
-import '../../features/home/domain/entities/home_section.dart';
-import '../../features/home/domain/use_cases/get_home_section_use_case.dart';
+import '../../core/widgets/dual_track_cover_cluster.dart';
+import '../../core/widgets/track_cover.dart' show buildTrackCover;
 import '../../core/player/player_dock_host.dart';
 
-/// Экран «Для вас»: персональные подборки на основе главной секции и локальных треков.
+/// Экран «Для вас»: только [GET /recommendations/tracks] и события impression/click.
 class ForYouPage extends StatefulWidget {
   const ForYouPage({
     super.key,
     required this.audioPlayerService,
-    required this.getHomeSectionUseCase,
   });
 
   final AudioPlayerService audioPlayerService;
-  final GetHomeSectionUseCase getHomeSectionUseCase;
 
   @override
   State<ForYouPage> createState() => _ForYouPageState();
 }
 
 class _ForYouPageState extends State<ForYouPage> {
-  HomeSection? _section;
-  List<Track> _tracks = [];
-  List<Track> _recommendedOrder = [];
   List<Track> _serverRecTracks = [];
   String? _serverRecError;
   bool _loading = true;
+  bool _loggedIn = false;
 
   @override
   void initState() {
@@ -46,65 +39,38 @@ class _ForYouPageState extends State<ForYouPage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    try {
-      final section = await widget.getHomeSectionUseCase();
-      final tracks = await loadLocalTracks();
-      List<Track> serverQueue = [];
-      String? serverErr;
-      final acc = await AuthSessionStore.readAccount();
-      if (acc != null && acc.sessionToken.isNotEmpty && acc.userId != null) {
-        try {
-          final dto = await RecommendationsApi().fetchRecommendedTracks(limit: 24);
-          serverQueue = dto.map((e) => e.toTrack()).toList();
-          await RecommendationsApi().postEvents(
-            dto
-                .map(
-                  (e) => <String, dynamic>{
-                    'surface': 'for_you',
-                    'targetType': 'track',
-                    'targetId': e.id,
-                    'interaction': 'impression',
-                    'scorePresent': e.score,
-                  },
-                )
-                .toList(),
-          );
-        } catch (e) {
-          serverErr = e.toString();
-        }
+    final acc = await AuthSessionStore.readAccount();
+    final loggedIn = acc != null && acc.sessionToken.isNotEmpty && acc.userId != null;
+    List<Track> serverQueue = [];
+    String? serverErr;
+    if (loggedIn) {
+      try {
+        final dto = await RecommendationsApi().fetchRecommendedTracks(limit: 24);
+        serverQueue = dto.map((e) => e.toTrack()).toList();
+        await RecommendationsApi().postEvents(
+          dto
+              .map(
+                (e) => <String, dynamic>{
+                  'surface': 'for_you',
+                  'targetType': 'track',
+                  'targetId': e.id,
+                  'interaction': 'impression',
+                  'scorePresent': e.score,
+                },
+              )
+              .toList(),
+        );
+      } catch (e) {
+        serverErr = e.toString();
       }
-      if (!mounted) return;
-      setState(() {
-        _section = section;
-        _tracks = tracks;
-        _recommendedOrder = _buildRecommendedOrder(section, tracks);
-        _serverRecTracks = serverQueue;
-        _serverRecError = serverErr;
-        _loading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
     }
-  }
-
-  /// Треки, совпадающие с артистами из истории, выше остальных.
-  List<Track> _buildRecommendedOrder(HomeSection section, List<Track> tracks) {
-    final hints = section.historyArtists
-        .map((e) => e.toLowerCase().trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    int score(Track t) {
-      final a = t.artistDisplay.toLowerCase();
-      final title = t.title.toLowerCase();
-      for (final h in hints) {
-        if (a.contains(h) || title.contains(h)) return 1;
-      }
-      return 0;
-    }
-
-    final sorted = List<Track>.from(tracks);
-    sorted.sort((a, b) => score(b).compareTo(score(a)));
-    return sorted;
+    if (!mounted) return;
+    setState(() {
+      _loggedIn = loggedIn;
+      _serverRecTracks = serverQueue;
+      _serverRecError = serverErr;
+      _loading = false;
+    });
   }
 
   void _openFullPlayer() {
@@ -130,7 +96,7 @@ class _ForYouPageState extends State<ForYouPage> {
   }
 
   Future<void> _onTrackTap(Track track) async {
-    final queue = _queueForTrack(track);
+    final queue = _serverRecTracks;
     if (queue.isEmpty) return;
     final service = widget.audioPlayerService;
     final same = service.currentTrack?.assetPath == track.assetPath &&
@@ -143,16 +109,8 @@ class _ForYouPageState extends State<ForYouPage> {
     if (mounted) _openFullPlayer();
   }
 
-  List<Track> _queueForTrack(Track track) {
-    if (track.assetPath.startsWith('server_track_')) {
-      if (_serverRecTracks.isNotEmpty) return _serverRecTracks;
-    }
-    return _recommendedOrder.isNotEmpty ? _recommendedOrder : _tracks;
-  }
-
   Future<void> _onPlayMixPressed() async {
-    final queue =
-        _serverRecTracks.isNotEmpty ? _serverRecTracks : (_recommendedOrder.isNotEmpty ? _recommendedOrder : _tracks);
+    final queue = _serverRecTracks;
     if (queue.isEmpty) return;
     final service = widget.audioPlayerService;
     final first = queue.first;
@@ -169,6 +127,7 @@ class _ForYouPageState extends State<ForYouPage> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
+    final queue = _serverRecTracks;
 
     return Container(
       decoration: BoxDecoration(
@@ -199,460 +158,191 @@ class _ForYouPageState extends State<ForYouPage> {
         body: ListenableBuilder(
           listenable: widget.audioPlayerService,
           builder: (context, _) {
-            if (_loading || _section == null) {
+            if (_loading) {
               return Center(
                 child: CircularProgressIndicator(color: palette.accent),
               );
             }
-            final section = _section!;
-            final queue = _recommendedOrder.isNotEmpty ? _recommendedOrder : _tracks;
             final hasMiniPlayer = widget.audioPlayerService.currentTrack != null;
             final bottomContentInset = hasMiniPlayer
                 ? AppConstants.shellBottomInsetWithMiniPlayer
                 : AppConstants.shellBottomInset;
 
-            return CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildHeaderCluster(palette),
-                        const SizedBox(height: 18),
-                        Text(
-                          context.t('forYou.subtitle'),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: palette.textSecondary,
-                            height: 1.35,
+            return RefreshIndicator(
+              onRefresh: _load,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Center(
+                            child: DualTrackCoverCluster(
+                              covers: pickTwoTrackCoverSources(queue),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 22),
-                        Center(
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: queue.isEmpty ? null : _onPlayMixPressed,
-                              borderRadius: BorderRadius.circular(40),
-                              child: Container(
-                                width: 72,
-                                height: 72,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.85),
-                                    width: 2,
-                                  ),
-                                  color: palette.accent.withValues(alpha: 0.32),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: palette.accent.withValues(alpha: 0.22),
-                                      blurRadius: 18,
-                                      offset: const Offset(0, 5),
+                          const SizedBox(height: 16),
+                          Text(
+                            context.t('forYou.subtitle'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: palette.textSecondary,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          Center(
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: queue.isEmpty ? null : _onPlayMixPressed,
+                                borderRadius: BorderRadius.circular(40),
+                                child: Container(
+                                  width: 72,
+                                  height: 72,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: 0.85),
+                                      width: 2,
                                     ),
-                                  ],
-                                ),
-                                child: Icon(
-                                  widget.audioPlayerService.isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  size: 40,
-                                  color: Colors.white,
+                                    color: palette.accent.withValues(alpha: 0.32),
+                                  ),
+                                  child: Icon(
+                                    widget.audioPlayerService.isPlaying
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                    size: 40,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          queue.isEmpty
-                              ? context.t('home.addTracksHint')
-                              : context.t('forYou.playFlow'),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: palette.textMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 28),
-                        if (_serverRecError != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Text(
+                          const SizedBox(height: 28),
+                          if (!_loggedIn)
+                            Text(
+                              context.t('forYou.loginRequired'),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: palette.textSecondary),
+                            )
+                          else if (_serverRecError != null)
+                            Text(
                               _serverRecError!,
                               style: TextStyle(fontSize: 12, color: palette.textMuted),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        if (_serverRecTracks.isNotEmpty) ...[
-                          Text(
-                            context.t('forYou.serverPick'),
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: palette.textPrimary,
-                              letterSpacing: -0.2,
+                          if (queue.isEmpty && _loggedIn)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 24),
+                              child: Text(
+                                context.t('forYou.empty'),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: palette.textMuted),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            context.t('forYou.serverPickSub'),
-                            style: TextStyle(fontSize: 13, color: palette.textSecondary),
-                          ),
-                          const SizedBox(height: 14),
-                          SizedBox(
-                            height: 196,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 0),
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _serverRecTracks.length,
-                              separatorBuilder: (context, _) => const SizedBox(width: 12),
-                              itemBuilder: (context, index) {
-                                final t = _serverRecTracks[index];
-                                return _ForYouTrackCard(
-                                  track: t,
-                                  palette: palette,
-                                  isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                                    t.assetPath,
-                                  ),
-                                  onTap: () => _onServerRecTap(t),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 28),
                         ],
-                        Text(
-                          context.t('forYou.curated'),
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: palette.textPrimary,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          context.t('forYou.library'),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: palette.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-                if (queue.isEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                      child: _buildEmptyTracksHint(palette),
-                    ),
-                  )
-                else
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 196,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        scrollDirection: Axis.horizontal,
+                  if (queue.isNotEmpty)
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(20, 0, 20, bottomContentInset),
+                      sliver: SliverList.separated(
                         itemCount: queue.length,
-                        separatorBuilder: (context, _) =>
-                            const SizedBox(width: 12),
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (context, index) {
-                          return _ForYouTrackCard(
-                            track: queue[index],
+                          final t = queue[index];
+                          return _ForYouTrackRow(
+                            track: t,
                             palette: palette,
-                            isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                              queue[index].assetPath,
-                            ),
-                            onTap: () => _onTrackTap(queue[index]),
+                            onTap: () => _onServerRecTap(t),
                           );
                         },
                       ),
                     ),
-                  ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(20, 28, 20, bottomContentInset),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (section.friendPlayback != null) ...[
-                          Text(
-                            context.t('forYou.friendsNow'),
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: palette.textPrimary,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _FriendPlaybackCard(
-                            playback: section.friendPlayback!,
-                            palette: palette,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             );
           },
         ),
       ),
     );
   }
-
-  Widget _buildHeaderCluster(AppColorPalette palette) {
-    const size = 80.0;
-    return Center(
-      child: SizedBox(
-        width: size + 40,
-        height: size + 40,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            for (var i = 3; i >= 0; i--)
-              Container(
-                width: size + (i * 14.0),
-                height: size + (i * 14.0),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: palette.accent.withValues(
-                      alpha: 0.07 + (3 - i) * 0.06,
-                    ),
-                    width: 1.5,
-                  ),
-                ),
-              ),
-            Icon(
-              Icons.auto_awesome_rounded,
-              size: size * 0.45,
-              color: palette.accent.withValues(alpha: 0.9),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyTracksHint(AppColorPalette palette) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: palette.cardBackground.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.music_off_rounded, color: palette.textMuted, size: 32),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              context.t('forYou.emptyHint'),
-              style: TextStyle(fontSize: 14, color: palette.textSecondary),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-class _ForYouTrackCard extends StatelessWidget {
-  const _ForYouTrackCard({
+class _ForYouTrackRow extends StatelessWidget {
+  const _ForYouTrackRow({
     required this.track,
     required this.palette,
-    required this.isDownloaded,
     required this.onTap,
   });
 
   final Track track;
   final AppColorPalette palette;
-  final bool isDownloaded;
   final VoidCallback onTap;
 
-  static const double _cover = 120.0;
-
   @override
   Widget build(BuildContext context) {
-    final coverSource = track.coverBytes ?? track.coverFallbackPath;
-
-    return SizedBox(
-      width: 132,
-      child: Material(
-        color: palette.cardBackground.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: buildTrackCover(
-                      coverSource: coverSource,
-                      width: _cover,
-                      height: _cover,
-                      borderRadius:
-                          BorderRadius.circular(AppConstants.radiusMedium),
-                      placeholder: Container(
-                        color: palette.primaryDark.withValues(alpha: 0.5),
-                        alignment: Alignment.center,
-                        child: Icon(
-                          Icons.music_note_rounded,
-                          color: palette.textMuted,
-                          size: 36,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                if (isDownloaded)
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Icon(
-                        Icons.download_done_rounded,
-                        size: 14,
-                        color: palette.accent,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                Text(
-                  track.title,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  track.artistDisplay.isEmpty
-                      ? context.t('common.notSpecifiedArtist')
-                      : track.artistDisplay,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: palette.textSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FriendPlaybackCard extends StatelessWidget {
-  const _FriendPlaybackCard({
-    required this.playback,
-    required this.palette,
-  });
-
-  final FriendPlayback playback;
-  final AppColorPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final cover = playback.coverUrl;
-
     return Material(
-      color: palette.cardBackground,
-      borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+      color: palette.cardBackground.withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${playback.artistName} — ${playback.title}'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        },
-        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(10),
           child: Row(
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-                child: SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: cover != null
-                      ? Image.asset(
-                          cover,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _placeholder(palette),
-                        )
-                      : _placeholder(palette),
+                borderRadius: BorderRadius.circular(10),
+                child: buildTrackCover(
+                  coverSource: track.coverBytes ?? track.coverAssetPath,
+                  width: 52,
+                  height: 52,
+                  borderRadius: BorderRadius.circular(10),
+                  placeholder: Icon(Icons.music_note, color: palette.textMuted),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      playback.title,
+                      track.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: palette.textPrimary,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      playback.artistName,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: palette.textSecondary,
+                    if (track.artistDisplay.isNotEmpty)
+                      Text(
+                        track.artistDisplay,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: palette.textSecondary,
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                   ],
                 ),
               ),
-              Icon(Icons.play_circle_outline_rounded, color: palette.accent),
+              Icon(Icons.play_circle_outline, color: palette.accent),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _placeholder(AppColorPalette palette) {
-    return Container(
-      color: palette.primaryDark.withValues(alpha: 0.45),
-      alignment: Alignment.center,
-      child: Icon(Icons.person_rounded, color: palette.textMuted),
     );
   }
 }

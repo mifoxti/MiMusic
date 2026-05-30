@@ -11,6 +11,7 @@ import '../../core/l10n/app_localization.dart';
 import '../../core/platform/cover_pick_save.dart';
 import '../../core/studio/album.dart';
 import '../../core/network/albums_api.dart';
+import '../../core/network/tracks_api.dart';
 import '../../core/network/tracks_upload_api.dart';
 import '../../core/studio/studio_constants.dart';
 import '../../core/studio/studio_repository.dart';
@@ -494,9 +495,25 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
     }
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final title = _titleCtrl.text.trim();
     final artist = _artistCtrl.text.trim();
+    if (_serverTrackId != null && _serverLoggedIn) {
+      try {
+        await TracksApi().updateTrackMetadata(
+          trackId: _serverTrackId!,
+          title: title.isEmpty ? null : title,
+          artist: artist.isEmpty ? null : artist,
+        );
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.t('studio.serverUploadFail'))),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
     Navigator.pop(
       context,
       (

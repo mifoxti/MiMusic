@@ -87,7 +87,40 @@ class AlbumTrackEntryRemote {
   }
 }
 
+class MyAlbumListItemRemote {
+  const MyAlbumListItemRemote({
+    required this.id,
+    required this.title,
+    required this.isPublic,
+    required this.trackCount,
+  });
+
+  final int id;
+  final String? title;
+  final bool? isPublic;
+  final int trackCount;
+
+  factory MyAlbumListItemRemote.fromJson(Map<String, dynamic> j) {
+    return MyAlbumListItemRemote(
+      id: (j['id'] as num).toInt(),
+      title: j['title'] as String?,
+      isPublic: j['isPublic'] as bool?,
+      trackCount: (j['trackCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class AlbumsApi {
+  Future<List<MyAlbumListItemRemote>> fetchMyAlbums() async {
+    final dio = await createAuthenticatedDio();
+    final res = await dio.get<List<dynamic>>('/me/albums');
+    final data = res.data;
+    if (data == null) return [];
+    return data
+        .map((e) => MyAlbumListItemRemote.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
   Future<int> createAlbum({
     required String title,
     required List<String> genreSlugs,

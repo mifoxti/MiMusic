@@ -14,7 +14,6 @@ import '../../core/social/colisten_controller.dart';
 import '../../core/social/listening_room_session.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../features/friends/data/repositories/mock_friends_repository.dart';
 import '../../features/friends/data/repositories/remote_friends_repository.dart';
 import '../../features/friends/domain/entities/friend_incoming_request.dart';
 import '../../features/friends/domain/entities/friend_listening_state.dart';
@@ -81,12 +80,11 @@ class _FriendsPageState extends State<FriendsPage> {
       }
       final acc = await AuthSessionStore.readAccount();
       if (acc?.sessionToken.trim().isEmpty ?? true) {
-        final mock = MockFriendsRepository();
-        final data = await mock.getFriendsListening();
         if (!mounted) return;
         setState(() {
-          _friends = data;
+          _friends = const [];
           _incoming = const [];
+          _error = context.t('friends.loginRequired');
           _loading = false;
         });
         return;

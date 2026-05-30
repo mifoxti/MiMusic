@@ -29,6 +29,7 @@ import 'friends_page.dart';
 import 'notifications_page.dart';
 import 'playlists_page.dart';
 import 'settings_page.dart';
+import 'my_albums_page.dart';
 import 'studio_page.dart';
 import 'thoughts_page.dart';
 import 'open_rooms_page.dart';
@@ -408,6 +409,24 @@ class _ProfilePageState extends State<ProfilePage> {
                         ShellMaterialPageRoute<void>(
                           builder: (_) => OpenRoomsPage(
                             currentUsername: _profileNickname,
+                            audioPlayerService: widget.audioPlayerService,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSectionCard(
+                    palette,
+                    title: context.t('albums.myTitle'),
+                    subtitle: Localizations.localeOf(context).languageCode == 'en'
+                        ? 'Albums on the server'
+                        : 'Альбомы на сервере',
+                    icon: Icons.library_music_rounded,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        ShellMaterialPageRoute<void>(
+                          builder: (_) => MyAlbumsPage(
                             audioPlayerService: widget.audioPlayerService,
                           ),
                         ),

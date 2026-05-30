@@ -1,9 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/widgets/cover_image.dart';
+import '../../../../core/widgets/track_cover.dart';
 
 /// Горизонтальная карточка-кнопка («Для вас», «Чарты») с аватарками слева направо с наложением.
 class NavCardButton extends StatelessWidget {
@@ -12,11 +16,14 @@ class NavCardButton extends StatelessWidget {
     required this.title,
     required this.onTap,
     this.avatarColors = const [Color(0xFF5C4A50), Color(0xFF4A3D42)],
+    this.coverSources = const [],
   });
 
   final String title;
   final VoidCallback onTap;
   final List<Color> avatarColors;
+  /// До двух обложек: URL или байты (base64 с API).
+  final List<dynamic> coverSources;
 
   @override
   Widget build(BuildContext context) {
@@ -75,6 +82,7 @@ class NavCardButton extends StatelessWidget {
     const radius = 18.0;
     const overlap = 14.0;
     const totalWidth = radius * 2 + (radius * 2 - overlap);
+    final sources = coverSources.take(2).toList();
     return SizedBox(
       width: totalWidth,
       height: radius * 2,
@@ -84,33 +92,80 @@ class NavCardButton extends StatelessWidget {
           Positioned(
             left: 0,
             top: 0,
-            child: Container(
-              width: radius * 2,
-              height: radius * 2,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: avatarColors[0].withValues(alpha: 0.7),
-                boxShadow: _avatarShadow,
-              ),
-              child: const Icon(Icons.person, color: Colors.white70, size: 20),
+            child: _miniCover(
+              sources.isNotEmpty ? sources[0] : null,
+              radius,
+              avatarColors[0],
             ),
           ),
           Positioned(
             left: radius * 2 - overlap,
             top: 0,
-            child: Container(
-              width: radius * 2,
-              height: radius * 2,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: (avatarColors.length > 1 ? avatarColors[1] : avatarColors[0])
-                    .withValues(alpha: 0.7),
-                boxShadow: _avatarShadow,
-              ),
-              child: const Icon(Icons.person, color: Colors.white70, size: 20),
+            child: _miniCover(
+              sources.length > 1 ? sources[1] : null,
+              radius,
+              avatarColors.length > 1 ? avatarColors[1] : avatarColors[0],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _miniCover(
+    dynamic source,
+    double radius,
+    Color fallback,
+  ) {
+    final placeholder = Container(
+      color: fallback.withValues(alpha: 0.7),
+      alignment: Alignment.center,
+      child: const Icon(Icons.music_note_rounded, color: Colors.white70, size: 20),
+    );
+    if (source == null) {
+      return Container(
+        width: radius * 2,
+        height: radius * 2,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: fallback.withValues(alpha: 0.7),
+          boxShadow: _avatarShadow,
+        ),
+        child: const Icon(Icons.music_note_rounded, color: Colors.white70, size: 20),
+      );
+    }
+    if (source is String && source.trim().isEmpty) {
+      return Container(
+        width: radius * 2,
+        height: radius * 2,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: fallback.withValues(alpha: 0.7),
+          boxShadow: _avatarShadow,
+        ),
+        child: const Icon(Icons.music_note_rounded, color: Colors.white70, size: 20),
+      );
+    }
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      decoration: const BoxDecoration(shape: BoxShape.circle, boxShadow: _avatarShadow),
+      child: ClipOval(
+        child: source is Uint8List || source is List<int>
+            ? buildTrackCover(
+                coverSource: source,
+                width: radius * 2,
+                height: radius * 2,
+                borderRadius: BorderRadius.circular(radius),
+                placeholder: placeholder,
+              )
+            : buildCoverImage(
+                imageUrl: source as String,
+                width: radius * 2,
+                height: radius * 2,
+                borderRadius: BorderRadius.circular(radius),
+                placeholder: placeholder,
+              ),
       ),
     );
   }

@@ -14,7 +14,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
 import '../../core/player/player_dock_host.dart';
 
-/// Экран истории прослушивания (сейчас данные из [ListeningHistoryRepository] в памяти).
+/// Экран истории прослушивания ([GET /me/listening-history], события в PostgreSQL).
 class ListeningHistoryPage extends StatefulWidget {
   const ListeningHistoryPage({
     super.key,

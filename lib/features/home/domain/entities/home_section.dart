@@ -1,4 +1,5 @@
 import 'friend_playback.dart';
+import 'home_recommended_track.dart';
 import 'listening_friend.dart';
 import 'recommended_playlist.dart';
 import 'release_item.dart';
@@ -13,6 +14,7 @@ class HomeSection {
     this.featuredTrackTitle,
     this.featuredTrackCoverAsset,
     this.recommendedTrackAssetPaths = const [],
+    this.recommendedServerTracks = const [],
     this.recommendedPlaylists = const [],
     this.recommendedArtists = const [],
     this.recommendedAlbums = const [],
@@ -27,6 +29,7 @@ class HomeSection {
   /// Путь к обложке текущего трека в мини-плеере (например, assets/images/cover.png).
   final String? featuredTrackCoverAsset;
   final List<String> recommendedTrackAssetPaths;
+  final List<HomeRecommendedTrack> recommendedServerTracks;
   final List<RecommendedPlaylist> recommendedPlaylists;
   final List<ListeningFriend> recommendedArtists;
   final List<ReleaseItem> recommendedAlbums;

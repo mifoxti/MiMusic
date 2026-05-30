@@ -19,7 +19,9 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
 import 'studio_album_detail_page.dart';
+import 'studio_artist_stats_page.dart';
 import 'studio_editor_pages.dart';
+import 'studio_track_stats_page.dart';
 import 'studio_ui_helpers.dart';
 
 /// Страница «Студия»: создание, редактирование и удаление альбомов и треков.
@@ -56,6 +58,7 @@ class _StudioPageState extends State<StudioPage> {
   List<Track> _tracks = [];
   List<String> _customPaths = [];
   Map<String, TrackMetadataOverride> _overrides = {};
+  Map<int, int> _playCountByServerId = {};
   bool _loading = true;
 
   @override
@@ -98,6 +101,7 @@ class _StudioPageState extends State<StudioPage> {
     }
 
     final serverTracks = <Track>[];
+    final playCounts = <int, int>{};
     final acc = await AuthSessionStore.readAccount();
     final loggedIn = acc != null && acc.sessionToken.trim().isNotEmpty;
     if (loggedIn && mounted) {
@@ -108,6 +112,7 @@ class _StudioPageState extends State<StudioPage> {
       );
       if (remote != null) {
         for (final item in remote) {
+          playCounts[item.id] = item.playCount;
           if (linkedServerIds.contains(item.id)) continue;
           serverTracks.add(item.toTrack());
         }
@@ -119,9 +124,42 @@ class _StudioPageState extends State<StudioPage> {
       _albums = albums;
       _overrides = overrides;
       _customPaths = customPaths;
-      _tracks = [...customTracks, ...serverTracks];
+      _playCountByServerId = playCounts;
+      _tracks = [...serverTracks, ...customTracks];
       _loading = false;
     });
+  }
+
+  void _openArtistStats() {
+    Navigator.of(context).push(
+      ShellMaterialPageRoute<void>(
+        builder: (_) => StudioArtistStatsPage(
+          nickname: widget.currentUserNickname,
+        ),
+      ),
+    );
+  }
+
+  int? _serverTrackId(Track track) {
+    return TracksApi().resolveServerTrackId(
+      assetPath: track.assetPath,
+      audioFilePath: track.audioFilePath,
+      metadataServerTrackId: _overrides[track.assetPath]?.serverTrackId,
+    );
+  }
+
+  void _openTrackStats(Track track) {
+    final id = _serverTrackId(track);
+    if (id == null) return;
+    Navigator.of(context).push(
+      ShellMaterialPageRoute<void>(
+        builder: (_) => StudioTrackStatsPage(
+          trackId: id,
+          trackTitle: track.title,
+          artist: track.artistDisplay.isEmpty ? null : track.artistDisplay,
+        ),
+      ),
+    );
   }
 
   Track _trackWithOverrides(Track t) {
@@ -185,6 +223,14 @@ class _StudioPageState extends State<StudioPage> {
               onPressed: () => Navigator.of(context).pop(),
               color: palette.textPrimary,
             ),
+            actions: [
+              IconButton(
+                tooltip: context.t('studio.stats.open'),
+                icon: const Icon(Icons.insights_rounded),
+                onPressed: _openArtistStats,
+                color: palette.textPrimary,
+              ),
+            ],
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(54),
               child: Padding(
@@ -227,11 +273,14 @@ class _StudioPageState extends State<StudioPage> {
                       tracks: _tracks,
                       overrides: _overrides,
                       customPaths: _customPaths,
+                      playCountByServerId: _playCountByServerId,
                       trackWithOverrides: _trackWithOverrides,
+                      serverTrackId: _serverTrackId,
                       onRefresh: () => unawaited(_loadFromUser()),
                       onAddTrack: _addTrack,
                       onEditTrack: _editTrack,
                       onDeleteTrack: _deleteTrack,
+                      onOpenTrackStats: _openTrackStats,
                       repo: _repo,
                     ),
                     _AlbumsTab(
@@ -342,7 +391,30 @@ class _StudioPageState extends State<StudioPage> {
   Future<void> _editTrack(Track track) async {
     final result = await _showTrackDialog(track: track);
     if (result == null || !mounted) return;
-    await _repo.saveTrackMetadataOverride(result.assetPath, result.metadata);
+    final meta = result.metadata;
+    final sid = TracksApi().resolveServerTrackId(
+      assetPath: result.assetPath,
+      audioFilePath: meta.audioFilePath ?? track.audioFilePath,
+      metadataServerTrackId: meta.serverTrackId,
+    );
+    if (sid != null) {
+      try {
+        await TracksApi().updateTrackMetadata(
+          trackId: sid,
+          title: meta.title,
+          artist: meta.displayArtist.isNotEmpty ? meta.displayArtist : meta.artist,
+        );
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.t('studio.serverUploadFail'))),
+        );
+        return;
+      }
+      await _repo.saveTrackMetadataOverride(result.assetPath, null);
+    } else {
+      await _repo.saveTrackMetadataOverride(result.assetPath, meta);
+    }
     _load();
   }
 
@@ -539,11 +611,14 @@ class _TracksTab extends StatelessWidget {
     required this.tracks,
     required this.overrides,
     required this.customPaths,
+    required this.playCountByServerId,
     required this.trackWithOverrides,
+    required this.serverTrackId,
     required this.onRefresh,
     required this.onAddTrack,
     required this.onEditTrack,
     required this.onDeleteTrack,
+    required this.onOpenTrackStats,
     required this.repo,
   });
 
@@ -552,12 +627,27 @@ class _TracksTab extends StatelessWidget {
   final List<Track> tracks;
   final Map<String, TrackMetadataOverride> overrides;
   final List<String> customPaths;
+  final Map<int, int> playCountByServerId;
   final Track Function(Track) trackWithOverrides;
+  final int? Function(Track) serverTrackId;
   final VoidCallback onRefresh;
   final Future<void> Function() onAddTrack;
   final Future<void> Function(Track) onEditTrack;
   final Future<void> Function(Track) onDeleteTrack;
+  final void Function(Track) onOpenTrackStats;
   final StudioRepository repo;
+
+  String _playsLabel(BuildContext context, Track track) {
+    final sid = serverTrackId(track);
+    if (sid == null) return '—';
+    final n = playCountByServerId[sid] ?? 0;
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
+    if (n >= 1000) {
+      final k = (n / 1000).toStringAsFixed(1);
+      return isEn ? '${k}K plays' : '$k тыс. прослушиваний';
+    }
+    return isEn ? '$n plays' : '$n прослушиваний';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -625,6 +715,18 @@ class _TracksTab extends StatelessWidget {
                           ],
                         ),
                       ],
+                      const SizedBox(height: 2),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.headphones_rounded, size: 12, color: palette.textMuted),
+                          const SizedBox(width: 4),
+                          Text(
+                            _playsLabel(context, track),
+                            style: TextStyle(fontSize: 11, color: palette.textSecondary),
+                          ),
+                        ],
+                      ),
                       if (overrides[track.assetPath]?.genres.isNotEmpty ?? false) ...[
                         const SizedBox(height: 4),
                         Wrap(
@@ -642,10 +744,16 @@ class _TracksTab extends StatelessWidget {
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (v) async {
+                      if (v == 'stats') onOpenTrackStats(track);
                       if (v == 'edit') await onEditTrack(track);
                       if (v == 'delete') await onDeleteTrack(track);
                     },
                     itemBuilder: (_) => [
+                      if (serverTrackId(track) != null)
+                        PopupMenuItem(
+                          value: 'stats',
+                          child: Text(context.t('studio.stats.trackMenu')),
+                        ),
                       PopupMenuItem(value: 'edit', child: Text(context.t('studio.edit'))),
                       PopupMenuItem(value: 'delete', child: Text(context.t('studio.delete'))),
                     ],

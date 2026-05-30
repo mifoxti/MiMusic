@@ -1,69 +1,103 @@
+import '../../../../core/auth/auth_session_store.dart';
 import '../../../../core/network/colisten_api.dart';
 import '../../../../core/network/friends_api.dart';
 import '../../../../core/network/playlists_api.dart';
+import '../../../../core/network/recommendations_api.dart';
 import '../../../../core/network/tracks_api.dart';
-import '../../../../core/auth/auth_session_store.dart';
 import '../../domain/entities/friend_playback.dart';
 import '../../domain/entities/home_section.dart';
+import '../../domain/entities/home_recommended_track.dart';
 import '../../domain/entities/listening_friend.dart';
 import '../../domain/entities/recommended_playlist.dart';
 import '../../domain/entities/release_item.dart';
 import '../../domain/repositories/home_repository.dart';
 
-/// Реализация репозитория главного экрана (заглушка с мок-данными).
+/// Главная: друзья в colisten, релизы и рекомендации с API при входе.
 class HomeRepositoryImpl implements HomeRepository {
   @override
   Future<HomeSection> getHomeSection() async {
     final liveRoom = await _loadFriendListeningRoom();
-    // Сейчас — картинки из assets для превью. Позже заменим на URL с сервера.
+    final acc = await AuthSessionStore.readAccount();
+    final loggedIn =
+        acc != null && acc.sessionToken.trim().isNotEmpty && acc.userId != null;
+
+    var latestReleases = const <ReleaseItem>[];
+    var recommendedServerTracks = const <HomeRecommendedTrack>[];
+    var recommendedPlaylists = const <RecommendedPlaylist>[];
+    var recommendedArtists = const <ListeningFriend>[];
+
+    if (loggedIn) {
+      try {
+        final catalog = await TracksApi().fetchTracks(limit: 8);
+        latestReleases = catalog
+            .map(
+              (t) => ReleaseItem(
+                title: t.title,
+                coverUrl: t.coverUrl(),
+                trackId: t.id,
+                artist: t.artist,
+              ),
+            )
+            .toList();
+      } catch (_) {}
+
+      try {
+        final rec = await RecommendationsApi().fetchRecommendedTracks(limit: 12);
+        recommendedServerTracks = rec
+            .map(
+              (t) => HomeRecommendedTrack(
+                id: t.id,
+                title: t.title,
+                artist: t.artist,
+                coverUrl: t.coverUrl(),
+                score: t.score,
+              ),
+            )
+            .toList();
+      } catch (_) {}
+
+      try {
+        final public = await PlaylistsApi().fetchPublicPlaylists(limit: 8);
+        recommendedPlaylists = public
+            .map(
+              (p) => RecommendedPlaylist(
+                id: 'srv:${p.id}',
+                title: p.title ?? 'Playlist',
+                coverUrl: playlistCoverUrl(p.id),
+              ),
+            )
+            .toList();
+        final myUserId = acc.userId;
+        final seen = <int>{};
+        recommendedArtists = public
+            .where((p) => myUserId == null || p.ownerUserId != myUserId)
+            .where((p) => seen.add(p.ownerUserId))
+            .take(6)
+            .map(
+              (p) => ListeningFriend(
+                username: p.ownerNickname ?? 'user_${p.ownerUserId}',
+                avatarUrl: userAvatarUrl(p.ownerUserId),
+                userId: p.ownerUserId,
+              ),
+            )
+            .toList();
+      } catch (_) {}
+    }
+
+    final historyArtists = latestReleases
+        .map((e) => (e.artist ?? '').trim())
+        .where((e) => e.isNotEmpty)
+        .take(3)
+        .toList();
+
     return HomeSection(
-      historyArtists: const ['Sibewest', 'ETERNVL SVDNESS', 'ENSKA'],
+      historyArtists: historyArtists,
       friendPlayback: liveRoom?.playback,
       listeningFriends: liveRoom?.friends ?? const [],
-      latestReleases: const [
-        ReleaseItem(
-          title: 'Koc Bloem Care, Pt. 1',
-          coverUrl: 'assets/images/stardust.png',
-        ),
-        ReleaseItem(title: 'Release 2', coverUrl: 'assets/images/identity.png'),
-        ReleaseItem(title: 'Release 3', coverUrl: 'assets/images/geoxor.png'),
-      ],
-      featuredTrackTitle: 'your fears',
-      featuredTrackCoverAsset: 'assets/images/xploson.png',
-      recommendedTrackAssetPaths: const [
-        'assets/music/Cartoon - Why We Lose - Cartoon.mp3',
-        'assets/music/Gotarux - Lost Control.mp3',
-      ],
-      recommendedPlaylists: const [
-        RecommendedPlaylist(
-          id: 'pl_lofi_evening',
-          title: 'Lo-Fi Evening',
-          coverUrl: 'assets/images/identity.png',
-        ),
-        RecommendedPlaylist(
-          id: 'pl_night_drive',
-          title: 'Night Drive',
-          coverUrl: 'assets/images/stardust.png',
-        ),
-      ],
-      recommendedArtists: const [
-        ListeningFriend(
-          username: 'alexwave',
-          avatarUrl: 'assets/images/identity.png',
-        ),
-        ListeningFriend(
-          username: 'lofi_nora',
-          avatarUrl: 'assets/images/geoxor.png',
-        ),
-        ListeningFriend(
-          username: 'nightcore_anna',
-          avatarUrl: 'assets/images/stardust.png',
-        ),
-      ],
-      recommendedAlbums: const [
-        ReleaseItem(title: 'SilverDust', coverUrl: 'assets/images/geoxor.png'),
-        ReleaseItem(title: 'Heal her', coverUrl: 'assets/images/heal_her.png'),
-      ],
+      latestReleases: latestReleases,
+      recommendedServerTracks: recommendedServerTracks,
+      recommendedPlaylists: recommendedPlaylists,
+      recommendedArtists: recommendedArtists,
       isPlaying: true,
     );
   }

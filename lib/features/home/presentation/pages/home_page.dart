@@ -11,7 +11,11 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/history/listening_history_repository.dart';
 import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/network/server_connectivity.dart';
+import '../../../../core/network/charts_api.dart';
+import '../../../../core/network/recommendations_api.dart';
 import '../../../../core/network/tracks_api.dart';
+import '../../../../core/widgets/dual_track_cover_cluster.dart';
+import '../../domain/entities/home_recommended_track.dart';
 import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/social/colisten_controller.dart';
@@ -64,6 +68,7 @@ class _HomePageState extends State<HomePage> {
   List<Track> _localTracks = [];
   List<ServerTrackListItem> _serverTracks = [];
   String? _serverTracksError;
+  List<Track> _chartNavTracks = const [];
   bool _isLoading = true;
   Timer? _homeSectionRefreshTimer;
 
@@ -150,14 +155,22 @@ class _HomePageState extends State<HomePage> {
           await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
         }
       }
+      var chartTracks = const <Track>[];
+      try {
+        final chartRows = await ChartsApi().fetchTopTracks(limit: 12);
+        chartTracks = chartRows.map((r) => r.toTrack()).toList();
+      } catch (_) {}
       if (mounted) {
+        final section = results[0] as HomeSection;
         setState(() {
-          _section = results[0] as HomeSection;
+          _section = section;
           _localTracks = results[1] as List<Track>;
           _serverTracks = remote;
           _serverTracksError = remoteErr;
+          _chartNavTracks = chartTracks;
           _isLoading = false;
         });
+        unawaited(_postHomeRecommendationImpressions(section));
       }
     } catch (e) {
       if (fromUser && mounted) {
@@ -183,9 +196,38 @@ class _HomePageState extends State<HomePage> {
     await service.playTrack(first, queue: queue);
   }
 
+  List<dynamic> _navCoverSources(List<Track> tracks) {
+    return pickTwoTrackCoverSources(tracks).map((e) => e.source).toList();
+  }
+
+  Future<void> _postHomeRecommendationImpressions(HomeSection section) async {
+    final acc = await AuthSessionStore.readAccount();
+    if (acc == null || acc.sessionToken.isEmpty) return;
+    final tracks = section.recommendedServerTracks;
+    if (tracks.isEmpty) return;
+    try {
+      await RecommendationsApi().postEvents(
+        tracks
+            .map(
+              (t) => <String, dynamic>{
+                'surface': 'home',
+                'targetType': 'track',
+                'targetId': t.id,
+                'interaction': 'impression',
+                'scorePresent': t.score,
+              },
+            )
+            .toList(),
+      );
+    } catch (_) {}
+  }
+
   List<Track> _resolveRecommendedTracks(HomeSection section) {
+    if (section.recommendedServerTracks.isNotEmpty) {
+      return section.recommendedServerTracks.map(_trackFromHomeRec).toList();
+    }
     if (section.recommendedTrackAssetPaths.isEmpty) {
-      return _localTracks.take(8).toList();
+      return _serverTracks.map(_trackFromServerItem).take(8).toList();
     }
     final byPath = {for (final t in _localTracks) t.assetPath: t};
     final result = <Track>[];
@@ -193,8 +235,18 @@ class _HomePageState extends State<HomePage> {
       final track = byPath[path];
       if (track != null) result.add(track);
     }
-    if (result.isEmpty) return _localTracks.take(8).toList();
+    if (result.isEmpty) {
+      return _serverTracks.map(_trackFromServerItem).take(8).toList();
+    }
     return result;
+  }
+
+  Track _trackFromHomeRec(HomeRecommendedTrack t) {
+    return ServerTrackListItem(
+      id: t.id,
+      title: t.title,
+      artist: t.artist,
+    ).toTrack();
   }
 
   void _openCharts(BuildContext context) {
@@ -211,7 +263,6 @@ class _HomePageState extends State<HomePage> {
       ShellMaterialPageRoute<void>(
         builder: (_) => ForYouPage(
           audioPlayerService: widget.audioPlayerService,
-          getHomeSectionUseCase: widget.getHomeSectionUseCase,
         ),
       ),
     );
@@ -348,8 +399,20 @@ class _HomePageState extends State<HomePage> {
     required String title,
     String? coverUrl,
     String? artistName,
+    int? trackId,
   }) {
     Future<void> onListenTap() async {
+      if (trackId != null) {
+        try {
+          final item = await TracksApi().fetchTrackById(trackId);
+          final track = _trackFromServerItem(item);
+          final queue = _serverTracks.isNotEmpty
+              ? _serverTracks.map(_trackFromServerItem).toList()
+              : [track];
+          await widget.audioPlayerService.playTrack(track, queue: queue);
+        } catch (_) {}
+        return;
+      }
       if (_localTracks.isEmpty) return;
       final normalized = title.toLowerCase().trim();
       final matched = _localTracks.where((t) {
@@ -471,6 +534,9 @@ class _HomePageState extends State<HomePage> {
                             Color(0xFF5C4A50),
                             Color(0xFF4A3D42),
                           ],
+                          coverSources: _navCoverSources(
+                            _resolveRecommendedTracks(section),
+                          ),
                         ),
                         const SizedBox(width: 12),
                         NavCardButton(
@@ -480,6 +546,7 @@ class _HomePageState extends State<HomePage> {
                             Color(0xFFC45C3E),
                             Color(0xFF8B3A2E),
                           ],
+                          coverSources: _navCoverSources(_chartNavTracks),
                         ),
                       ],
                     ),
@@ -579,9 +646,11 @@ class _HomePageState extends State<HomePage> {
                         context,
                         title: item.title,
                         coverUrl: item.coverUrl,
-                        artistName: section.recommendedArtists.isNotEmpty
-                            ? section.recommendedArtists.first.username
-                            : null,
+                        artistName: item.artist ??
+                            (section.recommendedArtists.isNotEmpty
+                                ? section.recommendedArtists.first.username
+                                : null),
+                        trackId: item.trackId,
                       ),
                     ),
                   ),

@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -18,27 +19,40 @@ class ServerConnectivity {
 
   bool get lastKnownOnline => _lastOnline ?? true;
 
+  /// Сбросить кэш «офлайн» (например после смены Wi‑Fi или запуска бэка).
+  void resetCache() {
+    _lastOnline = null;
+    _lastCheckedAt = null;
+  }
+
   Future<bool> check({bool force = false}) async {
     final now = DateTime.now();
     if (!force &&
+        _lastOnline != null &&
         _lastCheckedAt != null &&
         now.difference(_lastCheckedAt!) < const Duration(seconds: 6)) {
-      return _lastOnline ?? false;
+      return _lastOnline!;
     }
     _lastCheckedAt = now;
+    final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
     try {
-      final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
       final dio = Dio(
         BaseOptions(
           baseUrl: base,
-          connectTimeout: const Duration(seconds: 4),
-          receiveTimeout: const Duration(seconds: 4),
+          connectTimeout: const Duration(seconds: 6),
+          receiveTimeout: const Duration(seconds: 6),
         ),
       );
       await dio.get<dynamic>('/');
       _lastOnline = true;
-    } catch (_) {
+      if (kDebugMode) {
+        debugPrint('ServerConnectivity: OK $base');
+      }
+    } catch (e) {
       _lastOnline = false;
+      if (kDebugMode) {
+        debugPrint('ServerConnectivity: unreachable $base — $e');
+      }
     }
     return _lastOnline!;
   }

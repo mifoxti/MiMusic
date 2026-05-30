@@ -2,7 +2,11 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:flutter/foundation.dart';
+
 import '../../core/l10n/app_localization.dart';
+import '../../core/network/api_config.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/theme/app_theme.dart';
 
 /// Стеклянный bottom sheet: нет связи с сервером (красная иконка Wi‑Fi).
@@ -86,6 +90,27 @@ Future<void> showGlassNoConnectionSheet(BuildContext context) {
                               fontSize: 13,
                               height: 1.35,
                             ),
+                          ),
+                          if (kDebugMode) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'API: ${ApiConfig.baseUrl}',
+                              style: TextStyle(
+                                color: palette.textMuted,
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          TextButton.icon(
+                            onPressed: () async {
+                              ServerConnectivity.instance.resetCache();
+                              final ok = await ServerConnectivity.instance.check(force: true);
+                              if (ok && ctx.mounted) Navigator.pop(ctx);
+                            },
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: Text(ctx.t('network.retry')),
                           ),
                         ],
                       ),
