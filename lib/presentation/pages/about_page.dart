@@ -10,6 +10,8 @@ import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_theme.dart';
+import '../widgets/glass_panel.dart';
+import '../widgets/settings_glass_scaffold.dart';
 
 /// Статический экран «О приложении»: версия, ссылки, скрытая пасхалка.
 class AboutPage extends StatefulWidget {
@@ -168,64 +170,12 @@ class _AboutPageState extends State<AboutPage> {
         ? '…'
         : '${_packageInfo!.version} (${_packageInfo!.buildNumber})';
 
-    return Scaffold(
-      backgroundColor: palette.gradientStart,
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              palette.gradientStart,
-              palette.gradientMiddle,
-              palette.gradientEnd,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 20,
-                        color: palette.textPrimary,
-                      ),
-                      style: IconButton.styleFrom(
-                        backgroundColor: palette.cardBackground.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      context.t('about.title'),
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    const SizedBox(width: 48),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(
-                    20,
-                    8,
-                    20,
-                    AppConstants.shellBottomInsetWithMiniPlayer,
-                  ),
-                  child: Column(
-                    children: [
+    return SettingsGlassScaffold(
+      title: context.t('about.title'),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+        child: Column(
+          children: [
                       const SizedBox(height: 8),
                       GestureDetector(
                         onTap: _onSecretTap,
@@ -283,32 +233,11 @@ class _AboutPageState extends State<AboutPage> {
                         ),
                       ),
                       const SizedBox(height: 28),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: palette.cardBackground.withValues(alpha: 0.95),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
+                      GlassPanel(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              context.t('about.links'),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: palette.textMuted,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
+                            GlassSectionLabel(context.t('about.links')),
                             const SizedBox(height: 12),
                             _LinkRow(
                               palette: palette,
@@ -349,12 +278,7 @@ class _AboutPageState extends State<AboutPage> {
                           color: palette.textMuted,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );

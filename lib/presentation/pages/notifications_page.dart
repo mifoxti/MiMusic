@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:dio/dio.dart';
@@ -40,6 +41,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   bool _loading = true;
   String? _error;
   bool _loggedIn = false;
+  final Set<int> _deletingIds = {};
 
   @override
   void initState() {
@@ -91,11 +93,103 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
-  Future<void> _markRead(ServerNotificationDto n) async {
+  void _removeLocally(int id) {
+    if (!mounted) return;
+    setState(() {
+      _items = _items.where((e) => e.id != id).toList();
+      _deletingIds.remove(id);
+    });
+    widget.onUnreadChanged?.call();
+  }
+
+  Future<void> _deleteOne(ServerNotificationDto n) async {
+    final id = n.id;
+    if (_deletingIds.contains(id)) return;
+    _deletingIds.add(id);
+    _removeLocally(id);
     try {
-      await NotificationsApi().markRead(n.id);
+      await NotificationsApi().deleteNotification(id);
+    } catch (e) {
+      if (!mounted) return;
+      await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
       await _load();
-    } catch (_) {}
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    if (!await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+      return;
+    }
+    try {
+      await NotificationsApi().markAllRead();
+      if (!mounted) return;
+      setState(() {
+        _items = _items
+            .map(
+              (e) => ServerNotificationDto(
+                id: e.id,
+                type: e.type,
+                actorUserId: e.actorUserId,
+                actorNickname: e.actorNickname,
+                read: true,
+                createdAt: e.createdAt,
+                entityRef: e.entityRef,
+                entityId: e.entityId,
+                payloadJson: e.payloadJson,
+              ),
+            )
+            .toList();
+      });
+      widget.onUnreadChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+    }
+  }
+
+  Future<void> _confirmDeleteAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final palette = AppPaletteExtension.of(ctx).palette;
+        return AlertDialog(
+          backgroundColor: palette.cardBackground,
+          title: Text(context.t('notifications.deleteAllConfirmTitle')),
+          content: Text(
+            context.t('notifications.deleteAllConfirmBody'),
+            style: TextStyle(color: palette.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(context.t('common.cancel')),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                context.t('notifications.deleteAllConfirm'),
+                style: TextStyle(color: palette.accent),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    if (!await ServerConnectivity.instance.guardUserNetworkAction(context)) {
+      return;
+    }
+    final snapshot = List<ServerNotificationDto>.from(_items);
+    setState(() => _items = []);
+    widget.onUnreadChanged?.call();
+    try {
+      await NotificationsApi().deleteAll();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _items = snapshot);
+      widget.onUnreadChanged?.call();
+      await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+    }
   }
 
   Future<void> _onAccept(ServerNotificationDto n) async {
@@ -206,16 +300,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
           backgroundColor: Colors.transparent,
           title: Text(context.t('notifications.title')),
           actions: [
-            if (_loggedIn && _items.any((e) => !e.read))
+            if (_loggedIn && _items.isNotEmpty) ...[
+              if (_items.any((e) => !e.read))
+                TextButton(
+                  onPressed: _markAllRead,
+                  child: Text(context.t('notifications.markAllRead')),
+                ),
               TextButton(
-                onPressed: () async {
-                  try {
-                    await NotificationsApi().markAllRead();
-                    await _load();
-                  } catch (_) {}
-                },
-                child: Text(context.t('notifications.markAllRead')),
+                onPressed: _confirmDeleteAll,
+                child: Text(context.t('notifications.deleteAll')),
               ),
+            ],
           ],
         ),
         body: _loading
@@ -257,19 +352,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   itemBuilder: (context, index) {
                     final item = _items[index];
                     return Dismissible(
-                      key: ValueKey('n-${item.id}'),
+                      key: ValueKey('notification-${item.id}'),
                       direction: DismissDirection.horizontal,
                       background: _DismissBackground(
                         palette: palette,
                         alignment: Alignment.centerLeft,
-                        icon: Icons.done_all_rounded,
+                        icon: Icons.delete_outline_rounded,
+                        destructive: true,
                       ),
                       secondaryBackground: _DismissBackground(
                         palette: palette,
                         alignment: Alignment.centerRight,
-                        icon: Icons.done_all_rounded,
+                        icon: Icons.delete_outline_rounded,
+                        destructive: true,
                       ),
-                      onDismissed: (_) => _markRead(item),
+                      onDismissed: (_) => unawaited(_deleteOne(item)),
                       child: _ServerNotificationCard(
                         item: item,
                         palette: palette,
@@ -301,22 +398,28 @@ class _DismissBackground extends StatelessWidget {
     required this.palette,
     required this.alignment,
     required this.icon,
+    this.destructive = false,
   });
 
   final AppColorPalette palette;
   final Alignment alignment;
   final IconData icon;
+  final bool destructive;
 
   @override
   Widget build(BuildContext context) {
+    final bg = destructive
+        ? Colors.redAccent.withValues(alpha: 0.35)
+        : palette.accent.withValues(alpha: 0.2);
+    final fg = destructive ? Colors.red.shade900 : palette.textPrimary;
     return Container(
       alignment: alignment,
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
-        color: palette.accent.withValues(alpha: 0.2),
+        color: bg,
         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
       ),
-      child: Icon(icon, color: palette.textPrimary),
+      child: Icon(icon, color: fg),
     );
   }
 }

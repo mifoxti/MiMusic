@@ -21,6 +21,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/network/notifications_api.dart';
 import '../../core/platform/platform.dart';
 import '../../core/player/shell_route_back_guard.dart';
+import '../widgets/glass_panel.dart';
 import '../widgets/server_me_avatar.dart';
 import '../widgets/user_avatar.dart';
 import 'genre_preferences_page.dart';
@@ -247,7 +248,8 @@ class _ProfilePageState extends State<ProfilePage> {
                           profileNickname: _profileNickname,
                         ),
                         const SizedBox(width: 4),
-                        IconButton(
+                        GlassIconButton(
+                          icon: Icons.settings_rounded,
                           onPressed: () async {
                             await Navigator.of(context).push<void>(
                               ShellMaterialPageRoute<void>(
@@ -264,13 +266,6 @@ class _ProfilePageState extends State<ProfilePage> {
                             if (!context.mounted) return;
                             await widget.onShellSettingsReload();
                           },
-                          icon: const Icon(
-                            Icons.settings_rounded,
-                            color: Colors.white,
-                          ),
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.black.withValues(alpha: 0.25),
-                          ),
                         ),
                       ],
                     ),
@@ -325,36 +320,18 @@ class _ProfilePageState extends State<ProfilePage> {
                                       buttonVisibility == 0 ? 0.001 : buttonVisibility,
                                   child: Opacity(
                                     opacity: buttonVisibility,
-                                    child: Material(
-                                      color: Colors.white.withValues(alpha: 0.25),
-                                      borderRadius: BorderRadius.circular(24),
-                                      child: InkWell(
-                                        onTap: () {
-                                          Navigator.of(context).push(
-                                            ShellMaterialPageRoute<void>(
-                                              builder: (_) => ThoughtsPage(
-                                                currentUsername: _profileNickname,
-                                                audioPlayerService: widget.audioPlayerService,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                        borderRadius: BorderRadius.circular(24),
-                                        child: Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 20,
-                                            vertical: 8,
-                                          ),
-                                          child: Text(
-                                            context.t('profile.thoughts'),
-                                            style: TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.white,
+                                    child: GlassPillButton(
+                                      label: context.t('profile.thoughts'),
+                                      onTap: () {
+                                        Navigator.of(context).push(
+                                          ShellMaterialPageRoute<void>(
+                                            builder: (_) => ThoughtsPage(
+                                              currentUsername: _profileNickname,
+                                              audioPlayerService: widget.audioPlayerService,
                                             ),
                                           ),
-                                        ),
-                                      ),
+                                        );
+                                      },
                                     ),
                                   ),
                                 ),
@@ -395,8 +372,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   const SizedBox(height: 24),
                   _buildStatsSection(context, palette),
                   const SizedBox(height: 20),
-                  _buildSectionCard(
-                    palette,
+                  GlassTapCard(
                     title: Localizations.localeOf(context).languageCode == 'en'
                         ? 'Open rooms'
                         : 'Открытые комнаты',
@@ -416,8 +392,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  _buildSectionCard(
-                    palette,
+                  GlassTapCard(
                     title: context.t('albums.myTitle'),
                     subtitle: Localizations.localeOf(context).languageCode == 'en'
                         ? 'Albums on the server'
@@ -434,8 +409,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  _buildSectionCard(
-                    palette,
+                  GlassTapCard(
                     title: Localizations.localeOf(context).languageCode == 'en' ? 'Studio' : 'Студия',
                     subtitle: Localizations.localeOf(context).languageCode == 'en'
                         ? 'Create and edit albums and tracks'
@@ -453,8 +427,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  _buildSectionCard(
-                    palette,
+                  GlassTapCard(
                     title: context.t('profile.genrePrefs'),
                     subtitle: context.t('profile.genrePrefsSub'),
                     icon: Icons.tune_rounded,
@@ -533,16 +506,32 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildActionRow(BuildContext context, AppColorPalette palette) {
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        GlassHeroAction(
+          title: isEn ? 'Favorites' : 'Избранное',
+          subtitle: context.t('favorites.header'),
+          icon: Icons.favorite_rounded,
+          iconColor: palette.accent,
+          onTap: () {
+            Navigator.of(context).push(
+              ShellMaterialPageRoute<void>(
+                builder: (context) => FavoritesPage(
+                  audioPlayerService: widget.audioPlayerService,
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
-              child: _ActionCard(
+              child: GlassCompactAction(
                 icon: Icons.playlist_play_rounded,
-                label: Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Playlists'
-                    : 'Плейлисты',
+                label: isEn ? 'Playlists' : 'Плейлисты',
                 onTap: () {
                   Navigator.of(context).push(
                     ShellMaterialPageRoute<void>(
@@ -553,16 +542,13 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   );
                 },
-                palette: palette,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _ActionCard(
+              child: GlassCompactAction(
                 icon: Icons.people_rounded,
-                label: Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Friends'
-                    : 'Друзья',
+                label: isEn ? 'Friends' : 'Друзья',
                 onTap: () {
                   Navigator.of(context).push(
                     ShellMaterialPageRoute<void>(
@@ -573,51 +559,24 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   );
                 },
-                palette: palette,
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _ActionCard(
-                icon: Icons.favorite_rounded,
-                label: Localizations.localeOf(context).languageCode == 'en'
-                    ? 'Favorites'
-                    : 'Избранное',
-                onTap: () {
-                  Navigator.of(context).push(
-                    ShellMaterialPageRoute<void>(
-                      builder: (context) => FavoritesPage(
-                        audioPlayerService: widget.audioPlayerService,
-                      ),
-                    ),
-                  );
-                },
-                palette: palette,
+        GlassCompactAction(
+          icon: Icons.download_rounded,
+          label: context.t('profile.saved'),
+          onTap: () {
+            Navigator.of(context).push(
+              ShellMaterialPageRoute<void>(
+                builder: (_) => SavedPage(
+                  audioPlayerService: widget.audioPlayerService,
+                  offlineDownloads: widget.audioPlayerService.offlineDownloads,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _ActionCard(
-                icon: Icons.download_rounded,
-                label: context.t('profile.saved'),
-                onTap: () {
-                  Navigator.of(context).push(
-                    ShellMaterialPageRoute<void>(
-                      builder: (_) => SavedPage(
-                        audioPlayerService: widget.audioPlayerService,
-                        offlineDownloads: widget.audioPlayerService.offlineDownloads,
-                      ),
-                    ),
-                  );
-                },
-                palette: palette,
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ],
     );
@@ -628,140 +587,38 @@ class _ProfilePageState extends State<ProfilePage> {
       if (_statsLoading) return '…';
       return '${v ?? 0}';
     }
-    return Container(
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
+    return GlassPanel(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: palette.primaryLight.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _StatItem(value: fmt(_tracksStat), label: Localizations.localeOf(context).languageCode == 'en' ? 'tracks' : 'треков', palette: palette),
+          _StatItem(
+            value: fmt(_tracksStat),
+            label: isEn ? 'tracks' : 'треков',
+            palette: palette,
+          ),
           Container(
             width: 1,
             height: 32,
             color: palette.textMuted.withValues(alpha: 0.4),
           ),
-          _StatItem(value: fmt(_playlistsStat), label: Localizations.localeOf(context).languageCode == 'en' ? 'playlists' : 'плейлистов', palette: palette),
+          _StatItem(
+            value: fmt(_playlistsStat),
+            label: isEn ? 'playlists' : 'плейлистов',
+            palette: palette,
+          ),
           Container(
             width: 1,
             height: 32,
             color: palette.textMuted.withValues(alpha: 0.4),
           ),
-          _StatItem(value: fmt(_friendsStat), label: Localizations.localeOf(context).languageCode == 'en' ? 'friends' : 'друзей', palette: palette),
+          _StatItem(
+            value: fmt(_friendsStat),
+            label: isEn ? 'friends' : 'друзей',
+            palette: palette,
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSectionCard(
-    AppColorPalette palette, {
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: palette.primaryLight.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: palette.accent.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-                ),
-                child: Icon(icon, color: palette.accent, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: palette.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right_rounded, color: palette.textMuted, size: 24),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionCard extends StatelessWidget {
-  const _ActionCard({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    required this.palette,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final AppColorPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: palette.primaryLight.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 28, color: palette.accent),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: palette.textPrimary,
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -848,7 +705,8 @@ class _ProfileNotificationBellState extends State<_ProfileNotificationBell> {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
+    return GlassIconButton(
+      icon: Icons.notifications_rounded,
       onPressed: () async {
         await Navigator.of(context).push<void>(
           ShellMaterialPageRoute<void>(
@@ -861,22 +719,17 @@ class _ProfileNotificationBellState extends State<_ProfileNotificationBell> {
         );
         if (mounted) await _refresh();
       },
-      icon: Stack(
+      child: Stack(
         clipBehavior: Clip.none,
+        alignment: Alignment.center,
         children: [
-          const Icon(
-            Icons.notifications_rounded,
-            color: Colors.white,
-          ),
+          const Icon(Icons.notifications_rounded, color: Colors.white, size: 22),
           if (_unread > 0)
             Positioned(
               right: -6,
               top: -6,
               child: Container(
-                constraints: const BoxConstraints(
-                  minWidth: 16,
-                  minHeight: 16,
-                ),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(
                   color: Colors.redAccent,
@@ -894,9 +747,6 @@ class _ProfileNotificationBellState extends State<_ProfileNotificationBell> {
               ),
             ),
         ],
-      ),
-      style: IconButton.styleFrom(
-        backgroundColor: Colors.black.withValues(alpha: 0.25),
       ),
     );
   }

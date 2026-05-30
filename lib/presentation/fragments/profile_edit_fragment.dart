@@ -25,6 +25,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../widgets/glass_panel.dart';
 import '../widgets/glass_snack_bar.dart';
 import '../widgets/server_me_avatar.dart';
 import '../widgets/user_avatar.dart';
@@ -614,21 +615,8 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
   Widget _buildAvatarBlock(BuildContext context, AppColorPalette palette) {
     final showNewBadge = _isEditing && _avatarChangedFromInitial;
 
-    return Container(
-      width: double.infinity,
+    return GlassPanel(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            palette.accent.withValues(alpha: 0.08),
-            palette.primaryLight.withValues(alpha: 0.5),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.textMuted.withValues(alpha: 0.15)),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -876,13 +864,9 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
   }
 
   Widget _buildReadOnlyRow(AppColorPalette palette, IconData icon, String label, String value) {
-    return Container(
+    return GlassPanel(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: palette.primaryLight.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: palette.textMuted.withValues(alpha: 0.12)),
-      ),
+      margin: const EdgeInsets.only(bottom: 0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -947,15 +931,9 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
         ),
         const SizedBox(height: 12),
         if (_isEditing)
-          Container(
-            width: double.infinity,
+          GlassPanel(
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: palette.accent.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: palette.accent.withValues(alpha: 0.2)),
-            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -977,65 +955,77 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
         if (_isEditing) ...[
           _buildSectionHeader(palette, context.t('profile.edit.cardPersonal'), Icons.badge_outlined),
           const SizedBox(height: 10),
-          _buildLabeledField(
-            palette,
-            context.t('profile.edit.fieldNickname'),
-            context.t('profile.edit.fieldNicknameHint'),
-            _nickController,
-            placeholder: context.t('profile.edit.fieldNickname'),
-            errorText: _nicknameFieldTaken ? context.t('profile.edit.nicknameTaken') : null,
+          GlassPanel(
+            child: Column(
+              children: [
+                _buildLabeledField(
+                  palette,
+                  context.t('profile.edit.fieldNickname'),
+                  context.t('profile.edit.fieldNicknameHint'),
+                  _nickController,
+                  placeholder: context.t('profile.edit.fieldNickname'),
+                  errorText: _nicknameFieldTaken ? context.t('profile.edit.nicknameTaken') : null,
+                ),
+                const SizedBox(height: 16),
+                _buildLabeledField(
+                  palette,
+                  context.t('profile.edit.fieldEmail'),
+                  context.t('profile.edit.fieldEmailHint'),
+                  _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  placeholder: 'email@example.com',
+                ),
+                const SizedBox(height: 16),
+                _buildLabeledField(
+                  palette,
+                  context.t('profile.edit.fieldBio'),
+                  context.t('profile.edit.fieldBioHint'),
+                  _bioController,
+                  placeholder: context.t('profile.edit.fieldBio'),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
-          _buildLabeledField(
-            palette,
-            context.t('profile.edit.fieldEmail'),
-            context.t('profile.edit.fieldEmailHint'),
-            _emailController,
-            keyboardType: TextInputType.emailAddress,
-            placeholder: 'email@example.com',
-          ),
-          const SizedBox(height: 16),
-          _buildLabeledField(
-            palette,
-            context.t('profile.edit.fieldBio'),
-            context.t('profile.edit.fieldBioHint'),
-            _bioController,
-            placeholder: context.t('profile.edit.fieldBio'),
-          ),
-          const SizedBox(height: 20),
           _buildSectionHeader(palette, context.t('profile.edit.cardSecurity'), Icons.lock_outline_rounded),
           const SizedBox(height: 10),
-          _buildLabeledField(
-            palette,
-            context.t('profile.edit.fieldCurrentPassword'),
-            context.t('profile.edit.fieldCurrentPasswordHint'),
-            _currentPasswordController,
-            obscure: true,
-            placeholder: '••••••••',
-          ),
-          const SizedBox(height: 16),
-          _buildLabeledField(
-            palette,
-            context.t('profile.edit.fieldNewPassword'),
-            context.t('profile.edit.fieldNewPasswordHint'),
-            _newPasswordController,
-            obscure: true,
-          ),
-          const SizedBox(height: 16),
-          _buildLabeledField(
-            palette,
-            context.t('profile.edit.fieldConfirmPassword'),
-            context.t('profile.edit.fieldConfirmPasswordHint'),
-            _confirmPasswordController,
-            obscure: true,
-          ),
-          if (_passwordError != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              _passwordError!,
-              style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+          GlassPanel(
+            child: Column(
+              children: [
+                _buildLabeledField(
+                  palette,
+                  context.t('profile.edit.fieldCurrentPassword'),
+                  context.t('profile.edit.fieldCurrentPasswordHint'),
+                  _currentPasswordController,
+                  obscure: true,
+                  placeholder: '••••••••',
+                ),
+                const SizedBox(height: 16),
+                _buildLabeledField(
+                  palette,
+                  context.t('profile.edit.fieldNewPassword'),
+                  context.t('profile.edit.fieldNewPasswordHint'),
+                  _newPasswordController,
+                  obscure: true,
+                ),
+                const SizedBox(height: 16),
+                _buildLabeledField(
+                  palette,
+                  context.t('profile.edit.fieldConfirmPassword'),
+                  context.t('profile.edit.fieldConfirmPasswordHint'),
+                  _confirmPasswordController,
+                  obscure: true,
+                ),
+                if (_passwordError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _passwordError!,
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,

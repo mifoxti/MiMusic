@@ -9,6 +9,8 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_theme.dart';
+import '../widgets/glass_panel.dart';
+import '../widgets/settings_glass_scaffold.dart';
 
 /// Дискретные позиции слайдера лимита.
 /// «0» — нулевой лимит (0 байт). «∞» — [AppSettings.cacheLimitUnlimited] (-1).
@@ -284,67 +286,15 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
     final limitStepIndex = _stepIndexForLimit(_limitBytes);
 
     const ringSize = 220.0;
-    final bottomSafe = MediaQuery.paddingOf(context).bottom;
 
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              palette.gradientStart,
-              palette.gradientMiddle,
-              palette.gradientEnd,
-            ],
-          ),
+    return SettingsGlassScaffold(
+      title: context.t('cache.title'),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
         ),
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 20,
-                        color: palette.textPrimary,
-                      ),
-                      style: IconButton.styleFrom(
-                        backgroundColor: palette.cardBackground.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      context.t('cache.title'),
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    const SizedBox(width: 48),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(
-                    parent: AlwaysScrollableScrollPhysics(),
-                  ),
-                  padding: EdgeInsets.fromLTRB(
-                    20,
-                    8,
-                    20,
-                    AppConstants.shellBottomInsetWithMiniPlayer + bottomSafe,
-                  ),
-                  child: Column(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+        child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 8),
@@ -420,27 +370,10 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                         ),
                       ),
                       const SizedBox(height: 28),
-                      Text(
-                        context.t('cache.allowed'),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: palette.textMuted,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
+                      GlassSectionLabel(context.t('cache.allowed')),
                       const SizedBox(height: 12),
-                      Container(
+                      GlassPanel(
                         padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
-                        decoration: BoxDecoration(
-                          color: palette.cardBackground.withValues(alpha: 0.82),
-                          borderRadius: BorderRadius.circular(
-                            AppConstants.radiusLarge,
-                          ),
-                          border: Border.all(
-                            color: palette.textMuted.withValues(alpha: 0.2),
-                          ),
-                        ),
                         child: Column(
                           children: [
                             SliderTheme(
@@ -550,11 +483,6 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
                     ],
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

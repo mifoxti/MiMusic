@@ -3,12 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../widgets/glass_panel.dart';
+import '../widgets/settings_glass_scaffold.dart';
 
 /// Пресет эквалайзера: название и усиление полос в дБ (подписи на экране ориентировочные; центры полос задаёт Android).
 class _EqualizerPreset {
@@ -154,87 +155,35 @@ class _EqualizerPageState extends State<EqualizerPage> {
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
 
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              palette.gradientStart,
-              palette.gradientMiddle,
-              palette.gradientEnd,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildAppBar(palette),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(
-                    20,
-                    0,
-                    20,
-                    AppConstants.shellBottomInsetWithMiniPlayer,
-                  ),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 8),
-                      Text(
-                        context.t('settings.equalizer'),
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w600,
-                          color: palette.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        context.t('settings.equalizerSub'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 13, color: palette.textSecondary),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPresets(palette),
-                      const SizedBox(height: 16),
-                      _buildDbScaleAndSliders(palette),
-                      const SizedBox(height: 16),
-                      _buildPreamp(palette),
-                      const SizedBox(height: 24),
-                      _buildResetButton(palette),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAppBar(AppColorPalette palette) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: palette.textPrimary),
-            style: IconButton.styleFrom(
-              backgroundColor: palette.cardBackground.withValues(alpha: 0.6),
+    return SettingsGlassScaffold(
+      title: context.t('settings.equalizer'),
+      audioPlayerService: widget.audioPlayerService,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              context.t('settings.equalizerSub'),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: palette.textSecondary),
             ),
-          ),
-          const Spacer(),
-          const SizedBox(width: 48),
-          const Spacer(),
-        ],
+            const SizedBox(height: 16),
+            GlassPanel(child: _buildPresets(palette)),
+            const SizedBox(height: 14),
+            GlassPanel(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: _buildDbScaleAndSliders(palette),
+            ),
+            const SizedBox(height: 14),
+            GlassPanel(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: _buildPreampContent(palette),
+            ),
+            const SizedBox(height: 20),
+            _buildResetButton(palette),
+          ],
+        ),
       ),
     );
   }
@@ -244,14 +193,8 @@ class _EqualizerPageState extends State<EqualizerPage> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          Localizations.localeOf(context).languageCode == 'en' ? 'PRESETS' : 'ПРЕСЕТЫ',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: palette.textMuted,
-            letterSpacing: 1.2,
-          ),
+        GlassSectionLabel(
+          Localizations.localeOf(context).languageCode == 'en' ? 'Presets' : 'Пресеты',
         ),
         const SizedBox(height: 10),
         SizedBox(
@@ -260,42 +203,17 @@ class _EqualizerPageState extends State<EqualizerPage> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.only(bottom: 4),
             child: Row(
-            children: List.generate(_presets(context).length, (i) {
-              final preset = _presets(context)[i];
-              final isSelected = _selectedPresetIndex == i;
-              return Padding(
-                padding: EdgeInsets.only(right: i < _presets(context).length - 1 ? 10 : 0),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
+              children: List.generate(_presets(context).length, (i) {
+                final preset = _presets(context)[i];
+                return Padding(
+                  padding: EdgeInsets.only(right: i < _presets(context).length - 1 ? 10 : 0),
+                  child: GlassChoiceChip(
+                    label: preset.name,
+                    selected: _selectedPresetIndex == i,
                     onTap: () => _applyPreset(i),
-                    borderRadius: BorderRadius.circular(12),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? palette.accent.withValues(alpha: 0.25)
-                            : palette.cardBackground.withValues(alpha: 0.8),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected ? palette.accent : Colors.transparent,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Text(
-                        preset.name,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                          color: isSelected ? palette.textPrimary : palette.textSecondary,
-                        ),
-                      ),
-                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
             ),
           ),
         ),
@@ -303,17 +221,8 @@ class _EqualizerPageState extends State<EqualizerPage> {
     );
   }
 
-  Widget _buildPreamp(AppColorPalette palette) {
-    const boxHeight = 88.0;
-    return SizedBox(
-      height: boxHeight,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: palette.cardBackground.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        ),
-      child: Column(
+  Widget _buildPreampContent(AppColorPalette palette) {
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -364,8 +273,6 @@ class _EqualizerPageState extends State<EqualizerPage> {
             ),
           ),
         ],
-      ),
-      ),
     );
   }
 
@@ -374,27 +281,13 @@ class _EqualizerPageState extends State<EqualizerPage> {
     const scaleRowHeight = 20.0;
     const gapScaleToSliders = 10.0;
     const labelsRowHeight = 44.0;
-    const paddingH = 16.0;
     const paddingV = 14.0;
     const columnSpacing = 6.0;
     const totalHeight = scaleRowHeight + gapScaleToSliders + sliderHeight + labelsRowHeight + paddingV * 2;
 
     return SizedBox(
       height: totalHeight,
-      child: Container(
-        padding: const EdgeInsets.only(left: paddingH, right: paddingH, top: paddingV, bottom: paddingV),
-        decoration: BoxDecoration(
-          color: palette.cardBackground.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(AppConstants.radiusXLarge),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
+      child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Шкала дБ — сверху, над ползунками (каждая метка над своей колонкой)
@@ -502,23 +395,26 @@ class _EqualizerPageState extends State<EqualizerPage> {
               ),
             ),
           ],
-        ),
       ),
     );
   }
 
   Widget _buildResetButton(AppColorPalette palette) {
-    return TextButton.icon(
-      onPressed: () async => _reset(),
-      icon: Icon(Icons.refresh_rounded, size: 18, color: palette.textSecondary),
-      label: Text(
-        Localizations.localeOf(context).languageCode == 'en' ? 'Reset' : 'Сбросить',
-        style: TextStyle(fontSize: 14, color: palette.textSecondary, fontWeight: FontWeight.w500),
-      ),
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        backgroundColor: palette.cardBackground.withValues(alpha: 0.6),
-        foregroundColor: palette.textSecondary,
+    return Center(
+      child: GlassPanel(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: TextButton.icon(
+          onPressed: () async => _reset(),
+          icon: Icon(Icons.refresh_rounded, size: 18, color: palette.textSecondary),
+          label: Text(
+            Localizations.localeOf(context).languageCode == 'en' ? 'Reset' : 'Сбросить',
+            style: TextStyle(
+              fontSize: 14,
+              color: palette.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
       ),
     );
   }

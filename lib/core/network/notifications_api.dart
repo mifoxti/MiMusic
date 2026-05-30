@@ -164,4 +164,14 @@ class NotificationsApi {
     final dio = await createAuthenticatedDio();
     await dio.post<void>('/notifications/read-all');
   }
+
+  Future<void> deleteNotification(int id) async {
+    final dio = await createAuthenticatedDio();
+    await dio.delete<void>('/notifications/$id');
+  }
+
+  Future<void> deleteAll() async {
+    final dio = await createAuthenticatedDio();
+    await dio.delete<void>('/notifications/all');
+  }
 }

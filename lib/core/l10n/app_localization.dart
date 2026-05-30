@@ -90,6 +90,11 @@ class AppLocalization {
       'notifications.accepted': 'Вы приняли заявку',
       'notifications.declined': 'Вы отклонили заявку',
       'notifications.markAllRead': 'Прочитать все',
+      'notifications.deleteAll': 'Удалить все',
+      'notifications.deleteAllConfirmTitle': 'Удалить все уведомления?',
+      'notifications.deleteAllConfirmBody':
+          'Список очистится. Это действие нельзя отменить.',
+      'notifications.deleteAllConfirm': 'Удалить',
       'notifications.loginRequired': 'Войдите в аккаунт, чтобы видеть уведомления с сервера.',
       'profile.thoughts': 'Мысли',
       'profile.edit.section': 'Профиль',
@@ -532,6 +537,11 @@ class AppLocalization {
       'notifications.accepted': 'You accepted the request',
       'notifications.declined': 'You declined the request',
       'notifications.markAllRead': 'Mark all read',
+      'notifications.deleteAll': 'Delete all',
+      'notifications.deleteAllConfirmTitle': 'Delete all notifications?',
+      'notifications.deleteAllConfirmBody':
+          'Your inbox will be cleared. This cannot be undone.',
+      'notifications.deleteAllConfirm': 'Delete',
       'notifications.loginRequired': 'Sign in to see server notifications.',
       'profile.thoughts': 'Thoughts',
       'profile.edit.section': 'Profile',
