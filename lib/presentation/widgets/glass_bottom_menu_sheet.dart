@@ -49,7 +49,9 @@ Future<void> showGlassBottomMenuSheet(
     isScrollControlled: true,
     useRootNavigator: true,
     builder: (ctx) {
-      return Padding(
+      return PopScope(
+        canPop: true,
+        child: Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.paddingOf(ctx).bottom + 12,
           left: 12,
@@ -109,6 +111,7 @@ Future<void> showGlassBottomMenuSheet(
             ),
           ),
         ),
+      ),
       );
     },
   ).whenComplete(() {
@@ -176,6 +179,57 @@ Future<T?> showGlassCenterSheet<T>(
   ).whenComplete(() {
     GlassModalOverlay.depth = max(0, GlassModalOverlay.depth - 1);
   });
+}
+
+/// Компактная стеклянная подсказка (точное число по тапу на метрику).
+Future<void> showGlassValueHint(
+  BuildContext context, {
+  required String title,
+  required String value,
+}) {
+  return showGlassCenterSheet<void>(
+    context,
+    builder: (sheetContext) {
+      final palette = AppPaletteExtension.of(sheetContext).palette;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.center,
+              child: TextButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                child: Text(MaterialLocalizations.of(sheetContext).okButtonLabel),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 /// Подтверждение с удержанием «Удалить» (как удаление мысли).

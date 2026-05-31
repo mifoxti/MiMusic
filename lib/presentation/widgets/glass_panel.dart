@@ -579,40 +579,89 @@ class GlassStatTile extends StatelessWidget {
   const GlassStatTile({
     super.key,
     required this.label,
-    required this.value,
+    this.value,
+    this.metricValue,
     this.icon,
     this.accentColor,
-  });
+    this.onShowExact,
+  }) : assert(value != null || metricValue != null);
 
   final String label;
-  final String value;
+  final String? value;
+  final int? metricValue;
   final IconData? icon;
   final Color? accentColor;
+
+  /// Если задано, по тапу на сокращённое число показывается точное.
+  final void Function(BuildContext context, int count)? onShowExact;
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     final accent = accentColor ?? palette.accent;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (icon != null) ...[
-          Icon(icon, size: 22, color: accent),
-          const SizedBox(height: 8),
-        ],
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
-            color: palette.textPrimary,
-            letterSpacing: -0.5,
+    final displayValue = value ?? (metricValue != null ? '$metricValue' : '—');
+    final canShowExact =
+        metricValue != null && onShowExact != null && metricValue! >= 1000;
+
+    const iconSize = 28.0;
+    const valueSize = 28.0;
+
+    Widget valueWidget = Text(
+      displayValue,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: valueSize,
+        fontWeight: FontWeight.w700,
+        color: palette.textPrimary,
+        letterSpacing: -0.5,
+        height: 1.05,
+      ),
+    );
+
+    if (canShowExact) {
+      valueWidget = Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onShowExact!(context, metricValue!),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+            child: valueWidget,
           ),
         ),
-        const SizedBox(height: 4),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: iconSize, color: accent),
+              const SizedBox(width: 8),
+            ],
+            valueWidget,
+          ],
+        ),
+        const SizedBox(height: 8),
         Text(
           label,
-          style: TextStyle(fontSize: 13, color: palette.textSecondary, height: 1.2),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          softWrap: true,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: palette.textSecondary,
+            height: 1.2,
+          ),
         ),
       ],
     );

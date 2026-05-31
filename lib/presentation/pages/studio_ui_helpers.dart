@@ -167,3 +167,92 @@ String studioGenreChipLabel(BuildContext context, String stored) {
   }
   return stored;
 }
+
+/// Переключатель «Треки / Альбомы» в стеклянном стиле.
+Widget studioGlassTabBar({
+  required BuildContext context,
+  required AppColorPalette palette,
+  required List<Tab> tabs,
+  TabController? controller,
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+    child: AppGlass.blurredTintLayer(
+      isDark: isDark,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppGlass.tint(isDark),
+          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+          border: Border.all(color: AppGlass.border(isDark)),
+        ),
+        child: TabBar(
+          controller: controller,
+          dividerColor: Colors.transparent,
+          labelColor: palette.textPrimary,
+          unselectedLabelColor: palette.textMuted,
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicator: BoxDecoration(
+            color: palette.accent.withValues(alpha: isDark ? 0.32 : 0.24),
+            borderRadius: BorderRadius.circular(
+              AppConstants.radiusLarge - 2,
+            ),
+          ),
+          tabs: tabs,
+        ),
+      ),
+    ),
+  );
+}
+
+/// Кнопка «Добавить трек/альбом» в стеклянном стиле.
+Widget studioGlassActionButton({
+  required BuildContext context,
+  required AppColorPalette palette,
+  required VoidCallback onPressed,
+  required IconData icon,
+  required String label,
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+        child: AppGlass.blurredTintLayer(
+          isDark: isDark,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Color.alphaBlend(
+                palette.accent.withValues(alpha: isDark ? 0.38 : 0.28),
+                AppGlass.tint(isDark),
+              ),
+              borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+              border: Border.all(color: AppGlass.border(isDark)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 20, color: palette.textPrimary),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}

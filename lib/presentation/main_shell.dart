@@ -33,7 +33,6 @@ import '../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/playlists/domain/repositories/playlists_repository.dart';
 import '../features/home/presentation/widgets/floating_mini_player.dart';
-import 'widgets/glass_bottom_menu_sheet.dart';
 import '../features/player/presentation/widgets/expandable_player_dock.dart';
 import 'pages/favorites_page.dart';
 import 'pages/artist_page.dart';
@@ -351,13 +350,6 @@ class _MainShellState extends State<MainShell>
   /// Сначала сворачивание полного плеера (оверлей поверх вложенных маршрутов), затем стек
   /// [Navigator], затем выход из приложения.
   Future<void> _handleBackSequence() async {
-    if (GlassModalOverlay.depth > 0) {
-      final navContext = _navigatorKey.currentContext;
-      if (navContext != null) {
-        await Navigator.of(navContext, rootNavigator: true).maybePop();
-      }
-      return;
-    }
     if (_isPlayerDockExpanded()) {
       await _playerDockController.reverse();
       return;

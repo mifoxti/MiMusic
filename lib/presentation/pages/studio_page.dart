@@ -197,6 +197,7 @@ class _StudioPageState extends State<StudioPage> {
       ShellMaterialPageRoute<void>(
         builder: (_) => StudioArtistStatsPage(
           nickname: widget.currentUserNickname,
+          audioPlayerService: widget.audioPlayerService,
         ),
       ),
     );
@@ -265,6 +266,7 @@ class _StudioPageState extends State<StudioPage> {
           trackId: id,
           trackTitle: track.title,
           artist: track.artistDisplay.isEmpty ? null : track.artistDisplay,
+          audioPlayerService: widget.audioPlayerService,
         ),
       ),
     );
@@ -301,7 +303,22 @@ class _StudioPageState extends State<StudioPage> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    return Container(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (GlassModalOverlay.depth > 0) {
+          final root = Navigator.of(context, rootNavigator: true);
+          if (root.canPop()) {
+            root.pop();
+            return;
+          }
+          Navigator.of(context).maybePop();
+          return;
+        }
+        Navigator.of(context).pop();
+      },
+      child: Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -343,30 +360,13 @@ class _StudioPageState extends State<StudioPage> {
               preferredSize: const Size.fromHeight(54),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: palette.cardBackground.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-                    border: Border.all(
-                      color: palette.textPrimary.withValues(alpha: 0.12),
-                    ),
-                  ),
-                  child: TabBar(
-                    dividerColor: Colors.transparent,
-                    labelColor: palette.textPrimary,
-                    unselectedLabelColor: palette.textMuted,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicator: BoxDecoration(
-                      color: palette.accent.withValues(alpha: 0.28),
-                      borderRadius: BorderRadius.circular(
-                        AppConstants.radiusLarge - 2,
-                      ),
-                    ),
-                    tabs: [
-                      Tab(text: context.t('studio.tracks')),
-                      Tab(text: context.t('studio.albums')),
-                    ],
-                  ),
+                child: studioGlassTabBar(
+                  context: context,
+                  palette: palette,
+                  tabs: [
+                    Tab(text: context.t('studio.tracks')),
+                    Tab(text: context.t('studio.albums')),
+                  ],
                 ),
               ),
             ),
@@ -405,6 +405,7 @@ class _StudioPageState extends State<StudioPage> {
                   ],
                 ),
         ),
+      ),
       ),
     );
   }
@@ -680,11 +681,12 @@ class _AlbumsTab extends StatelessWidget {
             children: [
               Text('${context.t('studio.albums')} (${albums.length})', style: TextStyle(fontSize: 14, color: palette.textSecondary)),
               const Spacer(),
-              FilledButton.icon(
+              studioGlassActionButton(
+                context: context,
+                palette: palette,
                 onPressed: onAddAlbum,
-                icon: const Icon(Icons.add_rounded, size: 20),
-                label: Text(context.t('studio.addAlbum')),
-                style: FilledButton.styleFrom(backgroundColor: palette.accent),
+                icon: Icons.add_rounded,
+                label: context.t('studio.addAlbum'),
               ),
             ],
           ),
@@ -839,11 +841,12 @@ class _TracksTab extends StatelessWidget {
             children: [
               Text('${context.t('studio.tracks')} (${tracks.length})', style: TextStyle(fontSize: 14, color: palette.textSecondary)),
               const Spacer(),
-              FilledButton.icon(
+              studioGlassActionButton(
+                context: context,
+                palette: palette,
                 onPressed: onAddTrack,
-                icon: const Icon(Icons.add_rounded, size: 20),
-                label: Text(context.t('studio.addTrack')),
-                style: FilledButton.styleFrom(backgroundColor: palette.accent),
+                icon: Icons.add_rounded,
+                label: context.t('studio.addTrack'),
               ),
             ],
           ),

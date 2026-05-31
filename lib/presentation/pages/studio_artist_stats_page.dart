@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/network/server_connectivity.dart';
 import '../../core/network/studio_stats_api.dart';
 import '../../core/player/shell_route_back_guard.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import 'studio_stats_format.dart';
 import 'studio_track_stats_page.dart';
 import '../widgets/glass_bar_chart.dart';
 import '../widgets/glass_panel.dart';
 
 /// Статистика автора в студии.
 class StudioArtistStatsPage extends StatefulWidget {
-  const StudioArtistStatsPage({super.key, this.nickname});
+  const StudioArtistStatsPage({
+    super.key,
+    this.nickname,
+    this.audioPlayerService,
+  });
 
   final String? nickname;
+  final AudioPlayerService? audioPlayerService;
 
   @override
   State<StudioArtistStatsPage> createState() => _StudioArtistStatsPageState();
@@ -58,21 +65,39 @@ class _StudioArtistStatsPageState extends State<StudioArtistStatsPage> {
     }
   }
 
-  String _formatPlays(int n, BuildContext context) {
-    final isEn = Localizations.localeOf(context).languageCode == 'en';
-    if (n >= 1000000) {
-      return isEn ? '${(n / 1000000).toStringAsFixed(1)}M' : '${(n / 1000000).toStringAsFixed(1)} млн';
-    }
-    if (n >= 1000) {
-      return isEn ? '${(n / 1000).toStringAsFixed(1)}K' : '${(n / 1000).toStringAsFixed(1)} тыс.';
-    }
-    return '$n';
+  void _showExact(BuildContext context, String title, int count) {
+    showStudioExactCountHint(context, title: title, count: count);
+  }
+
+  Widget _statsList(MeStudioStatsDto stats, AppColorPalette palette) {
+    final nick = widget.nickname?.trim();
+    final playsLabel = context.t('studio.stats.totalPlays');
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: studioStatsListPadding(widget.audioPlayerService),
+      children: [
+        if (nick != null && nick.isNotEmpty)
+          Text(
+            '@$nick',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: palette.textPrimary,
+            ),
+          ),
+        if (nick != null && nick.isNotEmpty) const SizedBox(height: 16),
+        _buildMetrics(context, palette, stats, playsLabel),
+        const SizedBox(height: 16),
+        _buildChart(context, palette, stats),
+        const SizedBox(height: 16),
+        _buildTopTracks(context, palette, stats, playsLabel),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    final nick = widget.nickname?.trim();
 
     return Container(
       decoration: BoxDecoration(
@@ -95,69 +120,85 @@ class _StudioArtistStatsPageState extends State<StudioArtistStatsPage> {
         body: _loading
             ? Center(child: CircularProgressIndicator(color: palette.accent))
             : _error != null
-                ? Center(child: Text(_error!, style: TextStyle(color: palette.textSecondary)))
+                ? Center(
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: palette.textSecondary),
+                    ),
+                  )
                 : RefreshIndicator(
                     onRefresh: _load,
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                      children: [
-                        if (nick != null && nick.isNotEmpty)
-                          Text(
-                            '@$nick',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
-                              color: palette.textPrimary,
-                            ),
+                    child: widget.audioPlayerService == null
+                        ? _statsList(_stats!, palette)
+                        : ListenableBuilder(
+                            listenable: widget.audioPlayerService!,
+                            builder: (context, _) =>
+                                _statsList(_stats!, palette),
                           ),
-                        if (nick != null && nick.isNotEmpty) const SizedBox(height: 16),
-                        _buildMetrics(context, palette, _stats!),
-                        const SizedBox(height: 16),
-                        _buildChart(context, palette, _stats!),
-                        const SizedBox(height: 16),
-                        _buildTopTracks(context, palette, _stats!),
-                      ],
-                    ),
                   ),
       ),
     );
   }
 
-  Widget _buildMetrics(BuildContext context, AppColorPalette palette, MeStudioStatsDto s) {
+  Widget _buildMetrics(
+    BuildContext context,
+    AppColorPalette palette,
+    MeStudioStatsDto s,
+    String playsLabel,
+  ) {
     return GlassPanel(
-      child: Row(
-        children: [
-          Expanded(
-            child: GlassStatTile(
-              icon: Icons.headphones_rounded,
-              label: context.t('studio.stats.totalPlays'),
-              value: _formatPlays(s.totalPlays, context),
-              accentColor: palette.accent,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Center(
+                child: GlassStatTile(
+                  icon: Icons.headphones_rounded,
+                  label: playsLabel,
+                  value: formatStudioCompactCount(s.totalPlays, context),
+                  metricValue: s.totalPlays,
+                  accentColor: palette.accent,
+                  onShowExact: (ctx, n) => _showExact(ctx, playsLabel, n),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: GlassStatTile(
-              icon: Icons.library_music_rounded,
-              label: context.t('studio.stats.tracks'),
-              value: '${s.totalTracks}',
+            Expanded(
+              child: Center(
+                child: GlassStatTile(
+                  icon: Icons.library_music_rounded,
+                  label: context.t('studio.stats.tracks'),
+                  value: formatStudioCompactCount(s.totalTracks, context),
+                  metricValue: s.totalTracks,
+                  onShowExact: (ctx, n) =>
+                      _showExact(ctx, context.t('studio.stats.tracks'), n),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: GlassStatTile(
-              icon: Icons.people_outline_rounded,
-              label: context.t('studio.stats.listeners'),
-              value: '${s.uniqueListeners}',
+            Expanded(
+              child: Center(
+                child: GlassStatTile(
+                  icon: Icons.people_outline_rounded,
+                  label: context.t('studio.stats.listeners'),
+                  value: formatStudioCompactCount(s.uniqueListeners, context),
+                  metricValue: s.uniqueListeners,
+                  onShowExact: (ctx, n) =>
+                      _showExact(ctx, context.t('studio.stats.listeners'), n),
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildChart(BuildContext context, AppColorPalette palette, MeStudioStatsDto s) {
+  Widget _buildChart(
+    BuildContext context,
+    AppColorPalette palette,
+    MeStudioStatsDto s,
+  ) {
     final days = s.playsByDay;
     return GlassPanel(
       child: Column(
@@ -187,7 +228,12 @@ class _StudioArtistStatsPageState extends State<StudioArtistStatsPage> {
     );
   }
 
-  Widget _buildTopTracks(BuildContext context, AppColorPalette palette, MeStudioStatsDto s) {
+  Widget _buildTopTracks(
+    BuildContext context,
+    AppColorPalette palette,
+    MeStudioStatsDto s,
+    String playsLabel,
+  ) {
     if (s.topTracks.isEmpty) {
       return GlassPanel(
         child: Text(
@@ -224,12 +270,16 @@ class _StudioArtistStatsPageState extends State<StudioArtistStatsPage> {
                         builder: (_) => StudioTrackStatsPage(
                           trackId: t.trackId,
                           trackTitle: t.title,
+                          audioPlayerService: widget.audioPlayerService,
                         ),
                       ),
                     );
                   },
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
+                    ),
                     child: Row(
                       children: [
                         SizedBox(
@@ -238,7 +288,9 @@ class _StudioArtistStatsPageState extends State<StudioArtistStatsPage> {
                             '$rank',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
-                              color: rank <= 3 ? palette.accent : palette.textMuted,
+                              color: rank <= 3
+                                  ? palette.accent
+                                  : palette.textMuted,
                             ),
                           ),
                         ),
@@ -254,15 +306,15 @@ class _StudioArtistStatsPageState extends State<StudioArtistStatsPage> {
                             ),
                           ),
                         ),
-                        Text(
-                          _formatPlays(t.playCount, context),
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: palette.textSecondary,
-                          ),
+                        StudioPlayCountText(
+                          count: t.playCount,
+                          hintTitle: playsLabel,
                         ),
-                        Icon(Icons.chevron_right, size: 20, color: palette.textMuted),
+                        Icon(
+                          Icons.chevron_right,
+                          size: 20,
+                          color: palette.textMuted,
+                        ),
                       ],
                     ),
                   ),
