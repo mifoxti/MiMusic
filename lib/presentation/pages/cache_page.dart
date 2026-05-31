@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../core/audio/audio_player_service.dart';
 import '../../core/cache/cache_size.dart';
 import '../../core/offline/offline_download_repository.dart';
 import '../../core/constants/app_constants.dart';
@@ -30,10 +31,12 @@ class CachePage extends StatefulWidget {
     super.key,
     required this.settingsRepository,
     required this.initialSettings,
+    this.audioPlayerService,
   });
 
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+  final AudioPlayerService? audioPlayerService;
 
   @override
   State<CachePage> createState() => _CachePageState();
@@ -289,11 +292,12 @@ class _CachePageState extends State<CachePage> with TickerProviderStateMixin {
 
     return SettingsGlassScaffold(
       title: context.t('cache.title'),
-      child: SingleChildScrollView(
+      audioPlayerService: widget.audioPlayerService,
+      child: SettingsGlassScrollView(
+        audioPlayerService: widget.audioPlayerService,
         physics: const BouncingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
         child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

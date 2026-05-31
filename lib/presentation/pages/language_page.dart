@@ -23,8 +23,8 @@ class LanguagePage extends StatelessWidget {
     return SettingsGlassScaffold(
       title: context.t('settings.language'),
       audioPlayerService: audioPlayerService,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: SettingsGlassScrollView(
+        audioPlayerService: audioPlayerService,
         child: GlassPanel(
           child: Column(
             children: [

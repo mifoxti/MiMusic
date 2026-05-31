@@ -15,6 +15,7 @@ class MiniPlayerInterior extends StatelessWidget {
     super.key,
     required this.track,
     this.playerCoverPalette,
+    this.seeThroughChrome = false,
     this.trackProgress = 0.5,
     this.isPlaying = true,
     this.collaborativeMode = false,
@@ -26,6 +27,9 @@ class MiniPlayerInterior extends StatelessWidget {
 
   final Track track;
   final PlayerCoverPaletteService? playerCoverPalette;
+
+  /// На экранах настроек: без цветной подложки прогресса — только blur снаружи.
+  final bool seeThroughChrome;
   final double trackProgress;
   final bool isPlaying;
   final bool collaborativeMode;
@@ -56,6 +60,9 @@ class MiniPlayerInterior extends StatelessWidget {
     final guestSurface = const Color(0xFF3B1A57).withValues(alpha: 0.72);
 
     Widget progressLayer() {
+      if (seeThroughChrome) {
+        return const SizedBox.expand();
+      }
       final progressRemainGlass = isDark
           ? Colors.white.withValues(alpha: 0.06)
           : Colors.white.withValues(alpha: 0.2);
@@ -381,6 +388,7 @@ class FloatingMiniPlayer extends StatelessWidget {
               ),
               child: MiniPlayerInterior(
                 track: track,
+                seeThroughChrome: seeThroughChrome,
                 trackProgress: trackProgress,
                 isPlaying: isPlaying,
                 collaborativeMode: true,
@@ -420,12 +428,14 @@ class FloatingMiniPlayer extends StatelessWidget {
             isDark: isDark,
             borderRadius: BorderRadius.circular(radius),
             blurSigma: seeThroughChrome ? AppGlass.blurSigma : 0,
-            seeThrough: seeThroughChrome,
+            blurOnly: seeThroughChrome,
+            seeThrough: false,
             boxShadow:
                 seeThroughChrome ? null : AppGlass.cardShadows(isDark),
             child: MiniPlayerInterior(
               track: track,
               playerCoverPalette: playerCoverPalette,
+              seeThroughChrome: seeThroughChrome,
               trackProgress: trackProgress,
               isPlaying: isPlaying,
               onTap: onTap,

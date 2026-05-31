@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_colors.dart';
@@ -15,7 +16,9 @@ import '../widgets/settings_glass_scaffold.dart';
 
 /// Статический экран «О приложении»: версия, ссылки, скрытая пасхалка.
 class AboutPage extends StatefulWidget {
-  const AboutPage({super.key});
+  const AboutPage({super.key, this.audioPlayerService});
+
+  final AudioPlayerService? audioPlayerService;
 
   static const String githubUrl = 'https://github.com/mifoxti';
   static const String telegramUrl = 'https://t.me/mifoxti';
@@ -172,8 +175,9 @@ class _AboutPageState extends State<AboutPage> {
 
     return SettingsGlassScaffold(
       title: context.t('about.title'),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      audioPlayerService: widget.audioPlayerService,
+      child: SettingsGlassScrollView(
+        audioPlayerService: widget.audioPlayerService,
         child: Column(
           children: [
                       const SizedBox(height: 8),

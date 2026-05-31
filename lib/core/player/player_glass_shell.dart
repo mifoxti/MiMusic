@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../theme/app_glass.dart';
 import 'player_corner_gradient.dart';
 import 'player_cover_glass_colors.dart';
 
@@ -27,6 +28,7 @@ class PlayerGlassShell extends StatelessWidget {
     this.boxShadow,
     /// Полный плеер: размытый контент приложения под стеклом, обложка только лёгким оттенком.
     this.seeThrough = false,
+    this.blurOnly = false,
   });
 
   final PlayerCoverGlassColors colors;
@@ -42,15 +44,50 @@ class PlayerGlassShell extends StatelessWidget {
   final bool showBorder;
   final double? blurSigma;
   final List<BoxShadow>? boxShadow;
+  final bool blurOnly;
 
   @override
   Widget build(BuildContext context) {
     final radius = borderRadius ?? BorderRadius.zero;
-    final sigma = blurSigma ?? 0;
+    final sigma = blurOnly ? (blurSigma ?? AppGlass.blurSigma) : (blurSigma ?? 0);
     final t = crossfade.clamp(0.0, 1.0);
     final blend = underColors != null;
     final backOpacity = blend ? (1.0 - t).clamp(0.0, 1.0) : 0.0;
     final frontOpacity = blend ? t : 1.0;
+
+    if (blurOnly) {
+      return ClipRRect(
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: showBorder
+                ? Border.all(color: colors.border(isDark), width: borderWidth)
+                : null,
+          ),
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              if (sigma > 0.5)
+                Positioned.fill(
+                  child: ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(
+                        sigmaX: sigma,
+                        sigmaY: sigma,
+                        tileMode: TileMode.decal,
+                      ),
+                      child: const ColoredBox(color: Color(0x00000000)),
+                    ),
+                  ),
+                ),
+              child,
+            ],
+          ),
+        ),
+      );
+    }
 
     return ClipRRect(
       borderRadius: radius,

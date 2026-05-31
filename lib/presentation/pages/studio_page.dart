@@ -736,15 +736,30 @@ class _AlbumsTab extends StatelessWidget {
                             ],
                           ],
                         ),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (v) async {
-                            if (v == 'edit') await onEditAlbum(album);
-                            if (v == 'delete') await onDeleteAlbum(album);
+                        trailing: IconButton(
+                          icon: Icon(Icons.more_vert_rounded, color: palette.textMuted),
+                          onPressed: () {
+                            showGlassBottomMenuSheet(
+                              context,
+                              actions: [
+                                GlassMenuAction(
+                                  icon: Icons.edit_rounded,
+                                  label: context.t('studio.edit'),
+                                  onTap: () => onEditAlbum(album),
+                                ),
+                                GlassMenuAction(
+                                  icon: Icons.delete_outline_rounded,
+                                  label: context.t('studio.delete'),
+                                  iconColor: Colors.redAccent,
+                                  labelStyle: const TextStyle(
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  onTap: () => onDeleteAlbum(album),
+                                ),
+                              ],
+                            );
                           },
-                          itemBuilder: (_) => [
-                            PopupMenuItem(value: 'edit', child: Text(context.t('studio.edit'))),
-                            PopupMenuItem(value: 'delete', child: Text(context.t('studio.delete'))),
-                          ],
                         ),
                         onTap: () => onOpenAlbumDetail(album),
                       ),
@@ -907,21 +922,34 @@ class _TracksTab extends StatelessWidget {
                       ],
                     ],
                   ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (v) async {
-                      if (v == 'stats') onOpenTrackStats(track);
-                      if (v == 'edit') await onEditTrack(track);
-                      if (v == 'delete') await onDeleteTrack(track);
-                    },
-                    itemBuilder: (_) => [
-                      if (serverTrackId(track) != null)
-                        PopupMenuItem(
-                          value: 'stats',
-                          child: Text(context.t('studio.stats.trackMenu')),
+                  trailing: IconButton(
+                    icon: Icon(Icons.more_vert_rounded, color: palette.textMuted),
+                    onPressed: () {
+                      final actions = <GlassMenuAction>[
+                        if (serverTrackId(track) != null)
+                          GlassMenuAction(
+                            icon: Icons.insights_rounded,
+                            label: context.t('studio.stats.trackMenu'),
+                            onTap: () => onOpenTrackStats(track),
+                          ),
+                        GlassMenuAction(
+                          icon: Icons.edit_rounded,
+                          label: context.t('studio.edit'),
+                          onTap: () => onEditTrack(track),
                         ),
-                      PopupMenuItem(value: 'edit', child: Text(context.t('studio.edit'))),
-                      PopupMenuItem(value: 'delete', child: Text(context.t('studio.delete'))),
-                    ],
+                        GlassMenuAction(
+                          icon: Icons.delete_outline_rounded,
+                          label: context.t('studio.delete'),
+                          iconColor: Colors.redAccent,
+                          labelStyle: const TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          onTap: () => onDeleteTrack(track),
+                        ),
+                      ];
+                      showGlassBottomMenuSheet(context, actions: actions);
+                    },
                   ),
                   onTap: () async {
                     final queue = tracks.map(trackWithOverrides).toList();

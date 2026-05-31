@@ -158,8 +158,8 @@ class _EqualizerPageState extends State<EqualizerPage> {
     return SettingsGlassScaffold(
       title: context.t('settings.equalizer'),
       audioPlayerService: widget.audioPlayerService,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: SettingsGlassScrollView(
+        audioPlayerService: widget.audioPlayerService,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

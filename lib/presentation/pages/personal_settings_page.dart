@@ -45,8 +45,8 @@ class _PersonalSettingsPageState extends State<PersonalSettingsPage> {
     return SettingsGlassScaffold(
       title: context.t('settings.personal'),
       audioPlayerService: widget.audioPlayerService,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: SettingsGlassScrollView(
+        audioPlayerService: widget.audioPlayerService,
         child: PersonalSettingsFragment(
           settingsRepository: widget.settingsRepository,
           initialSettings: _settings,

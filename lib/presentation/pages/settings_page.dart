@@ -72,8 +72,8 @@ class _SettingsPageState extends State<SettingsPage> {
     return SettingsGlassScaffold(
       title: context.t('settings.title'),
       audioPlayerService: widget.audioPlayerService,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: SettingsGlassScrollView(
+        audioPlayerService: widget.audioPlayerService,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -166,7 +166,9 @@ class _SettingsPageState extends State<SettingsPage> {
             Navigator.of(context).push(
               ShellMaterialPageRoute.forSettings<void>(
                 subpath: 'invite',
-                builder: (_) => const InviteKeyPage(),
+                builder: (_) => InviteKeyPage(
+                  audioPlayerService: widget.audioPlayerService,
+                ),
               ),
             );
           },
@@ -228,6 +230,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 builder: (context) => CachePage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: fresh,
+                  audioPlayerService: widget.audioPlayerService,
                 ),
               ),
             );
@@ -276,7 +279,9 @@ class _SettingsPageState extends State<SettingsPage> {
             Navigator.of(context).push(
               ShellMaterialPageRoute.forSettings<void>(
                 subpath: 'about',
-                builder: (context) => const AboutPage(),
+                builder: (context) => AboutPage(
+                  audioPlayerService: widget.audioPlayerService,
+                ),
               ),
             );
           },

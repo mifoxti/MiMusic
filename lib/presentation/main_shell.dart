@@ -33,6 +33,7 @@ import '../features/home/domain/use_cases/get_home_section_use_case.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/playlists/domain/repositories/playlists_repository.dart';
 import '../features/home/presentation/widgets/floating_mini_player.dart';
+import 'widgets/glass_bottom_menu_sheet.dart';
 import '../features/player/presentation/widgets/expandable_player_dock.dart';
 import 'pages/favorites_page.dart';
 import 'pages/artist_page.dart';
@@ -350,9 +351,24 @@ class _MainShellState extends State<MainShell>
   /// Сначала сворачивание полного плеера (оверлей поверх вложенных маршрутов), затем стек
   /// [Navigator], затем выход из приложения.
   Future<void> _handleBackSequence() async {
+    if (GlassModalOverlay.depth > 0) {
+      final navContext = _navigatorKey.currentContext;
+      if (navContext != null) {
+        await Navigator.of(navContext, rootNavigator: true).maybePop();
+      }
+      return;
+    }
     if (_isPlayerDockExpanded()) {
       await _playerDockController.reverse();
       return;
+    }
+    final navContext = _navigatorKey.currentContext;
+    if (navContext != null) {
+      final rootNav = Navigator.of(navContext, rootNavigator: true);
+      if (rootNav.canPop()) {
+        rootNav.pop();
+        return;
+      }
     }
     final nav = _navigatorKey.currentState;
     if (nav != null && nav.canPop()) {
@@ -523,7 +539,7 @@ class _MainShellState extends State<MainShell>
                           });
                         }
                         return Stack(
-                          fit: StackFit.expand,
+                          fit: StackFit.passthrough,
                           clipBehavior: Clip.none,
                           children: [
                             Positioned(
@@ -787,51 +803,69 @@ class _BottomNavBar extends StatelessWidget {
 
     // Нижний inset уже даёт внешний SafeArea у [MainShell]; второй SafeArea
     // удваивал отступ и ломал совпадение с [collapsedMiniRectInOverlay] в доке.
+    final barChild = seeThroughChrome
+        ? AppGlass.blurredTintLayerWithSigma(
+            sigma: AppGlass.blurSigma,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(barRadius),
+                color: Colors.transparent,
+                border: Border.all(color: borderGlass, width: 1),
+              ),
+              child: _bottomNavRow(context, palette),
+            ),
+          )
+        : AppGlass.blurredTintLayer(
+            isDark: isDark,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(barRadius),
+                border: Border.all(color: borderGlass, width: 1),
+                color: glassTint,
+                boxShadow: AppGlass.cardShadows(isDark),
+              ),
+              child: _bottomNavRow(context, palette),
+            ),
+          );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(barRadius),
         clipBehavior: Clip.antiAlias,
-        child: AppGlass.blurredTintLayerWithSigma(
-          sigma: AppGlass.blurSigma,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(barRadius),
-              border: Border.all(color: borderGlass, width: 1),
-              color: seeThroughChrome ? Colors.transparent : glassTint,
-              boxShadow: seeThroughChrome ? null : AppGlass.cardShadows(isDark),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _NavItem(
-                    icon: Icons.music_note_rounded,
-                    label: context.t('search.musicMode'),
-                    isSelected: selectedIndex == 0,
-                    palette: palette,
-                    onTap: () => onTap(0),
-                  ),
-                  _NavItem(
-                    icon: Icons.search_rounded,
-                    label: context.t('common.search'),
-                    isSelected: selectedIndex == 1,
-                    palette: palette,
-                    onTap: () => onTap(1),
-                  ),
-                  _NavItem(
-                    icon: Icons.person_rounded,
-                    label: context.t('settings.profile'),
-                    isSelected: selectedIndex == 2,
-                    palette: palette,
-                    onTap: () => onTap(2),
-                  ),
-                ],
-              ),
-            ),
+        child: barChild,
+      ),
+    );
+  }
+
+  Widget _bottomNavRow(BuildContext context, AppColorPalette palette) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _NavItem(
+            icon: Icons.music_note_rounded,
+            label: context.t('search.musicMode'),
+            isSelected: selectedIndex == 0,
+            palette: palette,
+            onTap: () => onTap(0),
           ),
-        ),
+          _NavItem(
+            icon: Icons.search_rounded,
+            label: context.t('common.search'),
+            isSelected: selectedIndex == 1,
+            palette: palette,
+            onTap: () => onTap(1),
+          ),
+          _NavItem(
+            icon: Icons.person_rounded,
+            label: context.t('settings.profile'),
+            isSelected: selectedIndex == 2,
+            palette: palette,
+            onTap: () => onTap(2),
+          ),
+        ],
       ),
     );
   }

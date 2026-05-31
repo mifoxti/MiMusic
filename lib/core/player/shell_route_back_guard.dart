@@ -53,7 +53,10 @@ class ShellMaterialPageRoute<T> extends MaterialPageRoute<T> {
   @override
   bool get opaque => _opaque;
 
-  /// Маршрут экрана настроек (и вложенных): помечает [RouteSettings.name] для прозрачного shell chrome.
+  /// Маршрут экрана настроек (и вложенных): [RouteSettings.name] для [ShellChromeVisibility].
+  ///
+  /// Маршрут остаётся opaque: иначе прозрачный [Material] перехватывает жесты
+  /// (кнопка настроек в профиле и тапы по списку перестают работать).
   static ShellMaterialPageRoute<T> forSettings<T>({
     required WidgetBuilder builder,
     String subpath = '',
@@ -62,8 +65,8 @@ class ShellMaterialPageRoute<T> extends MaterialPageRoute<T> {
         ? ShellRouteNames.settings
         : '${ShellRouteNames.settings}/$subpath';
     return ShellMaterialPageRoute<T>(
-      builder: builder,
       settings: RouteSettings(name: name),
+      builder: builder,
     );
   }
 }

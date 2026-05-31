@@ -1,9 +1,17 @@
+import 'dart:math' show max;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import 'hold_to_confirm_button.dart';
+
+/// Открытые стеклянные bottom/center sheet (для системной «назад» в shell).
+class GlassModalOverlay {
+  GlassModalOverlay._();
+
+  static int depth = 0;
+}
 
 /// Пункт «стеклянного» меню (как ⋮ в полном плеере).
 class GlassMenuAction {
@@ -34,6 +42,7 @@ Future<void> showGlassBottomMenuSheet(
       : Colors.white.withValues(alpha: 0.34);
   final borderGlass = Colors.white.withValues(alpha: isDark ? 0.22 : 0.45);
 
+  GlassModalOverlay.depth++;
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -102,7 +111,9 @@ Future<void> showGlassBottomMenuSheet(
         ),
       );
     },
-  );
+  ).whenComplete(() {
+    GlassModalOverlay.depth = max(0, GlassModalOverlay.depth - 1);
+  });
 }
 
 /// Центрированная «стеклянная» карточка (подтверждение). [builder] получает context листа.
@@ -116,6 +127,7 @@ Future<T?> showGlassCenterSheet<T>(
       : Colors.white.withValues(alpha: 0.34);
   final borderGlass = Colors.white.withValues(alpha: isDark ? 0.22 : 0.45);
 
+  GlassModalOverlay.depth++;
   return showModalBottomSheet<T>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -123,39 +135,47 @@ Future<T?> showGlassCenterSheet<T>(
     useRootNavigator: true,
     builder: (sheetContext) {
       final viewInsets = MediaQuery.viewInsetsOf(sheetContext);
-      return Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: viewInsets.bottom + MediaQuery.paddingOf(sheetContext).bottom + 16,
-          top: 48,
-        ),
-        child: SingleChildScrollView(
-          child: ClipRRect(
-            borderRadius: const BorderRadius.all(Radius.circular(20)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.all(Radius.circular(20)),
-                  border: Border.all(color: borderGlass),
-                  color: glassTint,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
+      return PopScope(
+        canPop: true,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: viewInsets.bottom +
+                MediaQuery.paddingOf(sheetContext).bottom +
+                16,
+            top: 48,
+          ),
+          child: SingleChildScrollView(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.all(Radius.circular(20)),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: const BorderRadius.all(Radius.circular(20)),
+                    border: Border.all(color: borderGlass),
+                    color: glassTint,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black
+                            .withValues(alpha: isDark ? 0.35 : 0.12),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: builder(sheetContext),
                 ),
-                child: builder(sheetContext),
               ),
             ),
           ),
         ),
       );
     },
-  );
+  ).whenComplete(() {
+    GlassModalOverlay.depth = max(0, GlassModalOverlay.depth - 1);
+  });
 }
 
 /// Подтверждение с удержанием «Удалить» (как удаление мысли).
