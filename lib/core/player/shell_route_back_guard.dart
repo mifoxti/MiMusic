@@ -41,7 +41,27 @@ class ShellMaterialPageRoute<T> extends MaterialPageRoute<T> {
     super.maintainState,
     super.fullscreenDialog,
     super.allowSnapshotting,
-  }) : super(
+    bool opaque = true,
+  })  : _opaque = opaque,
+        super(
           builder: (context) => ShellRouteBackGuard(child: builder(context)),
         );
+
+  final bool _opaque;
+
+  @override
+  bool get opaque => _opaque;
+
+  /// Экран настроек поверх вкладок: прозрачный низ, чтобы стекло мини-плеера и
+  /// нижней навигации размывало контент вкладки, а не градиент настроек.
+  static ShellMaterialPageRoute<T> settingsOverlay<T>({
+    required WidgetBuilder builder,
+    RouteSettings? settings,
+  }) {
+    return ShellMaterialPageRoute<T>(
+      builder: builder,
+      settings: settings,
+      opaque: false,
+    );
+  }
 }

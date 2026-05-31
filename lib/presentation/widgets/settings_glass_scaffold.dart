@@ -5,7 +5,8 @@ import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_theme.dart';
 import 'glass_panel.dart';
 
-/// Общий каркас экранов настроек: градиент, стеклянная шапка, отступ под мини-плеер.
+/// Общий каркас экранов настроек — тот же приём, что на [ChartsPage]:
+/// градиент на весь экран, прозрачный [Scaffold], отступ контента под shell chrome.
 class SettingsGlassScaffold extends StatelessWidget {
   const SettingsGlassScaffold({
     super.key,
@@ -24,9 +25,25 @@ class SettingsGlassScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
 
-    Widget scaffoldBody(double bottomPad) {
+    Widget body(double bottomPad) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SettingsGlassAppBar(
+            title: showTitleInAppBar ? title : null,
+          ),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottomPad),
+              child: child,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (audioPlayerService == null) {
       return Container(
-        width: double.infinity,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -38,42 +55,39 @@ class SettingsGlassScaffold extends StatelessWidget {
             ],
           ),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              SettingsGlassAppBar(
-                title: showTitleInAppBar ? title : null,
-              ),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: bottomPad),
-                  child: child,
-                ),
-              ),
-            ],
-          ),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: SafeArea(child: body(AppConstants.shellBottomInset)),
         ),
       );
     }
 
-    if (audioPlayerService == null) {
-      return Scaffold(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            palette.gradientStart,
+            palette.gradientMiddle,
+            palette.gradientEnd,
+          ],
+        ),
+      ),
+      child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: scaffoldBody(AppConstants.shellBottomInset),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: ListenableBuilder(
-        listenable: audioPlayerService!,
-        builder: (context, _) {
-          final hasMini = audioPlayerService!.currentTrack != null;
-          final bottomPad = hasMini
-              ? AppConstants.shellBottomInsetWithMiniPlayer
-              : AppConstants.shellBottomInset;
-          return scaffoldBody(bottomPad);
-        },
+        body: SafeArea(
+          child: ListenableBuilder(
+            listenable: audioPlayerService!,
+            builder: (context, _) {
+              final hasMini = audioPlayerService!.currentTrack != null;
+              final bottomPad = hasMini
+                  ? AppConstants.shellBottomInsetWithMiniPlayer
+                  : AppConstants.shellBottomInset;
+              return body(bottomPad);
+            },
+          ),
+        ),
       ),
     );
   }

@@ -173,7 +173,14 @@ class TracksApi {
   /// [DELETE /tracks/{id}] — только для владельца трека; файлы удаляются на сервере.
   Future<void> deleteServerTrack(int trackId) async {
     final dio = await createAuthenticatedDio();
-    await dio.delete<void>('/tracks/$trackId');
+    await dio.delete<void>(
+      '/tracks/$trackId',
+      options: Options(
+        responseType: ResponseType.plain,
+        validateStatus: (status) =>
+            status != null && status >= 200 && status < 300,
+      ),
+    );
   }
 
   Future<bool> getTrackLikeStatus({

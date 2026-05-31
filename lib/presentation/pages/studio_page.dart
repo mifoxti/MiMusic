@@ -1,5 +1,7 @@
 import 'dart:async' show unawaited;
 
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
@@ -18,6 +20,7 @@ import '../../core/studio/studio_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
+import '../widgets/glass_snack_bar.dart';
 import 'studio_album_detail_page.dart';
 import 'studio_artist_stats_page.dart';
 import 'studio_editor_pages.dart';
@@ -208,6 +211,9 @@ class _StudioPageState extends State<StudioPage> {
 
   /// Свежие overrides + поиск по привязанному custom и по названию (если upload прошёл без serverTrackId).
   Future<int?> _resolveServerIdForDelete(Track track) async {
+    final direct = _serverTrackId(track);
+    if (direct != null) return direct;
+
     final overrides = await _repo.getTrackMetadataOverrides();
     final customPaths = await _repo.getCustomTrackPaths();
     final api = TracksApi();
@@ -546,14 +552,38 @@ class _StudioPageState extends State<StudioPage> {
     final sid = await _resolveServerIdForDelete(track);
     final acc = await AuthSessionStore.readAccount();
     final hasToken = acc != null && acc.sessionToken.trim().isNotEmpty;
+    if (sid != null && !hasToken) {
+      if (mounted) {
+        showGlassSnackBar(context, context.t('studio.serverNeedLogin'));
+      }
+      return;
+    }
     if (sid != null && hasToken) {
       try {
         await TracksApi().deleteServerTrack(sid);
-      } catch (_) {
+      } on DioException catch (e) {
+        final code = e.response?.statusCode;
+        if (kDebugMode) {
+          debugPrint('Studio delete track $sid failed: $code ${e.message}');
+        }
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.t('studio.deleteServerFailed'))),
-        );
+        if (code == 403) {
+          showGlassSnackBar(
+            context,
+            Localizations.localeOf(context).languageCode == 'en'
+                ? 'You can only delete tracks you uploaded.'
+                : 'Можно удалить только свои загруженные треки.',
+          );
+          return;
+        }
+        if (code != 404) {
+          showGlassSnackBar(context, context.t('studio.deleteServerFailed'));
+          return;
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('Studio delete track $sid failed: $e');
+        if (!mounted) return;
+        showGlassSnackBar(context, context.t('studio.deleteServerFailed'));
         return;
       }
     }
