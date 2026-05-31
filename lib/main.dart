@@ -10,6 +10,8 @@ import 'core/audio/mobile_audio_session.dart';
 import 'core/audio/mimusic_audio_handler.dart';
 import 'core/social/colisten_controller.dart';
 import 'core/social/listening_room_session.dart';
+import 'core/app_update/app_update_dialog.dart';
+import 'core/app_update/app_update_service.dart';
 import 'core/auth/auth_session_store.dart';
 import 'core/constants/server_avatar_constants.dart';
 import 'core/profile/me_profile_avatar_disk.dart';
@@ -196,6 +198,8 @@ class MiMusicApp extends StatefulWidget {
 }
 
 class _MiMusicAppState extends State<MiMusicApp> {
+  final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
+
   _AppGate _gate = _AppGate.loading;
   late ThemeMode _themeMode;
   late Locale _locale;
@@ -259,6 +263,19 @@ class _MiMusicAppState extends State<MiMusicApp> {
     if (mounted) setState(() => _gate = _AppGate.main);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_audioPlayerService?.applyEqualizerFromSettings() ?? Future.value());
+      _scheduleAutoUpdateCheck();
+    });
+  }
+
+  void _scheduleAutoUpdateCheck() {
+    if (!AppUpdateService.instance.isAndroid) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _gate != _AppGate.main) return;
+      final update = await AppUpdateService.instance.checkIfStale();
+      if (!mounted || update == null || !update.updateAvailable) return;
+      final navContext = _rootNavigatorKey.currentContext;
+      if (navContext == null || !navContext.mounted) return;
+      await showAppUpdateDialog(navContext, update);
     });
   }
 
@@ -344,6 +361,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _rootNavigatorKey,
       title: AppLocalization(_locale).t('app.title'),
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

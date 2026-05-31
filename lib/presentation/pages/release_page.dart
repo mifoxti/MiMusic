@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -186,12 +188,11 @@ class ReleasePage extends StatelessWidget {
                       SizedBox(
                         height: 34,
                         child: FilledButton.icon(
-                          onPressed: () async {
-                            if (onListenTap != null) {
-                              await onListenTap!();
-                            }
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
+                          onPressed: () {
+                            final listen = onListenTap;
+                            Navigator.of(context).pop();
+                            if (listen != null) {
+                              unawaited(listen());
                             }
                           },
                           style: FilledButton.styleFrom(

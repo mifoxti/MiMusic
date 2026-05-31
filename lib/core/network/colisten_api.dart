@@ -93,6 +93,7 @@ class OpenColistenRoomDto {
     this.trackId,
     this.trackTitle,
     this.trackArtist,
+    this.durationSeconds,
     this.positionSeconds = 0,
     this.playing = false,
     this.listenersCount = 0,
@@ -106,6 +107,7 @@ class OpenColistenRoomDto {
   final int? trackId;
   final String? trackTitle;
   final String? trackArtist;
+  final int? durationSeconds;
   final double positionSeconds;
   final bool playing;
   final int listenersCount;
@@ -120,6 +122,7 @@ class OpenColistenRoomDto {
       trackId: (j['trackId'] as num?)?.toInt(),
       trackTitle: j['trackTitle'] as String?,
       trackArtist: j['trackArtist'] as String?,
+      durationSeconds: (j['durationSeconds'] as num?)?.toInt(),
       positionSeconds: (j['positionSeconds'] as num?)?.toDouble() ?? 0,
       playing: j['playing'] as bool? ?? false,
       listenersCount: (j['listenersCount'] as num?)?.toInt() ?? 0,

@@ -14,6 +14,7 @@ import '../widgets/glass_panel.dart';
 import '../widgets/settings_glass_scaffold.dart';
 import 'about_page.dart';
 import 'cache_page.dart';
+import 'updates_page.dart';
 import 'equalizer_page.dart';
 import 'language_page.dart';
 import 'invite_key_page.dart';
@@ -268,6 +269,22 @@ class _SettingsPageState extends State<SettingsPage> {
             if (ok != true || !context.mounted) return;
             nav.pop();
             await signOut();
+          },
+        ),
+        const GlassSettingsDivider(),
+        GlassSettingsRow(
+          icon: Icons.system_update_alt_rounded,
+          title: context.t('settings.updates'),
+          subtitle: context.t('settings.updatesSub'),
+          onTap: () {
+            Navigator.of(context).push(
+              ShellMaterialPageRoute.forSettings<void>(
+                subpath: 'updates',
+                builder: (context) => UpdatesPage(
+                  audioPlayerService: widget.audioPlayerService,
+                ),
+              ),
+            );
           },
         ),
         const GlassSettingsDivider(),

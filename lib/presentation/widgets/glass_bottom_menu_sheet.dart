@@ -10,7 +10,15 @@ import 'hold_to_confirm_button.dart';
 class GlassModalOverlay {
   GlassModalOverlay._();
 
-  static int depth = 0;
+  static final ValueNotifier<int> depth = ValueNotifier(0);
+
+  static void push() {
+    depth.value = depth.value + 1;
+  }
+
+  static void pop() {
+    depth.value = max(0, depth.value - 1);
+  }
 }
 
 /// Пункт «стеклянного» меню (как ⋮ в полном плеере).
@@ -42,7 +50,7 @@ Future<void> showGlassBottomMenuSheet(
       : Colors.white.withValues(alpha: 0.34);
   final borderGlass = Colors.white.withValues(alpha: isDark ? 0.22 : 0.45);
 
-  GlassModalOverlay.depth++;
+  GlassModalOverlay.push();
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -114,9 +122,7 @@ Future<void> showGlassBottomMenuSheet(
       ),
       );
     },
-  ).whenComplete(() {
-    GlassModalOverlay.depth = max(0, GlassModalOverlay.depth - 1);
-  });
+  ).whenComplete(GlassModalOverlay.pop);
 }
 
 /// Центрированная «стеклянная» карточка (подтверждение). [builder] получает context листа.
@@ -130,7 +136,7 @@ Future<T?> showGlassCenterSheet<T>(
       : Colors.white.withValues(alpha: 0.34);
   final borderGlass = Colors.white.withValues(alpha: isDark ? 0.22 : 0.45);
 
-  GlassModalOverlay.depth++;
+  GlassModalOverlay.push();
   return showModalBottomSheet<T>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -176,9 +182,7 @@ Future<T?> showGlassCenterSheet<T>(
         ),
       );
     },
-  ).whenComplete(() {
-    GlassModalOverlay.depth = max(0, GlassModalOverlay.depth - 1);
-  });
+  ).whenComplete(GlassModalOverlay.pop);
 }
 
 /// Компактная стеклянная подсказка (точное число по тапу на метрику).

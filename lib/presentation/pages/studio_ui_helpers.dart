@@ -39,9 +39,14 @@ InputDecoration studioGlassFieldDecoration({
   required AppColorPalette palette,
   required String labelText,
   String? hintText,
+  bool changed = false,
 }) {
-  final borderColor = palette.textPrimary.withValues(alpha: 0.2);
-  final fill = palette.primaryDark.withValues(alpha: 0.42);
+  final borderColor = changed
+      ? palette.accent.withValues(alpha: 0.85)
+      : palette.textPrimary.withValues(alpha: 0.2);
+  final fill = changed
+      ? palette.accent.withValues(alpha: 0.1)
+      : palette.primaryDark.withValues(alpha: 0.42);
   final radius = BorderRadius.circular(14);
   return InputDecoration(
     labelText: labelText,

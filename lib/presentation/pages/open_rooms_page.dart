@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -7,11 +6,15 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/auth/auth_session_store.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
+import '../../core/network/api_config.dart';
 import '../../core/network/colisten_api.dart';
+import '../../core/network/playlists_api.dart';
 import '../../core/player/player_dock_host.dart';
 import '../../core/social/colisten_controller.dart';
 import '../../core/social/listening_room_session.dart';
 import '../../core/theme/app_theme.dart';
+import '../../features/home/domain/entities/listening_friend.dart';
+import '../widgets/colisten_listening_card.dart';
 
 class OpenRoomsPage extends StatefulWidget {
   const OpenRoomsPage({
@@ -44,7 +47,8 @@ class _OpenRoomsPageState extends State<OpenRoomsPage> {
       _error = null;
     });
     try {
-      final list = await ColistenApi().fetchOpenRooms();
+      final list = _dedupeOpenRooms(await ColistenApi().fetchOpenRooms());
+      list.sort((a, b) => b.listenersCount.compareTo(a.listenersCount));
       if (!mounted) return;
       setState(() {
         _rooms = list;
@@ -97,6 +101,32 @@ class _OpenRoomsPageState extends State<OpenRoomsPage> {
     }
   }
 
+  List<OpenColistenRoomDto> _dedupeOpenRooms(List<OpenColistenRoomDto> raw) {
+    final byRoomId = <String, OpenColistenRoomDto>{};
+    for (final room in raw) {
+      final id = room.roomId.trim();
+      if (id.isEmpty) continue;
+      byRoomId[id] = room;
+    }
+    final byOwner = <int, OpenColistenRoomDto>{};
+    for (final room in byRoomId.values) {
+      final existing = byOwner[room.ownerId];
+      if (existing == null ||
+          room.listenersCount > existing.listenersCount ||
+          (room.listenersCount == existing.listenersCount &&
+              room.wallClockMs > existing.wallClockMs)) {
+        byOwner[room.ownerId] = room;
+      }
+    }
+    return byOwner.values.toList(growable: false);
+  }
+
+  String? _coverUrlForTrack(int? trackId) {
+    if (trackId == null) return null;
+    final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
+    return '$base/tracks/$trackId/cover';
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
@@ -124,7 +154,12 @@ class _OpenRoomsPageState extends State<OpenRoomsPage> {
         body: _loading
             ? Center(child: CircularProgressIndicator(color: palette.accent))
             : _error != null
-                ? Center(child: Text(_error!, style: TextStyle(color: palette.textSecondary)))
+                ? Center(
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: palette.textSecondary),
+                    ),
+                  )
                 : _rooms.isEmpty
                     ? Center(
                         child: Text(
@@ -133,73 +168,35 @@ class _OpenRoomsPageState extends State<OpenRoomsPage> {
                         ),
                       )
                     : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, AppConstants.shellBottomInset),
+                        padding: const EdgeInsets.fromLTRB(
+                          16,
+                          12,
+                          16,
+                          AppConstants.shellBottomInset,
+                        ),
                         itemCount: _rooms.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final room = _rooms[index];
                           final title = (room.trackTitle ?? '—').trim();
                           final artist = (room.trackArtist ?? '').trim();
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                              child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: palette.cardBackground.withValues(alpha: 0.42),
-                                  borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-                                  border: Border.all(color: palette.textPrimary.withValues(alpha: 0.14)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 44,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        color: palette.accent.withValues(alpha: 0.2),
-                                        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Icon(Icons.groups_rounded, color: palette.accent),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            '@${room.ownerNickname}',
-                                            style: TextStyle(
-                                              color: palette.textPrimary,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            artist.isEmpty ? title : '$artist — $title',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(color: palette.textSecondary, fontSize: 13),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            isEn
-                                                ? '${room.listenersCount} listening'
-                                                : 'Слушают: ${room.listenersCount}',
-                                            style: TextStyle(color: palette.textMuted, fontSize: 12),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    FilledButton(
-                                      onPressed: () => _connectToRoom(room),
-                                      child: Text(isEn ? 'Join' : 'Подключиться'),
-                                    ),
-                                  ],
-                                ),
+                          return ColistenListeningCard(
+                            title: title,
+                            artistName: artist,
+                            coverUrl: _coverUrlForTrack(room.trackId),
+                            listeners: [
+                              ListeningFriend(
+                                username: '@${room.ownerNickname}',
+                                avatarUrl: userAvatarUrl(room.ownerId),
+                                userId: room.ownerId,
                               ),
-                            ),
+                            ],
+                            listenerCount: room.listenersCount,
+                            positionSeconds: room.positionSeconds,
+                            durationSeconds: room.durationSeconds,
+                            playing: room.playing,
+                            wallClockMs: room.wallClockMs,
+                            onTap: () => _connectToRoom(room),
                           );
                         },
                       ),

@@ -303,22 +303,24 @@ class _StudioPageState extends State<StudioPage> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        if (GlassModalOverlay.depth > 0) {
-          final root = Navigator.of(context, rootNavigator: true);
-          if (root.canPop()) {
-            root.pop();
-            return;
-          }
-          Navigator.of(context).maybePop();
-          return;
-        }
-        Navigator.of(context).pop();
-      },
-      child: Container(
+    return ListenableBuilder(
+      listenable: GlassModalOverlay.depth,
+      builder: (context, _) {
+        final modalOpen = GlassModalOverlay.depth.value > 0;
+        return PopScope(
+          canPop: !modalOpen,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            if (modalOpen) {
+              final root = Navigator.of(context, rootNavigator: true);
+              if (root.canPop()) {
+                root.pop();
+                return;
+              }
+              Navigator.of(context).maybePop();
+            }
+          },
+          child: Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -406,7 +408,9 @@ class _StudioPageState extends State<StudioPage> {
                 ),
         ),
       ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -631,6 +635,7 @@ class _StudioPageState extends State<StudioPage> {
                     ? o!.displayArtist
                     : (o?.artist ?? track.artist),
                 coverAssetPath: o?.coverPath ?? track.coverAssetPath,
+                coverBytes: track.coverBytes,
                 audioFilePath: o?.audioFilePath ?? track.audioFilePath,
               )
             : null);
