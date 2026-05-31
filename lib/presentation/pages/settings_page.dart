@@ -146,7 +146,8 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: context.t('settings.profile'),
           onTap: () {
             Navigator.of(context).push(
-              ShellMaterialPageRoute<void>(
+              ShellMaterialPageRoute.forSettings<void>(
+                subpath: 'personal',
                 builder: (context) => PersonalSettingsPage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: widget.initialSettings,
@@ -163,7 +164,8 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: context.t('settings.inviteKeySub'),
           onTap: () {
             Navigator.of(context).push(
-              ShellMaterialPageRoute<void>(
+              ShellMaterialPageRoute.forSettings<void>(
+                subpath: 'invite',
                 builder: (_) => const InviteKeyPage(),
               ),
             );
@@ -176,7 +178,8 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: context.t('settings.equalizerSub'),
           onTap: () {
             Navigator.of(context).push(
-              ShellMaterialPageRoute<void>(
+              ShellMaterialPageRoute.forSettings<void>(
+                subpath: 'equalizer',
                 builder: (context) => EqualizerPage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: widget.initialSettings,
@@ -220,7 +223,8 @@ class _SettingsPageState extends State<SettingsPage> {
             final fresh = await widget.settingsRepository.getSettings();
             if (!mounted) return;
             await Navigator.of(context).push<void>(
-              ShellMaterialPageRoute<void>(
+              ShellMaterialPageRoute.forSettings<void>(
+                subpath: 'cache',
                 builder: (context) => CachePage(
                   settingsRepository: widget.settingsRepository,
                   initialSettings: fresh,
@@ -270,7 +274,8 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: context.t('settings.aboutSub'),
           onTap: () {
             Navigator.of(context).push(
-              ShellMaterialPageRoute<void>(
+              ShellMaterialPageRoute.forSettings<void>(
+                subpath: 'about',
                 builder: (context) => const AboutPage(),
               ),
             );
@@ -282,7 +287,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _openLanguagePage() async {
     final selected = await Navigator.of(context).push<String>(
-      ShellMaterialPageRoute<String>(
+      ShellMaterialPageRoute.forSettings<String>(
+        subpath: 'language',
         builder: (_) => LanguagePage(
           currentLanguageCode: _languageCode,
           audioPlayerService: widget.audioPlayerService,

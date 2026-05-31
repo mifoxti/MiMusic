@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'full_player_visibility.dart';
 import 'player_dock_host.dart';
+import 'shell_chrome_visibility.dart';
 
 /// Обёртка маршрута вложенного [Navigator] в shell: пока открыт полный плеер,
 /// системное «назад» сворачивает док, а не удаляет этот маршрут со стека.
@@ -52,16 +53,64 @@ class ShellMaterialPageRoute<T> extends MaterialPageRoute<T> {
   @override
   bool get opaque => _opaque;
 
-  /// Экран настроек поверх вкладок: прозрачный низ, чтобы стекло мини-плеера и
-  /// нижней навигации размывало контент вкладки, а не градиент настроек.
-  static ShellMaterialPageRoute<T> settingsOverlay<T>({
+  /// Маршрут экрана настроек (и вложенных): помечает [RouteSettings.name] для прозрачного shell chrome.
+  static ShellMaterialPageRoute<T> forSettings<T>({
     required WidgetBuilder builder,
-    RouteSettings? settings,
+    String subpath = '',
   }) {
+    final name = subpath.isEmpty
+        ? ShellRouteNames.settings
+        : '${ShellRouteNames.settings}/$subpath';
     return ShellMaterialPageRoute<T>(
       builder: builder,
-      settings: settings,
-      opaque: false,
+      settings: RouteSettings(name: name),
     );
+  }
+}
+
+/// Считает вложенные маршруты настроек и включает [ShellChromeVisibility.seeThroughOverlay].
+class ShellSettingsRouteObserver extends NavigatorObserver {
+  int _depth = 0;
+
+  void _sync() {
+    final next = _depth > 0;
+    if (ShellChromeVisibility.seeThroughOverlay.value != next) {
+      ShellChromeVisibility.seeThroughOverlay.value = next;
+    }
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (ShellRouteNames.isSettingsRoute(route.settings.name)) {
+      _depth++;
+      _sync();
+    }
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (ShellRouteNames.isSettingsRoute(route.settings.name)) {
+      _depth = (_depth - 1).clamp(0, 32);
+      _sync();
+    }
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (ShellRouteNames.isSettingsRoute(route.settings.name)) {
+      _depth = (_depth - 1).clamp(0, 32);
+      _sync();
+    }
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (ShellRouteNames.isSettingsRoute(oldRoute?.settings.name)) {
+      _depth = (_depth - 1).clamp(0, 32);
+    }
+    if (ShellRouteNames.isSettingsRoute(newRoute?.settings.name)) {
+      _depth++;
+    }
+    _sync();
   }
 }

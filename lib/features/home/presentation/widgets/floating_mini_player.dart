@@ -322,6 +322,7 @@ class FloatingMiniPlayer extends StatelessWidget {
     super.key,
     required this.track,
     required this.playerCoverPalette,
+    this.seeThroughChrome = false,
     this.trackProgress = 0.5,
     this.isPlaying = true,
     this.collaborativeMode = false,
@@ -333,6 +334,9 @@ class FloatingMiniPlayer extends StatelessWidget {
 
   final Track track;
   final PlayerCoverPaletteService playerCoverPalette;
+
+  /// На экранах настроек: только blur контента под плеером, без заливки обложкой.
+  final bool seeThroughChrome;
 
   /// Прогресс трека 0.0..1.0.
   final double trackProgress;
@@ -355,22 +359,25 @@ class FloatingMiniPlayer extends StatelessWidget {
         : const Color(0xFFE8EBF0).withValues(alpha: 0.70);
 
     if (collaborativeMode) {
-      final glassTint = collaborativeGuestMode
-          ? guestCollaborativeTint
-          : hostCollaborativeTint;
+      final glassTint = seeThroughChrome
+          ? Colors.transparent
+          : collaborativeGuestMode
+              ? guestCollaborativeTint
+              : hostCollaborativeTint;
       return Material(
         color: Colors.transparent,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(radius),
           clipBehavior: Clip.antiAlias,
-          child: AppGlass.blurredTintLayer(
-            isDark: isDark,
+          child: AppGlass.blurredTintLayerWithSigma(
+            sigma: AppGlass.blurSigma,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(radius),
                 border: Border.all(color: AppGlass.border(isDark), width: 1),
                 color: glassTint,
-                boxShadow: AppGlass.cardShadows(isDark),
+                boxShadow:
+                    seeThroughChrome ? null : AppGlass.cardShadows(isDark),
               ),
               child: MiniPlayerInterior(
                 track: track,
@@ -396,18 +403,26 @@ class FloatingMiniPlayer extends StatelessWidget {
           color: Colors.transparent,
           child: PlayerGlassShell(
             colors: playerCoverPalette.shellFrontColors,
-            coverBytes: playerCoverPalette.shellFrontCover,
-            underColors: crossfading
-                ? playerCoverPalette.shellBackColors
-                : null,
-            underCoverBytes: crossfading
-                ? playerCoverPalette.shellBackCover
-                : null,
+            coverBytes: seeThroughChrome
+                ? null
+                : playerCoverPalette.shellFrontCover,
+            underColors: seeThroughChrome
+                ? null
+                : crossfading
+                    ? playerCoverPalette.shellBackColors
+                    : null,
+            underCoverBytes: seeThroughChrome
+                ? null
+                : crossfading
+                    ? playerCoverPalette.shellBackCover
+                    : null,
             crossfade: playerCoverPalette.shellCrossfade,
             isDark: isDark,
             borderRadius: BorderRadius.circular(radius),
-            blurSigma: 0,
-            boxShadow: AppGlass.cardShadows(isDark),
+            blurSigma: seeThroughChrome ? AppGlass.blurSigma : 0,
+            seeThrough: seeThroughChrome,
+            boxShadow:
+                seeThroughChrome ? null : AppGlass.cardShadows(isDark),
             child: MiniPlayerInterior(
               track: track,
               playerCoverPalette: playerCoverPalette,

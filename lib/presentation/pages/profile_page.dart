@@ -205,7 +205,7 @@ class _ProfilePageState extends State<ProfilePage> {
             icon: Icons.settings_rounded,
             onPressed: () async {
               await Navigator.of(context).push<void>(
-                ShellMaterialPageRoute<void>(
+                ShellMaterialPageRoute.forSettings<void>(
                   builder: (context) => SettingsPage(
                     themeMode: widget.themeMode,
                     onThemeChanged: widget.onThemeChanged,

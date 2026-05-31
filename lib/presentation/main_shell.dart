@@ -19,6 +19,7 @@ import '../core/notifications/notification_intent.dart';
 import '../core/player/full_player_visibility.dart';
 import '../core/player/player_cover_palette_service.dart';
 import '../core/player/player_dock_host.dart';
+import '../core/player/shell_chrome_visibility.dart';
 import '../core/player/shell_route_back_guard.dart';
 import '../core/player/shell_navigator_host.dart';
 import '../core/social/colisten_controller.dart';
@@ -88,6 +89,8 @@ class _MainShellState extends State<MainShell>
   final ValueNotifier<int> _homeCatalogReloadToken = ValueNotifier<int>(0);
 
   late final AnimationController _playerDockController;
+  final ShellSettingsRouteObserver _settingsRouteObserver =
+      ShellSettingsRouteObserver();
   StreamSubscription<NotificationIntent>? _notificationIntentSub;
   Timer? _serverNotifPollTimer;
 
@@ -255,6 +258,7 @@ class _MainShellState extends State<MainShell>
     _homeCatalogReloadToken.dispose();
     PlayerDockHost.unregister();
     ShellNavigatorHost.unregister();
+    ShellChromeVisibility.seeThroughOverlay.value = false;
     super.dispose();
   }
 
@@ -451,6 +455,7 @@ class _MainShellState extends State<MainShell>
                           },
                           child: Navigator(
                             key: _navigatorKey,
+                            observers: [_settingsRouteObserver],
                             initialRoute: _ShellRoutes.tabs,
                             onGenerateRoute: (settings) {
                               if (settings.name == _ShellRoutes.tabs) {
@@ -525,9 +530,15 @@ class _MainShellState extends State<MainShell>
                               left: 0,
                               right: 0,
                               bottom: 0,
-                              child: _BottomNavBar(
-                                selectedIndex: _selectedIndex,
-                                onTap: _onBottomNavTap,
+                              child: ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    ShellChromeVisibility.seeThroughOverlay,
+                                builder: (context, seeThrough, _) =>
+                                    _BottomNavBar(
+                                  seeThroughChrome: seeThrough,
+                                  selectedIndex: _selectedIndex,
+                                  onTap: _onBottomNavTap,
+                                ),
                               ),
                             ),
                           ],
@@ -607,10 +618,16 @@ class _MainShellState extends State<MainShell>
                                                   ? pos.inMilliseconds /
                                                         dur.inMilliseconds
                                                   : 0.0;
-                                              return FloatingMiniPlayer(
+                                              return ValueListenableBuilder<bool>(
+                                                valueListenable:
+                                                    ShellChromeVisibility
+                                                        .seeThroughOverlay,
+                                                builder: (context, seeThrough, _) {
+                                                  return FloatingMiniPlayer(
                                                 track: t,
                                                 playerCoverPalette:
                                                     widget.playerCoverPalette,
+                                                seeThroughChrome: seeThrough,
                                                 trackProgress: progress,
                                                 isPlaying: widget
                                                     .audioPlayerService
@@ -644,12 +661,20 @@ class _MainShellState extends State<MainShell>
                                                             .togglePlayPause();
                                                       },
                                               );
+                                                },
+                                              );
                                             },
                                           ),
                                         ),
-                                      _BottomNavBar(
-                                        selectedIndex: _selectedIndex,
-                                        onTap: _onBottomNavTap,
+                                      ValueListenableBuilder<bool>(
+                                        valueListenable:
+                                            ShellChromeVisibility.seeThroughOverlay,
+                                        builder: (context, seeThrough, _) =>
+                                            _BottomNavBar(
+                                          seeThroughChrome: seeThrough,
+                                          selectedIndex: _selectedIndex,
+                                          onTap: _onBottomNavTap,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -742,10 +767,15 @@ class _TabsView extends StatelessWidget {
 }
 
 class _BottomNavBar extends StatelessWidget {
-  const _BottomNavBar({required this.selectedIndex, required this.onTap});
+  const _BottomNavBar({
+    required this.selectedIndex,
+    required this.onTap,
+    this.seeThroughChrome = false,
+  });
 
   final int selectedIndex;
   final ValueChanged<int> onTap;
+  final bool seeThroughChrome;
 
   @override
   Widget build(BuildContext context) {
@@ -762,14 +792,14 @@ class _BottomNavBar extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(barRadius),
         clipBehavior: Clip.antiAlias,
-        child: AppGlass.blurredTintLayer(
-          isDark: isDark,
+        child: AppGlass.blurredTintLayerWithSigma(
+          sigma: AppGlass.blurSigma,
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(barRadius),
               border: Border.all(color: borderGlass, width: 1),
-              color: glassTint,
-              boxShadow: AppGlass.cardShadows(isDark),
+              color: seeThroughChrome ? Colors.transparent : glassTint,
+              boxShadow: seeThroughChrome ? null : AppGlass.cardShadows(isDark),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),

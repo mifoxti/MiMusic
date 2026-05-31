@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import 'hold_to_confirm_button.dart';
 
 /// Пункт «стеклянного» меню (как ⋮ в полном плеере).
 class GlassMenuAction {
@@ -151,6 +152,76 @@ Future<T?> showGlassCenterSheet<T>(
               ),
             ),
           ),
+        ),
+      );
+    },
+  );
+}
+
+/// Подтверждение с удержанием «Удалить» (как удаление мысли).
+Future<bool?> showGlassHoldToConfirmSheet(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirmLabel,
+  required String cancelLabel,
+  String? holdHint,
+}) {
+  return showGlassCenterSheet<bool>(
+    context,
+    builder: (sheetContext) {
+      final palette = AppPaletteExtension.of(sheetContext).palette;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              style: TextStyle(
+                color: palette.textSecondary,
+                height: 1.35,
+              ),
+            ),
+            if (holdHint != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                holdHint,
+                style: TextStyle(
+                  color: palette.textMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(sheetContext, false),
+                    child: Text(cancelLabel),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: HoldToConfirmButton(
+                    label: confirmLabel,
+                    onConfirmed: () => Navigator.pop(sheetContext, true),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       );
     },

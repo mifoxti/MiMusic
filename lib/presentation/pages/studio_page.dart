@@ -20,6 +20,7 @@ import '../../core/studio/studio_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
+import '../widgets/glass_bottom_menu_sheet.dart';
 import '../widgets/glass_snack_bar.dart';
 import 'studio_album_detail_page.dart';
 import 'studio_artist_stats_page.dart';
@@ -535,17 +536,13 @@ class _StudioPageState extends State<StudioPage> {
   }
 
   Future<void> _deleteTrack(Track track) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: Text(context.t('studio.deleteTrack')),
-        content: Text('«${track.title}» будет удалён из библиотеки.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(context.t('common.cancel'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(context.t('studio.delete'), style: const TextStyle(color: Colors.red))),
-        ],
-      ),
+    final confirm = await showGlassHoldToConfirmSheet(
+      context,
+      title: context.t('studio.deleteTrack'),
+      message: '«${track.title}»\n${context.t('studio.deleteConfirm')}',
+      confirmLabel: context.t('studio.delete'),
+      cancelLabel: context.t('common.cancel'),
+      holdHint: context.t('studio.deleteHoldHint'),
     );
     if (confirm != true || !mounted) return;
 
