@@ -23,7 +23,6 @@ import '../../../../core/social/listening_room_session.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/cover_image.dart';
 import '../../../../core/widgets/track_cover.dart';
 import '../../../../presentation/pages/artist_page.dart';
 import '../../../../presentation/pages/listening_history_page.dart';
@@ -35,6 +34,7 @@ import '../../../../presentation/pages/for_you_page.dart';
 import '../../domain/entities/home_section.dart';
 import '../../domain/use_cases/get_home_section_use_case.dart';
 import '../widgets/friends_section.dart';
+import '../widgets/home_recommendations.dart';
 import '../widgets/history_section.dart';
 import '../widgets/nav_card_button.dart';
 import '../widgets/releases_section.dart';
@@ -579,67 +579,67 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 20),
                   ],
-                  _buildRecommendationRow(
-                    context,
-                    title: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Recommended tracks'
-                        : 'Рекомендованные треки',
-                    items: recommendedTracks
-                        .map(
-                          (e) => (
-                            title: e.title,
-                            subtitle: e.artistDisplay,
-                            imageUrl: e.coverFallbackPath,
-                            circle: false,
-                            onTap: () => _playRecommendedTrack(
-                              selected: e,
-                              queue: recommendedTracks,
-                            ),
+                  if (recommendedTracks.isNotEmpty)
+                    HomeRecommendationSection(
+                      title: Localizations.localeOf(context).languageCode == 'en'
+                          ? 'Recommended tracks'
+                          : 'Рекомендованные треки',
+                      height: 72,
+                      itemCount: recommendedTracks.length,
+                      itemBuilder: (context, index) {
+                        final e = recommendedTracks[index];
+                        return RecommendedTrackCard(
+                          title: e.title,
+                          artist: e.artistDisplay,
+                          coverUrl: e.coverFallbackPath,
+                          onTap: () => _playRecommendedTrack(
+                            selected: e,
+                            queue: recommendedTracks,
                           ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 20),
-                  _buildRecommendationRow(
-                    context,
-                    title: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Recommended playlists'
-                        : 'Рекомендованные плейлисты',
-                    items: section.recommendedPlaylists
-                        .map(
-                          (e) => (
-                            title: e.title,
-                            subtitle: '',
-                            imageUrl: e.coverUrl,
-                            circle: false,
-                            onTap: () => _openRecommendedPlaylists(context),
+                        );
+                      },
+                    ),
+                  if (recommendedTracks.isNotEmpty) const SizedBox(height: 20),
+                  if (section.recommendedPlaylists.isNotEmpty)
+                    HomeRecommendationSection(
+                      title: Localizations.localeOf(context).languageCode == 'en'
+                          ? 'Recommended playlists'
+                          : 'Рекомендованные плейлисты',
+                      height: 148,
+                      itemCount: section.recommendedPlaylists.length,
+                      itemBuilder: (context, index) {
+                        final e = section.recommendedPlaylists[index];
+                        return RecommendedPlaylistCard(
+                          title: e.title,
+                          coverUrl: e.coverUrl,
+                          onTap: () => _openRecommendedPlaylists(context),
+                        );
+                      },
+                    ),
+                  if (section.recommendedPlaylists.isNotEmpty)
+                    const SizedBox(height: 20),
+                  if (section.recommendedArtists.isNotEmpty)
+                    HomeRecommendationSection(
+                      title: Localizations.localeOf(context).languageCode == 'en'
+                          ? 'Recommended artists'
+                          : 'Рекомендованные авторы',
+                      height: 152,
+                      itemCount: section.recommendedArtists.length,
+                      itemBuilder: (context, index) {
+                        final e = section.recommendedArtists[index];
+                        return RecommendedArtistCard(
+                          name: e.username,
+                          avatarUrl: e.avatarUrl,
+                          onTap: () => _openRecommendedArtist(
+                            context,
+                            username: e.username,
+                            avatarUrl: e.avatarUrl,
                           ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 20),
-                  _buildRecommendationRow(
-                    context,
-                    title: Localizations.localeOf(context).languageCode == 'en'
-                        ? 'Recommended artists'
-                        : 'Рекомендованные авторы',
-                    items: section.recommendedArtists
-                        .map(
-                          (e) => (
-                            title: e.username,
-                            subtitle: '',
-                            imageUrl: e.avatarUrl,
-                            circle: true,
-                            onTap: () => _openRecommendedArtist(
-                              context,
-                              username: e.username,
-                              avatarUrl: e.avatarUrl,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 20),
+                        );
+                      },
+                    ),
+                  if (section.recommendedArtists.isNotEmpty)
+                    const SizedBox(height: 20),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: ReleasesSection(
@@ -674,141 +674,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildRecommendationRow(
-    BuildContext context, {
-    required String title,
-    required List<
-      ({
-        String title,
-        String subtitle,
-        String? imageUrl,
-        bool circle,
-        VoidCallback onTap,
-      })
-    >
-    items,
-  }) {
-    final palette = AppPaletteExtension.of(context).palette;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: palette.textPrimary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 92,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              final isDark = Theme.of(context).brightness == Brightness.dark;
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-                child: AppGlass.blurredTintLayer(
-                  isDark: isDark,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: item.onTap,
-                      borderRadius: BorderRadius.circular(
-                        AppConstants.radiusLarge,
-                      ),
-                      child: Container(
-                        constraints: const BoxConstraints(
-                          minWidth: 140,
-                          maxWidth: 220,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppGlass.tint(isDark),
-                          borderRadius: BorderRadius.circular(
-                            AppConstants.radiusLarge,
-                          ),
-                          border: Border.all(color: AppGlass.border(isDark)),
-                          boxShadow: AppGlass.cardShadows(isDark),
-                        ),
-                        child: Row(
-                          children: [
-                            buildCoverImage(
-                              imageUrl: item.imageUrl,
-                              width: 52,
-                              height: 52,
-                              borderRadius: item.circle
-                                  ? BorderRadius.circular(26)
-                                  : BorderRadius.circular(
-                                      AppConstants.radiusMedium,
-                                    ),
-                              placeholder: Container(
-                                color: palette.primaryDark.withValues(
-                                  alpha: 0.45,
-                                ),
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  item.circle
-                                      ? Icons.person_rounded
-                                      : Icons.music_note_rounded,
-                                  color: palette.textMuted,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    item.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: palette.textPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  if (item.subtitle.isNotEmpty) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      item.subtitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: palette.textSecondary,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 }
