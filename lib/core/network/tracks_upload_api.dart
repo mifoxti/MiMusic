@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import 'api_config.dart';
 import 'authenticated_dio.dart';
 
 /// Ответ [POST /upload/track]: вход mp3/wav/m4a, сервер конвертирует в AAC `.m4a`; опционально обложка.
@@ -87,11 +88,21 @@ Future<Dio> _dioForTrackUpload() async {
 class TracksUploadApi {
   /// [GET /tracks/{id}/cover] с авторизацией — для предпросмотра после загрузки MP3.
   static Future<Uint8List?> fetchTrackCoverBytes(int trackId) async {
-    final dio = await createAuthenticatedDio();
+    final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: base,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 30),
+      ),
+    );
     try {
       final res = await dio.get<dynamic>(
         '/tracks/$trackId/cover',
-        options: Options(responseType: ResponseType.bytes),
+        options: Options(
+          responseType: ResponseType.bytes,
+          validateStatus: (s) => s != null && s >= 200 && s < 300,
+        ),
       );
       final data = res.data;
       if (data == null) return null;

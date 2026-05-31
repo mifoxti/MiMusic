@@ -198,7 +198,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
         ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 44,
+          height: 52,
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.only(bottom: 4),
@@ -210,6 +210,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                   child: GlassChoiceChip(
                     label: preset.name,
                     selected: _selectedPresetIndex == i,
+                    compact: true,
                     onTap: () => _applyPreset(i),
                   ),
                 );

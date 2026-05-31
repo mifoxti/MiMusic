@@ -134,10 +134,18 @@ class _CachedNetworkCoverState extends State<_CachedNetworkCover> {
   }
 
   Future<void> _load() async {
-    final file = await RemoteImageCache.instance.fileForUrl(
+    var file = await RemoteImageCache.instance.fileForUrl(
       widget.imageUrl,
       forceRefresh: widget.forceRefresh,
     );
+  // Повтор: сервер мог только что извлечь обложку из MP3 при первом GET.
+    if (file == null && !widget.forceRefresh) {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      file = await RemoteImageCache.instance.fileForUrl(
+        widget.imageUrl,
+        forceRefresh: true,
+      );
+    }
     if (!mounted) return;
     setState(() {
       _filePath = file?.path;

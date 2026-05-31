@@ -503,12 +503,14 @@ class GlassChoiceChip extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.icon,
+    this.compact = false,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
   final IconData? icon;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -526,7 +528,10 @@ class GlassChoiceChip extends StatelessWidget {
             isDark: isDark,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+              padding: EdgeInsets.symmetric(
+                vertical: compact ? 8 : 12,
+                horizontal: compact ? 12 : 10,
+              ),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(

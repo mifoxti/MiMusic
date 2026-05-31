@@ -55,12 +55,19 @@ class RemoteImageCache {
     return uri != null && uri.path.endsWith('/me/avatar');
   }
 
+  /// Только аватары требуют Bearer. [GET /tracks/{id}/cover] — публичный.
   bool requiresAuth(String url) {
     final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
     if (!url.startsWith(base)) return false;
     if (url.contains('/me/avatar')) return true;
-    if (RegExp(r'/tracks/\d+/cover').hasMatch(url)) return true;
     return url.contains('/users/') && url.contains('/avatar');
+  }
+
+  String _requestPath(String url) {
+    final uri = Uri.parse(url);
+    if (!uri.hasScheme) return url;
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    return uri.hasQuery ? '$path?${uri.query}' : path;
   }
 
   /// Возвращает файл из кэша или скачивает в кэш. При ошибке сети — старый файл, если есть.
@@ -86,12 +93,13 @@ class RemoteImageCache {
           ? await createAuthenticatedDio()
           : Dio(
               BaseOptions(
+                baseUrl: ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), ''),
                 connectTimeout: const Duration(seconds: 15),
                 receiveTimeout: const Duration(seconds: 45),
               ),
             );
       final res = await dio.get<List<int>>(
-        url,
+        _requestPath(url),
         options: Options(
           responseType: ResponseType.bytes,
           followRedirects: true,

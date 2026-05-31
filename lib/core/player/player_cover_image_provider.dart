@@ -1,14 +1,11 @@
 import 'dart:io';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../audio/track.dart';
 import '../cache/remote_image_cache.dart';
-import '../network/api_config.dart';
-import '../network/authenticated_dio.dart';
 import '../network/tracks_api.dart';
 import '../network/tracks_upload_api.dart';
 
@@ -29,30 +26,11 @@ int? _serverTrackIdFromTrack(Track track) {
   return null;
 }
 
-bool _isApiTrackCoverUrl(String url) {
-  final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
-  return url.startsWith(base) && url.contains('/tracks/') && url.contains('/cover');
-}
-
 Future<Uint8List?> _fetchCoverBytesFromUrl(String url) async {
   if (kIsWeb) return null;
-  if (_isApiTrackCoverUrl(url)) {
-    try {
-      final dio = await createAuthenticatedDio();
-      final res = await dio.get<dynamic>(
-        url,
-        options: Options(responseType: ResponseType.bytes),
-      );
-      final data = res.data;
-      if (data is Uint8List && data.isNotEmpty) return data;
-      if (data is List<int> && data.isNotEmpty) {
-        return Uint8List.fromList(data);
-      }
-    } catch (_) {}
-  }
   final file = await RemoteImageCache.instance.fileForUrl(
     url,
-    requireAuth: _isApiTrackCoverUrl(url),
+    requireAuth: false,
   );
   if (file != null && await file.exists() && await file.length() > 0) {
     return file.readAsBytes();
