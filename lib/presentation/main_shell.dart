@@ -768,6 +768,7 @@ class _TabsView extends StatelessWidget {
           settingsDisplayGeneration: settingsDisplayGeneration,
           audioPlayerService: audioPlayerService,
           playlistsRepository: playlistsRepository,
+          listeningHistoryRepository: listeningHistoryRepository,
         ),
       ],
     );

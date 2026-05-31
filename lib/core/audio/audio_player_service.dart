@@ -26,6 +26,10 @@ class AudioPlayerService extends ChangeNotifier {
   }) : _handler = audioHandler as MiMusicAudioHandler,
        _settingsRepository = settingsRepository,
        _offlineDownloads = offlineDownloads {
+    setMiMusicHandlerRemoteActions(
+      onLike: toggleLike,
+      onDislike: toggleDislikeCurrent,
+    );
     _listenToHandler();
     unawaited(_bootstrapOfflineState());
     unawaited(syncTrackLikesFromServer());
@@ -39,6 +43,7 @@ class AudioPlayerService extends ChangeNotifier {
   StreamSubscription<PlaybackState>? _playbackStateSub;
   StreamSubscription<MediaItem?>? _mediaItemSub;
   int? _lastSyncedNowPlayingTrackId;
+  String? _lastLikeStatusSyncKey;
 
   Track? _currentTrack;
   Duration _position = Duration.zero;
@@ -137,6 +142,7 @@ class AudioPlayerService extends ChangeNotifier {
       if (item != null) {
         _currentTrack = _trackFromMediaItem(item);
         unawaited(_syncNowPlayingCurrentTrack());
+        unawaited(_syncLikeStateForCurrentTrack());
       }
       _duration = item?.duration ?? _duration;
       notifyListeners();
@@ -287,6 +293,8 @@ class AudioPlayerService extends ChangeNotifier {
       );
     }
     unawaited(_syncNowPlayingToServer(track));
+    _lastLikeStatusSyncKey = null;
+    unawaited(_syncLikeStateForCurrentTrack());
   }
 
   Future<void> _syncNowPlayingToServer(Track track) async {
@@ -699,8 +707,45 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  /// Стабильный ключ лайка (`server_track_N` / assets), не URL потока.
+  String? get _currentLikeKey {
+    final track = _currentTrack;
+    if (track != null && track.assetPath.trim().isNotEmpty) {
+      return track.assetPath.trim();
+    }
+    return currentPlayablePath;
+  }
+
+  Future<void> _syncLikeStateForCurrentTrack() async {
+    final path = _currentLikeKey;
+    if (path == null || path.isEmpty) {
+      _lastLikeStatusSyncKey = null;
+      return;
+    }
+    if (path == _lastLikeStatusSyncKey) return;
+    _lastLikeStatusSyncKey = path;
+
+    final trackId = TracksApi().parseServerTrackId(path);
+    final acc = await AuthSessionStore.readAccount();
+    final userId = acc?.userId;
+    if (trackId == null || userId == null) return;
+
+    try {
+      final liked = await TracksApi().getTrackLikeStatus(
+        trackId: trackId,
+        userId: userId,
+      );
+      await _handler.customAction('setLikePath', {
+        'path': path,
+        'liked': liked,
+      });
+    } catch (_) {
+      // офлайн / ошибка — оставляем локальное состояние
+    }
+  }
+
   Future<void> toggleLike() async {
-    final path = currentPlayablePath;
+    final path = _currentLikeKey;
     if (path == null || path.isEmpty) return;
     await toggleLikePath(path);
   }
@@ -721,6 +766,7 @@ class AudioPlayerService extends ChangeNotifier {
           'path': path,
           'liked': liked,
         });
+        _lastLikeStatusSyncKey = path;
         return;
       } catch (_) {
         // fallback локального переключения
@@ -846,6 +892,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   @override
   void dispose() {
+    setMiMusicHandlerRemoteActions(onLike: null, onDislike: null);
     _offlineDownloads.removeListener(_onOfflineDownloadsChanged);
     if (ColistenController.instance.isConnected ||
         ListeningRoomSession.instance.active) {

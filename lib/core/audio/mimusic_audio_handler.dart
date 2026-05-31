@@ -27,6 +27,18 @@ void setListeningHistoryRepository(ListeningHistoryRepository? repo) {
 ListeningHistoryRepository? get listeningHistoryRepository =>
     _listeningHistoryRepository;
 
+Future<void> Function()? _remoteOnLike;
+Future<void> Function()? _remoteOnDislike;
+
+/// Колбэки из [AudioPlayerService]: лайк/дизлайк из системного плеера с синхронизацией API.
+void setMiMusicHandlerRemoteActions({
+  Future<void> Function()? onLike,
+  Future<void> Function()? onDislike,
+}) {
+  _remoteOnLike = onLike;
+  _remoteOnDislike = onDislike;
+}
+
 /// Обработчик аудио для audio_service: воспроизведение через just_audio,
 /// уведомление в шторке (Android) и Control Center (iOS) с управлением.
 class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
@@ -195,17 +207,27 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  static final MediaControl _dislikeControl = MediaControl.custom(
-    androidIcon: 'drawable/ic_dislike',
-    label: 'Дизлайк',
-    name: 'dislike',
-  );
+  MediaControl _dislikeControlFor(String? likeKey) {
+    final active =
+        likeKey != null && likeKey.isNotEmpty && _dislikedPaths.contains(likeKey);
+    return MediaControl.custom(
+      androidIcon:
+          active ? 'drawable/ic_dislike_filled' : 'drawable/ic_dislike',
+      label: active ? 'Убрать дизлайк' : 'Дизлайк',
+      name: active ? 'dislike_on' : 'dislike_off',
+    );
+  }
 
-  static final MediaControl _likeControl = MediaControl.custom(
-    androidIcon: 'drawable/ic_favorite',
-    label: 'Лайк',
-    name: 'like',
-  );
+  MediaControl _likeControlFor(String? likeKey) {
+    final active =
+        likeKey != null && likeKey.isNotEmpty && _likedPaths.contains(likeKey);
+    return MediaControl.custom(
+      androidIcon:
+          active ? 'drawable/ic_favorite' : 'drawable/ic_favorite_border',
+      label: active ? 'Убрать лайк' : 'Лайк',
+      name: active ? 'like_on' : 'like_off',
+    );
+  }
 
   static const _systemActions = {
     MediaAction.seek,
@@ -237,7 +259,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       if (_canUseSkipControls) MediaControl.skipToNext,
     ];
     if (_useAndroidLikeDislikeControls) {
-      controls.addAll([_dislikeControl, _likeControl]);
+      final likeKey = _currentLikeKey;
+      controls.addAll([_dislikeControlFor(likeKey), _likeControlFor(likeKey)]);
     }
     return controls.isEmpty ? [playPause] : controls;
   }
@@ -531,6 +554,19 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
+  /// Ключ лайка/дизлайка — стабильный id трека (`server_track_N` / assets), не URL потока.
+  String? get _currentLikeKey {
+    if (_queue.isEmpty || _queueIndex < 0 || _queueIndex >= _queue.length) {
+      return null;
+    }
+    final row = _queue[_queueIndex];
+    final itemId = (row['itemId'] as String?)?.trim();
+    if (itemId != null && itemId.isNotEmpty) return itemId;
+    final p = row['path'] as String? ?? '';
+    if (p.isEmpty) return null;
+    return p;
+  }
+
   String? get currentPlayablePath {
     if (_queue.isEmpty || _queueIndex < 0 || _queueIndex >= _queue.length) {
       return null;
@@ -546,7 +582,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   bool get hasMultiTrackQueue => _queue.length > 1;
 
   void _toggleLike() {
-    final path = currentPlayablePath;
+    final path = _currentLikeKey;
     if (path == null) return;
     _toggleLikePath(path);
   }
@@ -629,7 +665,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void _toggleDislikeCurrent() {
-    final path = currentPlayablePath;
+    final path = _currentLikeKey;
     if (path == null) return;
     _toggleDislikePath(path);
   }
@@ -976,7 +1012,13 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         );
         break;
       case 'like':
-        _toggleLike();
+      case 'like_on':
+      case 'like_off':
+        if (_remoteOnLike != null) {
+          await _remoteOnLike!();
+        } else {
+          _toggleLike();
+        }
         break;
       case 'toggleLikePath':
         _toggleLikePath(extras?['path'] as String? ?? '');
@@ -998,9 +1040,13 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         _toggleDislikeCurrent();
         break;
       case 'dislike':
+      case 'dislike_on':
+      case 'dislike_off':
         final dislikePath = extras?['path'] as String?;
         if (dislikePath != null && dislikePath.isNotEmpty) {
           _toggleDislikePath(dislikePath);
+        } else if (_remoteOnDislike != null) {
+          await _remoteOnDislike!();
         } else {
           _toggleDislikeCurrent();
         }

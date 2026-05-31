@@ -557,8 +557,10 @@ class _HomePageState extends State<HomePage> {
                     child: ListenableBuilder(
                       listenable: widget.listeningHistoryRepository,
                       builder: (context, _) {
-                        return HistorySection(
+                        return HistorySectionCard(
                           subtitle: _historySubtitle(),
+                          listeningHistoryRepository:
+                              widget.listeningHistoryRepository,
                           onTap: () => _openListeningHistory(context),
                         );
                       },

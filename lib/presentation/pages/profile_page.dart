@@ -15,6 +15,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/settings/settings_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/history/listening_history_repository.dart';
 import '../../core/network/notifications_api.dart';
 import '../../core/platform/platform.dart';
 import '../../core/player/shell_route_back_guard.dart';
@@ -28,11 +29,11 @@ import 'friends_page.dart';
 import 'notifications_page.dart';
 import 'playlists_page.dart';
 import 'settings_page.dart';
-import 'my_albums_page.dart';
-import 'studio_page.dart';
-import 'thoughts_page.dart';
+import 'listening_history_page.dart';
 import 'open_rooms_page.dart';
 import 'saved_page.dart';
+import 'studio_page.dart';
+import 'thoughts_page.dart';
 
 /// Страница профиля: коллапсирующий header с обложкой и аватаром + "поднимающийся" bottom-sheet.
 class ProfilePage extends StatefulWidget {
@@ -47,6 +48,7 @@ class ProfilePage extends StatefulWidget {
     required this.settingsDisplayGeneration,
     required this.audioPlayerService,
     required this.playlistsRepository,
+    required this.listeningHistoryRepository,
   });
 
   final ThemeMode themeMode;
@@ -59,6 +61,7 @@ class ProfilePage extends StatefulWidget {
   final int settingsDisplayGeneration;
   final AudioPlayerService audioPlayerService;
   final PlaylistsRepository playlistsRepository;
+  final ListeningHistoryRepository listeningHistoryRepository;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -261,14 +264,18 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 12),
           GlassTapCard(
-            title: context.t('albums.myTitle'),
-            subtitle: isEn ? 'Albums on the server' : 'Альбомы на сервере',
-            icon: Icons.library_music_rounded,
+            title: context.t('history.title'),
+            subtitle: isEn
+                ? 'Recently played tracks'
+                : 'Недавно прослушанные треки',
+            icon: Icons.history_rounded,
             onTap: () {
               Navigator.of(context).push(
                 ShellMaterialPageRoute<void>(
-                  builder: (_) => MyAlbumsPage(
+                  builder: (_) => ListeningHistoryPage(
                     audioPlayerService: widget.audioPlayerService,
+                    listeningHistoryRepository:
+                        widget.listeningHistoryRepository,
                   ),
                 ),
               );
