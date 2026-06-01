@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/auth/auth_session_store.dart';
 import '../../core/network/server_connectivity.dart';
 import '../../core/network/tracks_api.dart';
 import '../../core/constants/app_constants.dart';
@@ -81,28 +82,14 @@ class _FavoritesPageState extends State<FavoritesPage> {
         }
       }
 
-      final serverIds = liked
-          .where((p) => p.startsWith('server_track_'))
-          .map((p) => int.tryParse(p.replaceFirst('server_track_', '')))
-          .whereType<int>()
-          .toSet();
-      if (serverIds.isNotEmpty) {
+      final userId = (await AuthSessionStore.readAccount())?.userId;
+      if (userId != null) {
         try {
-          final remote = await TracksApi().fetchTracks(limit: 200);
-          for (final r in remote) {
-            if (!serverIds.contains(r.id)) continue;
+          final loved = await TracksApi().fetchLovedTracks(userId: userId);
+          for (final r in loved) {
             final key = 'server_track_${r.id}';
             if (!seen.add(key)) continue;
-            out.add(
-              Track(
-                assetPath: key,
-                title: r.title,
-                artist: r.artist,
-                audioFilePath: r.streamUrl(),
-                coverBytes: r.coverBytes,
-                coverAssetPath: r.coverUrl(),
-              ),
-            );
+            out.add(r.toTrack());
           }
         } catch (_) {}
       }

@@ -204,4 +204,33 @@ class TracksApi {
     );
     return res.data?['status'] as bool? ?? false;
   }
+
+  /// Лайкнутые треки в порядке постановки лайка ([GET /users/{id}/loved]).
+  Future<List<ServerTrackListItem>> fetchLovedTracks({required int userId}) async {
+    final res = await _dio.get<List<dynamic>>('/users/$userId/loved');
+    final data = res.data;
+    if (data == null) return [];
+    return data
+        .map((e) => _lovedTrackFromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  ServerTrackListItem _lovedTrackFromJson(Map<String, dynamic> json) {
+    Uint8List? coverBytes;
+    final rawCover = json['coverArt'] ?? json['cover'];
+    if (rawCover is String && rawCover.isNotEmpty) {
+      try {
+        coverBytes = Uint8List.fromList(base64Decode(rawCover));
+      } catch (_) {
+        coverBytes = null;
+      }
+    }
+    return ServerTrackListItem(
+      id: (json['id'] as num).toInt(),
+      title: json['title'] as String? ?? '',
+      artist: json['artist'] as String?,
+      durationSec: (json['duration'] as num?)?.toInt(),
+      coverBytes: coverBytes,
+    );
+  }
 }

@@ -775,8 +775,46 @@ class AudioPlayerService extends ChangeNotifier {
     await _handler.customAction('toggleLikePath', {'path': path});
   }
 
+  /// Дизлайк: локально помечает трек; при постановке снимает лайк на сервере (если был).
   Future<void> toggleDislikeCurrent() async {
-    await _handler.customAction('toggleDislikeCurrent');
+    final path = _currentLikeKey;
+    if (path == null || path.isEmpty) return;
+    await toggleDislikePath(path);
+  }
+
+  Future<void> toggleDislikePath(String path) async {
+    if (path.isEmpty) return;
+
+    if (isPathDisliked(path)) {
+      await _handler.customAction('dislike', {'path': path});
+      return;
+    }
+
+    final trackId = TracksApi().parseServerTrackId(path);
+    final userId = (await AuthSessionStore.readAccount())?.userId;
+    if (trackId != null && userId != null) {
+      try {
+        final likedOnServer = isPathLiked(path) ||
+            await TracksApi().getTrackLikeStatus(
+              trackId: trackId,
+              userId: userId,
+            );
+        if (likedOnServer) {
+          await TracksApi().toggleTrackLike(trackId: trackId, userId: userId);
+          _lastLikeStatusSyncKey = path;
+        }
+        await _handler.customAction('setLikePath', {
+          'path': path,
+          'liked': false,
+        });
+      } catch (_) {
+        // офлайн — только локальный дизлайк ниже
+      }
+    }
+
+    if (!isPathDisliked(path)) {
+      await _handler.customAction('dislike', {'path': path});
+    }
   }
 
   Future<void> setShuffleEnabled(bool enabled) async {
@@ -858,17 +896,9 @@ class AudioPlayerService extends ChangeNotifier {
     final userId = acc?.userId;
     if (userId == null) return;
     try {
-      final tracks = await TracksApi().fetchTracks(limit: 200);
-      final liked = <String>{};
-      for (final t in tracks) {
-        final s = await TracksApi().getTrackLikeStatus(
-          trackId: t.id,
-          userId: userId,
-        );
-        if (s) liked.add('server_track_${t.id}');
-      }
+      final loved = await TracksApi().fetchLovedTracks(userId: userId);
       await _handler.customAction('replaceLikedPaths', {
-        'paths': liked.toList(),
+        'paths': loved.map((t) => 'server_track_${t.id}').toList(),
       });
     } catch (_) {
       // сеть недоступна — оставляем локальное состояние
