@@ -84,6 +84,14 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
+  @override
+  void didUpdateWidget(covariant ProfilePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.settingsDisplayGeneration != widget.settingsDisplayGeneration) {
+      unawaited(_primeFromCacheAndSync());
+    }
+  }
+
   /// Сначала кэш (быстрый UI), затем сеть; [setState] только если данные изменились.
   Future<void> _refreshProfileFromUser() async {
     if (!mounted) return;
@@ -216,6 +224,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     settingsRepository: widget.settingsRepository,
                     initialSettings: widget.initialSettings,
                     audioPlayerService: widget.audioPlayerService,
+                    onShellSettingsReload: widget.onShellSettingsReload,
                   ),
                 ),
               );

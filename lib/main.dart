@@ -14,8 +14,11 @@ import 'core/app_update/app_update_dialog.dart';
 import 'core/app_update/app_update_service.dart';
 import 'core/auth/auth_session_store.dart';
 import 'core/constants/server_avatar_constants.dart';
+import 'core/network/profile_api.dart';
+import 'core/profile/me_avatar_cache_refresh.dart';
 import 'core/profile/me_profile_avatar_disk.dart';
 import 'core/profile/me_profile_cache.dart';
+import 'presentation/widgets/user_avatar.dart';
 import 'core/network/api_config.dart';
 import 'core/auth/session_scope.dart';
 import 'core/history/api_listening_history_repository.dart';
@@ -246,10 +249,25 @@ class _MiMusicAppState extends State<MiMusicApp> {
       await widget.settingsRepository.saveSettings(s);
     }
     if (serverSession && acc.userId != null) {
-      final cached = await MeProfileCache.loadForUser(acc.userId!);
-      if (cached != null && cached.hasServerAvatar) {
-        s = s.copyWith(avatarPath: kServerMeAvatarMarker);
-        await widget.settingsRepository.saveSettings(s);
+      final uid = acc.userId!;
+      try {
+        final me = await ProfileApi().fetchMe();
+        await MeProfileCache.save(uid, me);
+        if (me.avatarStorageKey != null && me.avatarStorageKey!.trim().isNotEmpty) {
+          s = s.copyWith(avatarPath: kServerMeAvatarMarker);
+          await widget.settingsRepository.saveSettings(s);
+          await refreshCachedMeAvatar();
+        } else if (s.avatarPath == kServerMeAvatarMarker) {
+          s = s.copyWith(avatarPath: kDefaultUserAvatarAsset);
+          await widget.settingsRepository.saveSettings(s);
+          await MeProfileAvatarDisk.clear();
+        }
+      } catch (_) {
+        final cached = await MeProfileCache.loadForUser(uid);
+        if (cached != null && cached.hasServerAvatar) {
+          s = s.copyWith(avatarPath: kServerMeAvatarMarker);
+          await widget.settingsRepository.saveSettings(s);
+        }
       }
     }
     if (!mounted) return;

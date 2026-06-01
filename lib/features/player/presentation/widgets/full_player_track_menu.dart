@@ -9,6 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../features/playlists/data/repositories/local_playlists_repository.dart';
 import '../../../../features/playlists/domain/repositories/playlists_repository.dart';
+import '../../../../presentation/widgets/glass_bottom_menu_sheet.dart';
 
 /// Меню ⋮ полного плеера: «стеклянная» подложка как у мини-плеера.
 Future<void> showFullPlayerTrackMenu(
@@ -144,11 +145,14 @@ Future<void> showTrackPlaylistPicker(
   /// Для плейлистов на сервере в списке хранится `server_track_<id>`, а не URL стрима.
   final playlistKey = track.assetPath;
 
+  GlassModalOverlay.push();
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
+    useRootNavigator: true,
     builder: (ctx) {
+      final bottomPad = MediaQuery.paddingOf(ctx).bottom + 12;
       return DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.45,
@@ -156,7 +160,7 @@ Future<void> showTrackPlaylistPicker(
         maxChildSize: 0.85,
         builder: (context, scrollController) {
           return Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: EdgeInsets.fromLTRB(12, 0, 12, bottomPad),
             child: ClipRRect(
               borderRadius: const BorderRadius.all(Radius.circular(20)),
               child: BackdropFilter(
@@ -255,7 +259,7 @@ Future<void> showTrackPlaylistPicker(
         },
       );
     },
-  );
+  ).whenComplete(GlassModalOverlay.pop);
 }
 
 void _showAboutTrack(

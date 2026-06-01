@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/l10n/app_localization.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_glass.dart';
@@ -30,7 +32,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     super.dispose();
   }
 
-  static const int _count = 4;
+  static const int _count = 5;
+
+  Future<void> _openTelegramChannel() async {
+    final uri = Uri.parse(AppConstants.telegramUpdatesChannelUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   Future<void> _finish() async {
     await widget.onCompleted();
@@ -134,6 +143,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                             icon: _iconFor(index),
                             title: context.t('onboarding.slide${index + 1}.title'),
                             body: context.t('onboarding.slide${index + 1}.body'),
+                            actionLabel: index == _count - 1
+                                ? context.t('onboarding.openTelegram')
+                                : null,
+                            onAction: index == _count - 1
+                                ? _openTelegramChannel
+                                : null,
                           ),
                         ),
                       ),
@@ -228,7 +243,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       0 => Icons.music_note_rounded,
       1 => Icons.graphic_eq_rounded,
       2 => Icons.groups_rounded,
-      _ => Icons.album_rounded,
+      3 => Icons.album_rounded,
+      _ => Icons.campaign_rounded,
     };
   }
 }
@@ -241,6 +257,8 @@ class _OnboardingGlassCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.body,
+    this.actionLabel,
+    this.onAction,
   });
 
   final AppColorPalette palette;
@@ -248,6 +266,8 @@ class _OnboardingGlassCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String body;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -308,6 +328,30 @@ class _OnboardingGlassCard extends StatelessWidget {
                   color: palette.textSecondary,
                 ),
               ),
+              if (actionLabel != null && onAction != null) ...[
+                const SizedBox(height: 22),
+                OutlinedButton.icon(
+                  onPressed: onAction,
+                  icon: Icon(Icons.send_rounded, color: palette.accent, size: 20),
+                  label: Text(
+                    actionLabel!,
+                    style: TextStyle(
+                      color: palette.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    side: BorderSide(color: palette.accent.withValues(alpha: 0.55)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

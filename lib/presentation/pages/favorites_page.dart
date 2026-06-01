@@ -3,14 +3,20 @@ import 'package:flutter/material.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/audio/local_tracks.dart';
 import '../../core/audio/track.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/network/tracks_api.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
+import '../../core/offline/download_feedback.dart';
+import '../../core/offline/offline_download_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/player/player_dock_host.dart';
+import '../../features/playlists/data/repositories/local_playlists_repository.dart';
+import '../../features/player/presentation/widgets/full_player_track_menu.dart';
 import '../widgets/favorite_track_item.dart';
+import '../widgets/glass_bottom_menu_sheet.dart';
 
 /// Страница «Любимые»: заголовок с сердечком, кнопка «Играть всё», список избранных треков.
 class FavoritesPage extends StatefulWidget {
@@ -28,6 +34,7 @@ class FavoritesPage extends StatefulWidget {
 class _FavoritesPageState extends State<FavoritesPage> {
   List<Track> _favoriteTracks = [];
   bool _isLoading = true;
+  bool _downloadingAll = false;
   String? _lastLikedFingerprint;
 
   @override
@@ -145,6 +152,154 @@ class _FavoritesPageState extends State<FavoritesPage> {
     if (mounted) _loadFavorites();
   }
 
+  Future<void> _showTrackMenu(Track track) async {
+    final service = widget.audioPlayerService;
+    final trackKey = track.assetPath;
+    final downloaded = service.isTrackDownloaded(trackKey);
+    final downloading = service.isTrackDownloading(trackKey);
+
+    await showGlassBottomMenuSheet(
+      context,
+      header: GlassMenuTrackHeader(track: track),
+      actions: [
+        GlassMenuAction(
+          icon: Icons.download_rounded,
+          label: context.t('playlists.track.download'),
+          onTap: () async {
+            if (downloading) {
+              showTrackDownloadSnackBar(
+                context,
+                DownloadTrackResult.inProgress,
+              );
+              return;
+            }
+            if (downloaded) {
+              showTrackDownloadSnackBar(
+                context,
+                DownloadTrackResult.alreadyDownloaded,
+              );
+              return;
+            }
+            if (!trackKey.startsWith('server_track_')) {
+              showTrackDownloadSnackBar(
+                context,
+                DownloadTrackResult.notServerTrack,
+              );
+              return;
+            }
+            if (!await ServerConnectivity.instance.ensureOnline(context)) {
+              return;
+            }
+            final result = await service.downloadTrack(track);
+            if (!mounted) return;
+            showTrackDownloadSnackBar(context, result);
+          },
+        ),
+        GlassMenuAction(
+          icon: Icons.playlist_add_rounded,
+          label: context.t('player.menu.addToPlaylist'),
+          onTap: () {
+            showTrackPlaylistPicker(
+              context,
+              track: track,
+              repository: LocalPlaylistsRepository(),
+            );
+          },
+        ),
+        GlassMenuAction(
+          icon: Icons.favorite_rounded,
+          label: context.t('playlists.track.removeFromFavorites'),
+          iconColor: AppPaletteExtension.of(context).palette.accent,
+          onTap: () => _onRemoveFavorite(track),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _downloadAllFavorites() async {
+    if (_favoriteTracks.isEmpty || _downloadingAll) return;
+    if (!await ServerConnectivity.instance.ensureOnline(context)) {
+      return;
+    }
+
+    setState(() => _downloadingAll = true);
+    final service = widget.audioPlayerService;
+
+    var downloadedAny = false;
+    var attemptedAny = false;
+    var limitHit = false;
+
+    for (final track in _favoriteTracks) {
+      final key = track.assetPath;
+      if (!key.startsWith('server_track_')) continue;
+      if (service.isTrackDownloaded(key) || service.isTrackDownloading(key)) {
+        continue;
+      }
+      attemptedAny = true;
+      final result = await service.downloadTrack(track);
+      if (result == DownloadTrackResult.cacheLimitExceeded) {
+        limitHit = true;
+        break;
+      }
+      if (result == DownloadTrackResult.success ||
+          result == DownloadTrackResult.alreadyDownloaded) {
+        downloadedAny = true;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _downloadingAll = false);
+
+    final result = !attemptedAny
+        ? DownloadFavoritesResult.nothingToDownload
+        : limitHit
+            ? (downloadedAny
+                ? DownloadFavoritesResult.partial
+                : DownloadFavoritesResult.cacheLimitExceeded)
+            : downloadedAny
+                ? DownloadFavoritesResult.success
+                : DownloadFavoritesResult.failed;
+    showFavoritesDownloadSnackBar(context, result);
+  }
+
+  Widget _buildDownloadAllAction(AppColorPalette palette) {
+    final muted = palette.textMuted;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        onPressed: _downloadingAll ? null : _downloadAllFavorites,
+        style: TextButton.styleFrom(
+          foregroundColor: muted,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        icon: _downloadingAll
+            ? SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: muted.withValues(alpha: 0.7),
+                ),
+              )
+            : Icon(
+                Icons.download_outlined,
+                size: 16,
+                color: muted.withValues(alpha: 0.85),
+              ),
+        label: Text(
+          context.t('favorites.downloadAll'),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: muted.withValues(alpha: 0.9),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Как на главной: диагональный градиент с акцентом.
   LinearGradient _pageGradient(AppColorPalette palette) {
     return LinearGradient(
@@ -242,9 +397,15 @@ class _FavoritesPageState extends State<FavoritesPage> {
                       ),
                     ),
                   )
-                else
+                else ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 12, 4),
+                      child: _buildDownloadAllAction(palette),
+                    ),
+                  ),
                   SliverPadding(
-                    padding: EdgeInsets.fromLTRB(16, 8, 16, bottomContentInset),
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, bottomContentInset),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
@@ -256,13 +417,14 @@ class _FavoritesPageState extends State<FavoritesPage> {
                             ),
                             onTap: () => _onTrackTap(track),
                             onRemoveFavorite: () => _onRemoveFavorite(track),
-                            onMore: () {},
+                            onMore: () => _showTrackMenu(track),
                           );
                         },
                         childCount: _favoriteTracks.length,
                       ),
                     ),
                   ),
+                ],
               ],
             );
           },

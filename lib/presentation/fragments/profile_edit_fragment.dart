@@ -12,11 +12,10 @@ import '../../core/auth/auth_session_store.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/server_avatar_constants.dart';
 import '../../core/l10n/app_localization.dart';
-import '../../core/cache/remote_image_cache.dart';
-import '../../core/network/playlists_api.dart';
 import '../../core/network/profile_api.dart';
 import '../../core/network/server_connectivity.dart';
 import '../../core/network/users_api.dart';
+import '../../core/profile/me_avatar_cache_refresh.dart';
 import '../../core/profile/me_profile_cache.dart';
 import '../../core/platform/avatar_upload_encode.dart';
 import '../../core/platform/cover_pick_save.dart';
@@ -65,6 +64,7 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
   int _avatarDisplayNonce = 0;
   Timer? _nickAvailDebounce;
   bool _nicknameFieldTaken = false;
+  bool _saving = false;
 
   static const double _coverAspectRatio = 1.25;
   static const double _circleAvatarSize = 88.0;
@@ -240,7 +240,64 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
     );
   }
 
+  bool _needsAvatarUpload(String? path) {
+    if (path == null || path.isEmpty) return false;
+    return path != kServerMeAvatarMarker;
+  }
+
+  Future<bool> _uploadAvatarToServer(String path) async {
+    Future<bool> uploadFile(File file) async {
+      File? tempPng;
+      try {
+        final png = await encodeImageFileToTempPngForAvatarUpload(file);
+        tempPng = png;
+        await ProfileApi().uploadAvatar(png);
+        return true;
+      } catch (e) {
+        if (mounted) _showAvatarUploadErrorSnack(e);
+        return false;
+      } finally {
+        final t = tempPng;
+        if (t != null && await t.exists()) {
+          try {
+            await t.delete();
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (!path.startsWith('assets/')) {
+      final f = File(path);
+      if (!await f.exists()) return false;
+      return uploadFile(f);
+    }
+
+    File? rawPng;
+    File? resized;
+    try {
+      rawPng = await _materializeAssetToTempPng(path);
+      resized = await encodeImageFileToTempPngForAvatarUpload(rawPng);
+      await ProfileApi().uploadAvatar(resized);
+      return true;
+    } catch (e) {
+      if (mounted) _showAvatarUploadErrorSnack(e);
+      return false;
+    } finally {
+      for (final f in <File?>[rawPng, resized]) {
+        if (f != null && await f.exists()) {
+          try {
+            await f.delete();
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
   Future<void> _save() async {
+    if (_saving) return;
+    _saving = true;
+    if (mounted) setState(() {});
+    try {
     _passwordError = null;
     final newPassword = _newPasswordController.text;
     final confirmPassword = _confirmPasswordController.text;
@@ -345,50 +402,16 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
       }
       // Аватар до смены пароля: на сервере одна сессия на пользователя; порядок снижает шанс 401 на upload.
       final ap = _newAvatarPath;
-      if (ap != null && ap.isNotEmpty && ap != kServerMeAvatarMarker) {
-        if (!ap.startsWith('assets/')) {
-          final f = File(ap);
-          if (await f.exists()) {
-            File? tempPng;
-            try {
-              final png = await encodeImageFileToTempPngForAvatarUpload(f);
-              tempPng = png;
-              await ProfileApi().uploadAvatar(png);
-              avatarToSave = kServerMeAvatarMarker;
-              await RemoteImageCache.instance.evictUrl(meAvatarUrl());
-            } catch (e) {
-              if (!mounted) return;
-              _showAvatarUploadErrorSnack(e);
-            } finally {
-              final t = tempPng;
-              if (t != null && await t.exists()) {
-                try {
-                  await t.delete();
-                } catch (_) {}
-              }
-            }
-          }
-        } else {
-          File? rawPng;
-          File? resized;
-          try {
-            rawPng = await _materializeAssetToTempPng(ap);
-            resized = await encodeImageFileToTempPngForAvatarUpload(rawPng);
-            await ProfileApi().uploadAvatar(resized);
-            avatarToSave = kServerMeAvatarMarker;
-            await RemoteImageCache.instance.evictUrl(meAvatarUrl());
-          } catch (e) {
-            if (!mounted) return;
-            _showAvatarUploadErrorSnack(e);
-          } finally {
-            for (final f in <File?>[rawPng, resized]) {
-              if (f != null && await f.exists()) {
-                try {
-                  await f.delete();
-                } catch (_) {}
-              }
-            }
-          }
+      if (_needsAvatarUpload(ap)) {
+        final uploaded = await _uploadAvatarToServer(ap!);
+        if (!uploaded) {
+          return;
+        }
+        avatarToSave = kServerMeAvatarMarker;
+        final nextRevision = _avatarDisplayNonce + 1;
+        await refreshCachedMeAvatar(cacheRevision: nextRevision);
+        if (mounted) {
+          setState(() => _avatarDisplayNonce = nextRevision);
         }
       }
       if (newPassword.isNotEmpty) {
@@ -442,6 +465,10 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
       });
     }
     await widget.onProfileSaved?.call();
+    } finally {
+      _saving = false;
+      if (mounted) setState(() {});
+    }
   }
 
   static Future<File> _materializeAssetToTempPng(String assetPath) async {
@@ -1030,7 +1057,7 @@ class _ProfileEditFragmentState extends State<ProfileEditFragment> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _save,
+              onPressed: _saving ? null : _save,
               icon: const Icon(Icons.check_rounded, size: 20),
               label: Text(context.t('profile.edit.save')),
               style: FilledButton.styleFrom(

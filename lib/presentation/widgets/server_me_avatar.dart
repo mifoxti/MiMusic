@@ -59,6 +59,10 @@ class _ServerMeAvatarState extends State<ServerMeAvatar> {
   }
 
   Future<void> _bootstrap() async {
+    if (widget.cacheRevision > 0) {
+      await _load(forceRefresh: true);
+      return;
+    }
     final stable = await MeProfileAvatarDisk.cachedFile();
     if (stable != null && mounted) {
       setState(() {
@@ -83,8 +87,12 @@ class _ServerMeAvatarState extends State<ServerMeAvatar> {
       forceRefresh: forceRefresh,
     );
     if (!mounted) return;
+    final path = file?.path;
+    if (path != null && path.isNotEmpty) {
+      await MeProfileAvatarDisk.saveFrom(file!);
+    }
     setState(() {
-      _filePath = file?.path ?? _filePath;
+      _filePath = path ?? _filePath;
       _loading = false;
     });
   }

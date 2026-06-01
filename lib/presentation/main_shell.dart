@@ -39,6 +39,7 @@ import 'pages/artist_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/release_page.dart';
 import 'pages/search_page.dart';
+import 'widgets/glass_bottom_menu_sheet.dart';
 
 /// Главный shell приложения: одна активность — много фрагментов.
 /// Мини-плеер и боттом-бар остаются на месте при переключении вкладок.
@@ -350,6 +351,16 @@ class _MainShellState extends State<MainShell>
   /// Сначала сворачивание полного плеера (оверлей поверх вложенных маршрутов), затем стек
   /// [Navigator], затем выход из приложения.
   Future<void> _handleBackSequence() async {
+    if (GlassModalOverlay.depth.value > 0) {
+      final navContext = _navigatorKey.currentContext;
+      if (navContext != null && navContext.mounted) {
+        final rootNav = Navigator.of(navContext, rootNavigator: true);
+        if (rootNav.canPop()) {
+          rootNav.pop();
+          return;
+        }
+      }
+    }
     if (_isPlayerDockExpanded()) {
       await _playerDockController.reverse();
       return;

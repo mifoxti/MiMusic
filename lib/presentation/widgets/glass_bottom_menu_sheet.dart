@@ -3,7 +3,11 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../core/audio/track.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/l10n/app_localization.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/track_cover.dart';
 import 'hold_to_confirm_button.dart';
 
 /// Открытые стеклянные bottom/center sheet (для системной «назад» в shell).
@@ -38,10 +42,78 @@ class GlassMenuAction {
   final TextStyle? labelStyle;
 }
 
+/// Шапка стеклянного меню: обложка, название и исполнитель.
+class GlassMenuTrackHeader extends StatelessWidget {
+  const GlassMenuTrackHeader({super.key, required this.track});
+
+  final Track track;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPaletteExtension.of(context).palette;
+    const coverSize = 52.0;
+    final placeholder = Container(
+      width: coverSize,
+      height: coverSize,
+      decoration: BoxDecoration(
+        color: palette.primaryDark.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+      ),
+      child: Icon(Icons.music_note_rounded, color: palette.textMuted),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Row(
+        children: [
+          buildTrackCover(
+            coverSource: track.coverBytes ?? track.coverFallbackPath,
+            width: coverSize,
+            height: coverSize,
+            borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+            placeholder: placeholder,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  track.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  track.artistDisplay.isEmpty
+                      ? context.t('common.unknownArtist')
+                      : track.artistDisplay,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Bottom sheet в стиле [showFullPlayerTrackMenu] (blur 24, скругление 20, отступы).
 Future<void> showGlassBottomMenuSheet(
   BuildContext context, {
   required List<GlassMenuAction> actions,
+  Widget? header,
 }) async {
   final palette = AppPaletteExtension.of(context).palette;
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -94,6 +166,16 @@ Future<void> showGlassBottomMenuSheet(
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
+                  if (header != null) ...[
+                    header,
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      indent: 16,
+                      endIndent: 16,
+                      color: borderGlass.withValues(alpha: 0.65),
+                    ),
+                  ],
                   for (final action in actions)
                     ListTile(
                       leading: Icon(

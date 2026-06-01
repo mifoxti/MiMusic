@@ -14,11 +14,13 @@ class PersonalSettingsPage extends StatefulWidget {
     required this.settingsRepository,
     required this.initialSettings,
     required this.audioPlayerService,
+    this.onShellSettingsReload,
   });
 
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
   final AudioPlayerService audioPlayerService;
+  final Future<void> Function()? onShellSettingsReload;
 
   @override
   State<PersonalSettingsPage> createState() => _PersonalSettingsPageState();
@@ -40,6 +42,11 @@ class _PersonalSettingsPageState extends State<PersonalSettingsPage> {
     setState(() => _settings = s);
   }
 
+  Future<void> _onProfileSaved() async {
+    await _reloadFromRepository();
+    await widget.onShellSettingsReload?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SettingsGlassScaffold(
@@ -50,7 +57,7 @@ class _PersonalSettingsPageState extends State<PersonalSettingsPage> {
         child: PersonalSettingsFragment(
           settingsRepository: widget.settingsRepository,
           initialSettings: _settings,
-          onProfileSaved: _reloadFromRepository,
+          onProfileSaved: _onProfileSaved,
         ),
       ),
     );

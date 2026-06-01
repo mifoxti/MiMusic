@@ -1,28 +1,44 @@
 import 'package:flutter/material.dart';
 
+import '../../presentation/widgets/glass_bottom_menu_sheet.dart';
 import 'full_player_visibility.dart';
 import 'player_dock_host.dart';
 import 'shell_chrome_visibility.dart';
 
-/// Обёртка маршрута вложенного [Navigator] в shell: пока открыт полный плеер,
-/// системное «назад» сворачивает док, а не удаляет этот маршрут со стека.
+/// Обёртка маршрута вложенного [Navigator] в shell: пока открыт полный плеер
+/// или стеклянный modal/sheet, системное «назад» закрывает их, а не снимает маршрут.
 class ShellRouteBackGuard extends StatelessWidget {
   const ShellRouteBackGuard({super.key, required this.child});
 
   final Widget child;
 
+  static void _popOpenGlassModal(BuildContext context) {
+    final root = Navigator.of(context, rootNavigator: true);
+    if (root.canPop()) {
+      root.pop();
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: FullPlayerVisibility.open,
-      builder: (context, playerFullOpen, _) {
-        // Пока полный плеер открыт, системное «назад» не должно снимать маршрут (настройки и т.д.),
-        // а только сворачивать док — иначе `canPop: true` из-за `Navigator.canPop()` отдаёт pop в стек.
-        // Явный `Navigator.pop` из AppBar по-прежнему закрывает экран (не считается «scoped pop»).
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        FullPlayerVisibility.open,
+        GlassModalOverlay.depth,
+      ]),
+      builder: (context, _) {
+        final playerFullOpen = FullPlayerVisibility.open.value;
+        final glassModalOpen = GlassModalOverlay.depth.value > 0;
         return PopScope(
-          canPop: !playerFullOpen,
+          canPop: !playerFullOpen && !glassModalOpen,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
+            if (glassModalOpen) {
+              _popOpenGlassModal(context);
+              return;
+            }
             if (playerFullOpen) {
               PlayerDockHost.collapse();
             }

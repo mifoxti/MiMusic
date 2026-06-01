@@ -245,6 +245,15 @@ class _AboutPageState extends State<AboutPage> {
                             const SizedBox(height: 12),
                             _LinkRow(
                               palette: palette,
+                              icon: Icons.campaign_rounded,
+                              title: context.t('about.telegramUpdates'),
+                              subtitle: context.t('about.telegramUpdatesSub'),
+                              onTap: () => _openUrl(AppConstants.telegramUpdatesChannelUrl),
+                              opensExternally: true,
+                            ),
+                            _divider(palette),
+                            _LinkRow(
+                              palette: palette,
                               icon: Icons.code_rounded,
                               title: 'GitHub',
                               subtitle: 'github.com/mifoxti',

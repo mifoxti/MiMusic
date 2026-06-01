@@ -30,6 +30,7 @@ class SettingsPage extends StatefulWidget {
     required this.settingsRepository,
     required this.initialSettings,
     required this.audioPlayerService,
+    this.onShellSettingsReload,
   });
 
   final ThemeMode themeMode;
@@ -38,6 +39,7 @@ class SettingsPage extends StatefulWidget {
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
   final AudioPlayerService audioPlayerService;
+  final Future<void> Function()? onShellSettingsReload;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -153,6 +155,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   settingsRepository: widget.settingsRepository,
                   initialSettings: widget.initialSettings,
                   audioPlayerService: widget.audioPlayerService,
+                  onShellSettingsReload: widget.onShellSettingsReload,
                 ),
               ),
             );

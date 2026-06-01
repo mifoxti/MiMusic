@@ -34,3 +34,28 @@ void showPlaylistDownloadSnackBar(
     SnackBar(behavior: SnackBarBehavior.floating, content: Text(t)),
   );
 }
+
+enum DownloadFavoritesResult {
+  success,
+  partial,
+  cacheLimitExceeded,
+  nothingToDownload,
+  failed,
+}
+
+void showFavoritesDownloadSnackBar(
+  BuildContext context,
+  DownloadFavoritesResult result,
+) {
+  final t = switch (result) {
+    DownloadFavoritesResult.success => context.t('favorites.downloadAllDone'),
+    DownloadFavoritesResult.partial => context.t('download.playlistPartial'),
+    DownloadFavoritesResult.cacheLimitExceeded => context.t('download.cacheLimit'),
+    DownloadFavoritesResult.nothingToDownload =>
+      context.t('favorites.downloadAllNothing'),
+    DownloadFavoritesResult.failed => context.t('download.failed'),
+  };
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(behavior: SnackBarBehavior.floating, content: Text(t)),
+  );
+}

@@ -15,4 +15,7 @@ abstract final class AppConstants {
 
   /// CloudTips — поддержка проекта (кнопка в настройках).
   static const String supportProjectUrl = 'https://pay.cloudtips.ru/p/201f5bfd';
+
+  /// Telegram-канал: обновления приложения и инструкции.
+  static const String telegramUpdatesChannelUrl = 'https://t.me/evtumi';
 }
