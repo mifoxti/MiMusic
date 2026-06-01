@@ -57,12 +57,9 @@ MiMusic/
 │   ├── presentation/         # Shell, страницы, glass-виджеты, профиль
 │   └── main.dart
 ├── assets/                   # Иконки, изображения, демо-музыка
-├── docs/                     # Роадмап, alignment с бэком, OTA, commit style
 ├── android/                  # Gradle, adb reverse, API base URL
 └── README.md
 ```
-
-Подробная документация для разработки — в каталоге [`docs/`](docs/).
 
 ---
 
@@ -81,8 +78,6 @@ flutter run
 | **Wi‑Fi** | В `android/local.properties`: `flutter.apiBaseUrl=http://<IP_ПК>:8080` |
 | **Вручную** | `flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8080` |
 
-Детали: [`docs/DEV_ANDROID_USB_AND_POSTGRES.md`](docs/DEV_ANDROID_USB_AND_POSTGRES.md).
-
 ---
 
 ## 📊 О проекте
@@ -93,11 +88,10 @@ flutter run
 
 ---
 
-## 📚 Полезные ссылки
+## 📚 Ссылки
 
 - [Документация Flutter](https://docs.flutter.dev/)
 - [Канал обновлений в Telegram](https://t.me/evtumi)
-- [Стиль коммитов](docs/COMMIT_STYLE.md)
 
 ---
 
