@@ -9,9 +9,10 @@ import '../../core/audio/track.dart';
 import '../../core/auth/auth_session_store.dart';
 import '../../core/network/server_connectivity.dart';
 import '../../core/network/tracks_api.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/player/full_player_visibility.dart';
 import '../../core/player/player_dock_host.dart';
 import '../../core/player/shell_route_back_guard.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/platform/platform.dart';
 import '../../core/studio/album.dart';
@@ -64,11 +65,56 @@ class _StudioPageState extends State<StudioPage> {
   Map<String, TrackMetadataOverride> _overrides = {};
   Map<int, int> _playCountByServerId = {};
   bool _loading = true;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() {
+      if (mounted) setState(() {});
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Track> get _filteredTracks {
+    final q = _searchController.text.trim().toLowerCase();
+    if (q.isEmpty) return _tracks;
+    return _tracks
+        .where((t) {
+          return t.title.toLowerCase().contains(q) ||
+              t.artistDisplay.toLowerCase().contains(q);
+        })
+        .toList();
+  }
+
+  List<Album> get _filteredAlbums {
+    final q = _searchController.text.trim().toLowerCase();
+    if (q.isEmpty) return _albums;
+    return _albums
+        .where((a) {
+          final genres = a.genres.join(' ').toLowerCase();
+          return a.title.toLowerCase().contains(q) ||
+              (a.artist ?? '').toLowerCase().contains(q) ||
+              genres.contains(q);
+        })
+        .toList();
+  }
+
+  double _listBottomPadding(BuildContext context) {
+    final hasMini = widget.audioPlayerService.currentTrack != null;
+    var pad = hasMini
+        ? AppConstants.shellBottomInsetWithMiniPlayer
+        : AppConstants.shellBottomInset;
+    if (FullPlayerVisibility.open.value) {
+      pad += AppConstants.shellExtraInsetWithFullPlayer;
+    }
+    return pad;
   }
 
   Future<void> _loadFromUser() async {
@@ -304,9 +350,14 @@ class _StudioPageState extends State<StudioPage> {
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     return ListenableBuilder(
-      listenable: GlassModalOverlay.depth,
+      listenable: Listenable.merge([
+        GlassModalOverlay.depth,
+        widget.audioPlayerService,
+        FullPlayerVisibility.open,
+      ]),
       builder: (context, _) {
         final modalOpen = GlassModalOverlay.depth.value > 0;
+        final listBottom = _listBottomPadding(context);
         return PopScope(
           canPop: !modalOpen,
           onPopInvokedWithResult: (didPop, _) {
@@ -359,17 +410,49 @@ class _StudioPageState extends State<StudioPage> {
               ),
             ],
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(54),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: studioGlassTabBar(
-                  context: context,
-                  palette: palette,
-                  tabs: [
-                    Tab(text: context.t('studio.tracks')),
-                    Tab(text: context.t('studio.albums')),
-                  ],
-                ),
+              preferredSize: const Size.fromHeight(108),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: TextField(
+                      controller: _searchController,
+                      style: TextStyle(color: palette.textPrimary),
+                      decoration: InputDecoration(
+                        hintText: context.t('studio.searchHint'),
+                        hintStyle: TextStyle(color: palette.textMuted),
+                        prefixIcon: Icon(Icons.search_rounded, color: palette.textMuted),
+                        suffixIcon: _searchController.text.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: Icon(Icons.clear_rounded, color: palette.textMuted),
+                                onPressed: () {
+                                  _searchController.clear();
+                                },
+                              ),
+                        filled: true,
+                        fillColor: palette.cardBackground.withValues(alpha: 0.65),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: studioGlassTabBar(
+                      context: context,
+                      palette: palette,
+                      tabs: [
+                        Tab(text: context.t('studio.tracks')),
+                        Tab(text: context.t('studio.albums')),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -380,7 +463,8 @@ class _StudioPageState extends State<StudioPage> {
                     _TracksTab(
                       palette: palette,
                       audioPlayerService: widget.audioPlayerService,
-                      tracks: _tracks,
+                      listBottomPadding: listBottom,
+                      tracks: _filteredTracks,
                       overrides: _overrides,
                       customPaths: _customPaths,
                       playCountByServerId: _playCountByServerId,
@@ -395,7 +479,8 @@ class _StudioPageState extends State<StudioPage> {
                     ),
                     _AlbumsTab(
                       palette: palette,
-                      albums: _albums,
+                      listBottomPadding: listBottom,
+                      albums: _filteredAlbums,
                       allTracks: _tracks,
                       onRefresh: () => unawaited(_loadFromUser()),
                       onAddAlbum: _addAlbum,
@@ -656,6 +741,7 @@ class _StudioPageState extends State<StudioPage> {
 class _AlbumsTab extends StatelessWidget {
   const _AlbumsTab({
     required this.palette,
+    required this.listBottomPadding,
     required this.albums,
     required this.allTracks,
     required this.onRefresh,
@@ -667,6 +753,7 @@ class _AlbumsTab extends StatelessWidget {
   });
 
   final AppColorPalette palette;
+  final double listBottomPadding;
   final List<Album> albums;
   final List<Track> allTracks;
   final VoidCallback onRefresh;
@@ -698,9 +785,17 @@ class _AlbumsTab extends StatelessWidget {
         ),
         Expanded(
           child: albums.isEmpty
-              ? Center(child: Text(context.t('studio.noAlbums'), style: TextStyle(color: palette.textMuted)))
+              ? Center(
+                  child: Text(
+                    allTracks.isEmpty
+                        ? context.t('studio.noAlbums')
+                        : context.t('studio.searchEmpty'),
+                    style: TextStyle(color: palette.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
+                )
               : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, listBottomPadding),
                   itemCount: albums.length,
                   itemBuilder: (context, i) {
                     final album = albums[i];
@@ -795,6 +890,7 @@ class _TracksTab extends StatelessWidget {
   const _TracksTab({
     required this.palette,
     required this.audioPlayerService,
+    required this.listBottomPadding,
     required this.tracks,
     required this.overrides,
     required this.customPaths,
@@ -811,6 +907,7 @@ class _TracksTab extends StatelessWidget {
 
   final AppColorPalette palette;
   final AudioPlayerService audioPlayerService;
+  final double listBottomPadding;
   final List<Track> tracks;
   final Map<String, TrackMetadataOverride> overrides;
   final List<String> customPaths;
@@ -857,8 +954,16 @@ class _TracksTab extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+          child: tracks.isEmpty
+              ? Center(
+                  child: Text(
+                    context.t('studio.searchEmpty'),
+                    style: TextStyle(color: palette.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : ListView.builder(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, listBottomPadding),
             itemCount: tracks.length,
             itemBuilder: (context, i) {
               final track = trackWithOverrides(tracks[i]);

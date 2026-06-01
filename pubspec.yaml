@@ -50,6 +50,8 @@ dependencies:
   dio: ^5.7.0
   web_socket_channel: ^3.0.2
   audiotags: ^1.4.5
+  firebase_core: ^4.10.0
+  firebase_messaging: ^16.3.0
 
 dev_dependencies:
   flutter_test:

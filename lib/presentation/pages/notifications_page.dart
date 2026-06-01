@@ -9,9 +9,10 @@ import '../../core/auth/auth_session_store.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localization.dart';
 import '../../core/network/friends_api.dart';
+import '../../core/network/api_config.dart';
 import '../../core/network/notifications_api.dart';
-import '../../core/network/server_connectivity.dart';
 import '../../core/network/playlists_api.dart';
+import '../../core/network/server_connectivity.dart';
 import '../../core/social/colisten_controller.dart';
 import '../../core/social/listening_room_session.dart';
 import '../../core/player/player_dock_host.dart';
@@ -455,6 +456,10 @@ class _ServerNotificationCard extends StatelessWidget {
         return en
             ? '@$nick invited you to co-listen'
             : '@$nick пригласил(а) вас в совместное прослушивание';
+      case 'admin_message':
+        final t = item.adminMessageTitle;
+        if (t != null && t.isNotEmpty) return t;
+        return en ? 'Message from MiMusic' : 'Сообщение от MiMusic';
       default:
         return en ? 'Notification' : 'Уведомление';
     }
@@ -469,13 +474,103 @@ class _ServerNotificationCard extends StatelessWidget {
     if (item.normalizedType == 'friend_request') {
       return context.t('notifications.pending');
     }
+    if (item.isAdminMessage) {
+      final body = item.adminMessageBody;
+      if (body != null && body.isNotEmpty) return body;
+      return Localizations.localeOf(context).languageCode == 'en'
+          ? 'Announcement'
+          : 'Объявление';
+    }
     return context.t('notifications.pending');
+  }
+
+  static String _absoluteMediaUrl(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    final b = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
+    return path.startsWith('/') ? '$b$path' : '$b/$path';
+  }
+
+  List<Widget> _adminAttachments(
+    BuildContext context,
+    ServerNotificationDto item,
+    AppColorPalette palette,
+  ) {
+    final en = Localizations.localeOf(context).languageCode == 'en';
+    final widgets = <Widget>[];
+    final imageUrl = item.adminMessageImageUrl;
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      widgets.add(
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.network(
+            _absoluteMediaUrl(imageUrl),
+            height: 140,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+        ),
+      );
+    }
+    final trackId = item.adminMessageTrackId;
+    if (trackId != null) {
+      widgets.add(
+        Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                '${ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '')}/tracks/$trackId/cover',
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox(width: 48, height: 48),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                en ? 'Attached track #$trackId' : 'Вложен трек #$trackId',
+                style: TextStyle(color: palette.textSecondary, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final playlistId = item.adminMessagePlaylistId;
+    if (playlistId != null) {
+      widgets.add(
+        Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                playlistCoverUrl(playlistId),
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox(width: 48, height: 48),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                en ? 'Attached playlist #$playlistId' : 'Вложен плейлист #$playlistId',
+                style: TextStyle(color: palette.textSecondary, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return widgets;
   }
 
   @override
   Widget build(BuildContext context) {
     final bust = DateTime.now().millisecondsSinceEpoch;
-    final uid = item.actorUserId ?? item.entityId;
+    final uid = item.isAdminMessage ? null : (item.actorUserId ?? item.entityId);
     final avatarUrl = uid != null ? userAvatarUrl(uid, cacheBust: bust) : '';
     final nick = item.actorNickname ?? '?';
 
@@ -539,21 +634,26 @@ class _ServerNotificationCard extends StatelessWidget {
                   decoration: TextDecoration.none,
                 ),
               ),
+              if (item.isAdminMessage) ...[
+                const SizedBox(height: 10),
+                ..._adminAttachments(context, item, palette),
+              ],
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: onOpenProfile,
-                      style: TextButton.styleFrom(
-                        foregroundColor: palette.textPrimary,
-                        textStyle: const TextStyle(
-                          decoration: TextDecoration.none,
+                  if (!item.isAdminMessage)
+                    Expanded(
+                      child: TextButton(
+                        onPressed: onOpenProfile,
+                        style: TextButton.styleFrom(
+                          foregroundColor: palette.textPrimary,
+                          textStyle: const TextStyle(
+                            decoration: TextDecoration.none,
+                          ),
                         ),
+                        child: Text(context.t('notifications.openProfile')),
                       ),
-                      child: Text(context.t('notifications.openProfile')),
                     ),
-                  ),
                   if (item.normalizedType == 'friend_request' &&
                       onAccept != null &&
                       onDecline != null) ...[

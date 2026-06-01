@@ -25,6 +25,7 @@ import 'core/history/api_listening_history_repository.dart';
 import 'core/history/listening_history_repository.dart';
 import 'core/l10n/app_localization.dart';
 import 'core/notifications/local_notifications_service.dart';
+import 'core/notifications/push_registration_service.dart';
 import 'core/offline/offline_download_repository.dart';
 import 'core/settings/app_settings.dart';
 import 'core/settings/local_settings_repository.dart';
@@ -89,6 +90,11 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
         await LocalNotificationsService.instance.initialize();
       } catch (e, st) {
         debugPrint('Notifications init skipped: $e\n$st');
+      }
+      try {
+        await PushRegistrationService.instance.initialize();
+      } catch (e, st) {
+        debugPrint('Push init skipped: $e\n$st');
       }
       final repository = LocalSettingsRepository();
       setMiMusicHandlerSettingsRepository(repository);
@@ -279,6 +285,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
     });
     _ensurePlayerServices();
     if (mounted) setState(() => _gate = _AppGate.main);
+    unawaited(PushRegistrationService.instance.syncTokenAfterLogin());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_audioPlayerService?.applyEqualizerFromSettings() ?? Future.value());
       _scheduleAutoUpdateCheck();
@@ -329,6 +336,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
     }
     MeProfileCache.clear();
     await MeProfileAvatarDisk.clear();
+    await PushRegistrationService.instance.unregisterOnLogout();
     await AuthSessionStore.clearSessionToken();
     if (!mounted) return;
     // Сначала убираем MainShell с ListenableBuilder(audio), иначе один кадр с disposed ChangeNotifier — красный FlutterError.

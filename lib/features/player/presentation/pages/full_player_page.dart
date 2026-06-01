@@ -20,11 +20,10 @@ import '../../../../core/player/player_cover_glass_colors.dart';
 import '../../../../core/player/player_cover_palette_service.dart';
 import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
-import '../../../../core/player/shell_navigator_host.dart';
 import '../../../../core/widgets/track_cover.dart';
 import '../../../playlists/domain/entities/playlist.dart';
 import '../../../playlists/domain/repositories/playlists_repository.dart';
-import '../../../../presentation/pages/artist_page.dart';
+import '../../../../presentation/widgets/artist_names_text.dart';
 import '../../../../presentation/pages/listening_room_page.dart';
 import '../widgets/full_player_track_menu.dart';
 
@@ -261,52 +260,32 @@ class FullPlayerDockPanel extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 10),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: track.artistDisplay.trim().isEmpty
-                                    ? null
-                                    : () {
-                                        final route =
-                                            ShellMaterialPageRoute<void>(
-                                              builder: (_) => ArtistPage(
-                                                artistName: track.artistDisplay,
-                                                coverAssetPath:
-                                                    track.coverFallbackPath,
-                                                audioPlayerService:
-                                                    audioPlayerService,
-                                              ),
-                                            );
-                                        final pushed = ShellNavigatorHost.push(
-                                          route,
-                                        );
-                                        if (pushed) {
-                                          PlayerDockHost.collapse();
-                                        } else {
-                                          Navigator.of(context).push(route);
-                                        }
-                                      },
-                                borderRadius: BorderRadius.circular(8),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  child: Text(
-                                    track.artistDisplay.isEmpty
-                                        ? context.t('common.notSpecifiedArtist')
-                                        : track.artistDisplay,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w500,
-                                      color: track.artistDisplay.trim().isEmpty
-                                          ? palette.textMuted
-                                          : trackAccent,
-                                    ),
-                                  ),
-                                ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
                               ),
+                              child: track.artistDisplay.trim().isEmpty
+                                  ? Text(
+                                      context.t('common.notSpecifiedArtist'),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                        color: palette.textMuted,
+                                      ),
+                                    )
+                                  : ArtistNamesText(
+                                      artistsText: track.artistDisplay,
+                                      textAlign: TextAlign.center,
+                                      audioPlayerService: audioPlayerService,
+                                      onBeforeNavigate: PlayerDockHost.collapse,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                        color: trackAccent,
+                                      ),
+                                    ),
                             ),
                             const SizedBox(height: 24),
                             _PlayerSeekBar(

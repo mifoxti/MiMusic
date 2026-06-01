@@ -80,6 +80,52 @@ class ServerNotificationDto {
     return normalizedType == 'friend_accepted';
   }
 
+  bool get isAdminMessage {
+    return normalizedType == 'admin_message';
+  }
+
+  String? get adminMessageTitle {
+    if (!isAdminMessage) return null;
+    final map = payloadMap;
+    final t = map?['title'] as String?;
+    if (t != null && t.trim().isNotEmpty) return t.trim();
+    return null;
+  }
+
+  String? get adminMessageBody {
+    if (!isAdminMessage) return null;
+    final map = payloadMap;
+    final b = map?['body'] as String?;
+    if (b != null && b.trim().isNotEmpty) return b.trim();
+    return null;
+  }
+
+  String? get adminMessageImageUrl {
+    if (!isAdminMessage) return null;
+    final map = payloadMap;
+    final u = map?['imageUrl'] as String?;
+    if (u != null && u.trim().isNotEmpty) return u.trim();
+    return null;
+  }
+
+  int? get adminMessageTrackId {
+    if (!isAdminMessage) return null;
+    final map = payloadMap;
+    final id = map?['trackId'];
+    if (id is num && id > 0) return id.toInt();
+    if (type == 'admin_message' && entityRef == 'track') return safeEntityId;
+    return null;
+  }
+
+  int? get adminMessagePlaylistId {
+    if (!isAdminMessage) return null;
+    final map = payloadMap;
+    final id = map?['playlistId'];
+    if (id is num && id > 0) return id.toInt();
+    if (type == 'admin_message' && entityRef == 'playlist') return safeEntityId;
+    return null;
+  }
+
   bool get isUnknown {
     return normalizedType.startsWith('unknown_');
   }

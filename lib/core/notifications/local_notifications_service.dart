@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 import 'notification_intent.dart';
+import '../network/api_config.dart';
 import '../settings/local_settings_repository.dart';
 
 class LocalNotificationsService {
@@ -19,6 +20,14 @@ class LocalNotificationsService {
     'mimusic_friend_requests',
     'Заявки в друзья',
     description: 'Тестовые уведомления о заявках в друзья',
+    importance: Importance.high,
+  );
+
+  static const AndroidNotificationChannel _adminMessagesChannel =
+      AndroidNotificationChannel(
+    'mimusic_admin_messages',
+    'Сообщения MiMusic',
+    description: 'Рассылки и уведомления от администрации',
     importance: Importance.high,
   );
 
@@ -85,6 +94,7 @@ class LocalNotificationsService {
           _plugin.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
       await androidPlugin?.createNotificationChannel(_friendRequestsChannel);
+      await androidPlugin?.createNotificationChannel(_adminMessagesChannel);
       await androidPlugin?.requestNotificationsPermission();
       final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin>();
@@ -204,6 +214,61 @@ class LocalNotificationsService {
     );
   }
 
+  Future<void> showAdminMessageNotification({
+    required String title,
+    required String body,
+    String? imageUrl,
+  }) async {
+    final notificationsEnabled = await _notificationsEnabled();
+    if (!notificationsEnabled) return;
+    if (!_initialized) {
+      await initialize();
+    }
+    if (!_initialized) return;
+
+    final imagePath = await _downloadAvatarToTempFile(imageUrl);
+    final imageBitmap =
+        imagePath != null ? FilePathAndroidBitmap(imagePath) : null;
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _adminMessagesChannel.id,
+        _adminMessagesChannel.name,
+        channelDescription: _adminMessagesChannel.description,
+        importance: Importance.high,
+        priority: Priority.high,
+        largeIcon: imageBitmap,
+        styleInformation: imageBitmap != null
+            ? BigPictureStyleInformation(
+                imageBitmap,
+                largeIcon: imageBitmap,
+                hideExpandedLargeIcon: false,
+              )
+            : null,
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        attachments: imagePath != null
+            ? <DarwinNotificationAttachment>[
+                DarwinNotificationAttachment(imagePath),
+              ]
+            : null,
+      ),
+    );
+
+    await _plugin.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: title.trim().isEmpty ? 'MiMusic' : title.trim(),
+      body: body.trim().isEmpty ? 'Новое уведомление' : body.trim(),
+      notificationDetails: details,
+      payload: const NotificationIntent(
+        target: NotificationTarget.appNotifications,
+      ).toPayload(),
+    );
+    await _playInAppNotificationSound();
+  }
+
   Future<void> showColistenInviteNotification({
     required String fromUsername,
     required String roomId,
@@ -267,9 +332,17 @@ class LocalNotificationsService {
     return _copyAssetAvatarToTempFile(avatarAssetPath);
   }
 
-  Future<String?> _downloadAvatarToTempFile(String? url) async {
-    final raw = (url ?? '').trim();
+  static String? _absoluteMediaUrl(String? path) {
+    final raw = (path ?? '').trim();
     if (raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final b = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
+    return raw.startsWith('/') ? '$b$raw' : '$b/$raw';
+  }
+
+  Future<String?> _downloadAvatarToTempFile(String? url) async {
+    final raw = _absoluteMediaUrl(url);
+    if (raw == null || raw.isEmpty) return null;
     try {
       final uri = Uri.parse(raw);
       if (!uri.hasScheme) return null;

@@ -9,6 +9,9 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
 
 // Flutter reads `dart-defines` (base64 "KEY=value" per entry, comma-separated for several).
 // So Android Studio "Run" gets API_BASE_URL without typing --dart-define.

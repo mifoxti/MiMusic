@@ -1,6 +1,11 @@
 import 'dart:convert';
 
-enum NotificationTarget { friendProfile, release, colistenInvite }
+enum NotificationTarget {
+  friendProfile,
+  release,
+  colistenInvite,
+  appNotifications,
+}
 
 class NotificationIntent {
   const NotificationIntent({
@@ -25,6 +30,7 @@ class NotificationIntent {
         NotificationTarget.friendProfile => 'friend_profile',
         NotificationTarget.release => 'release',
         NotificationTarget.colistenInvite => 'colisten_invite',
+        NotificationTarget.appNotifications => 'app_notifications',
       },
       'username': username,
       'avatarUrl': avatarUrl,
@@ -44,6 +50,7 @@ class NotificationIntent {
         'friend_profile' => NotificationTarget.friendProfile,
         'release' => NotificationTarget.release,
         'colisten_invite' => NotificationTarget.colistenInvite,
+        'app_notifications' => NotificationTarget.appNotifications,
         _ => null,
       };
       if (target == null) return null;

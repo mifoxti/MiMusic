@@ -12,6 +12,7 @@ import '../../core/network/artist_api.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/track_cover.dart';
+import '../widgets/artist_names_text.dart';
 import '../widgets/collapsing_profile_shell.dart';
 import '../widgets/glass_panel.dart';
 import 'user_public_profile_page.dart';
@@ -40,6 +41,7 @@ class ArtistPage extends StatefulWidget {
 class _ArtistPageState extends State<ArtistPage> {
   List<Track> _tracks = [];
   Uint8List? _heroCoverBytes;
+  String? _heroCoverUrl;
   bool _loading = true;
   bool _isRegistered = false;
 
@@ -72,10 +74,13 @@ class _ArtistPageState extends State<ArtistPage> {
         return;
       }
 
+      final tracks = profile.songs.map((s) => s.toTrack()).toList();
+      final latestTrack = tracks.isNotEmpty ? tracks.first : null;
       setState(() {
-        _tracks = profile.songs.map((s) => s.toTrack()).toList();
+        _tracks = tracks;
         _heroCoverBytes = profile.heroCoverArt ??
             (profile.songs.isNotEmpty ? profile.songs.first.coverBytes : null);
+        _heroCoverUrl = latestTrack?.coverFallbackPath;
         _isRegistered = false;
         _loading = false;
       });
@@ -102,7 +107,7 @@ class _ArtistPageState extends State<ArtistPage> {
         gaplessPlayback: true,
       );
     }
-    final networkCover = widget.coverImageUrl;
+    final networkCover = _heroCoverUrl ?? widget.coverImageUrl;
     if (networkCover != null && networkCover.isNotEmpty) {
       return Image.network(
         networkCover,
@@ -130,6 +135,12 @@ class _ArtistPageState extends State<ArtistPage> {
     if (_heroCoverBytes != null && _heroCoverBytes!.isNotEmpty) {
       return CircleAvatar(
         backgroundImage: MemoryImage(_heroCoverBytes!),
+      );
+    }
+    final url = _heroCoverUrl ?? widget.coverImageUrl;
+    if (url != null && url.isNotEmpty) {
+      return CircleAvatar(
+        backgroundImage: NetworkImage(url),
       );
     }
     return CircleAvatar(
@@ -234,11 +245,13 @@ class _ArtistPageState extends State<ArtistPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Text(
-                          t.artistDisplay.isEmpty ? '—' : t.artistDisplay,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        subtitle: t.artistDisplay.isEmpty
+                            ? const Text('—')
+                            : ArtistNamesText(
+                                artistsText: t.artistDisplay,
+                                audioPlayerService: widget.audioPlayerService,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                         trailing: IconButton(
                           icon: Icon(Icons.play_arrow_rounded, color: palette.accent),
                           onPressed: () => _playTrack(t),

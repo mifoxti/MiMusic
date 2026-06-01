@@ -13,6 +13,9 @@ abstract final class AppConstants {
   /// когда поверх контента видны мини-плеер и нижняя навигация.
   static const double shellBottomInsetWithMiniPlayer = 184.0;
 
+  /// Дополнительный отступ, когда открыт полноэкранный плеер поверх shell.
+  static const double shellExtraInsetWithFullPlayer = 280.0;
+
   /// CloudTips — поддержка проекта (кнопка в настройках).
   static const String supportProjectUrl = 'https://pay.cloudtips.ru/p/201f5bfd';
 

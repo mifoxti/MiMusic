@@ -36,6 +36,7 @@ import '../features/home/presentation/widgets/floating_mini_player.dart';
 import '../features/player/presentation/widgets/expandable_player_dock.dart';
 import 'pages/favorites_page.dart';
 import 'pages/artist_page.dart';
+import 'pages/notifications_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/release_page.dart';
 import 'pages/search_page.dart';
@@ -195,22 +196,38 @@ class _MainShellState extends State<MainShell>
     if (userId == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final key = 'mimusic_last_friend_push_notif_id_$userId';
-      var lastShown = prefs.getInt(key) ?? 0;
+      final friendKey = 'mimusic_last_friend_push_notif_id_$userId';
+      final adminKey = 'mimusic_last_admin_push_notif_id_$userId';
+      var lastFriendShown = prefs.getInt(friendKey) ?? 0;
+      var lastAdminShown = prefs.getInt(adminKey) ?? 0;
       final list = await NotificationsApi().fetchNotifications(
         unreadOnly: true,
         limit: 30,
       );
-      var maxId = lastShown;
       for (final n in list) {
-        if (n.id > maxId) maxId = n.id;
-      }
-      for (final n in list) {
+        if (n.isAdminMessage) {
+          if (n.id <= lastAdminShown) continue;
+          final title =
+              n.adminMessageTitle?.trim().isNotEmpty == true
+                  ? n.adminMessageTitle!.trim()
+                  : 'MiMusic';
+          final body =
+              n.adminMessageBody?.trim().isNotEmpty == true
+                  ? n.adminMessageBody!.trim()
+                  : 'Новое сообщение';
+          await LocalNotificationsService.instance.showAdminMessageNotification(
+            title: title,
+            body: body,
+            imageUrl: n.adminMessageImageUrl,
+          );
+          if (n.id > lastAdminShown) lastAdminShown = n.id;
+          continue;
+        }
         if (n.normalizedType != 'friend_request' &&
             n.normalizedType != 'colisten_invite') {
           continue;
         }
-        if (n.id <= lastShown) continue;
+        if (n.id <= lastFriendShown) continue;
         final nick = n.actorNickname ?? 'MiMusic';
         final url = n.actorUserId != null
             ? userAvatarUrl(n.actorUserId!)
@@ -231,10 +248,10 @@ class _MainShellState extends State<MainShell>
                 roomId: roomId,
               );
         }
+        if (n.id > lastFriendShown) lastFriendShown = n.id;
       }
-      if (maxId > lastShown) {
-        await prefs.setInt(key, maxId);
-      }
+      await prefs.setInt(friendKey, lastFriendShown);
+      await prefs.setInt(adminKey, lastAdminShown);
     } catch (_) {}
   }
 
@@ -295,6 +312,25 @@ class _MainShellState extends State<MainShell>
       }
       return;
     }
+    if (intent.target == NotificationTarget.appNotifications) {
+      Future<void>.microtask(() async {
+        final acc = await AuthSessionStore.readAccount();
+        final nick = (acc?.nickname.trim().isNotEmpty ?? false)
+            ? acc!.nickname
+            : 'me';
+        final route = ShellMaterialPageRoute<void>(
+          builder: (_) => NotificationsPage(
+            currentUsername: nick,
+            audioPlayerService: widget.audioPlayerService,
+          ),
+        );
+        final pushed = ShellNavigatorHost.push(route);
+        if (!pushed) {
+          _navigatorKey.currentState?.push(route);
+        }
+      });
+      return;
+    }
     if (intent.target == NotificationTarget.colistenInvite) {
       final roomId = intent.roomId?.trim();
       if (roomId == null || roomId.isEmpty) return;
@@ -338,6 +374,7 @@ class _MainShellState extends State<MainShell>
       ),
       NotificationTarget.release => null,
       NotificationTarget.colistenInvite => null,
+      NotificationTarget.appNotifications => null,
     };
     if (route == null) return;
     final pushed = ShellNavigatorHost.push(route);

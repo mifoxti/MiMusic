@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   audio_service_win
   audiotags
+  firebase_core
   url_launcher_windows
 )
 
