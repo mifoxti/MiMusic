@@ -1,32 +1,104 @@
-# mimusic
+# 🎧 MiMusic — твоя персональная музыкальная вселенная
 
-Flutter-приложение MiMusic — локальный плеер и UI под будущий сервер. Подробный контекст разработки: `project-context.local.md` (локально, не в git).
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-blue)
+![Flutter](https://img.shields.io/badge/Flutter-3.11+-02569B?logo=flutter&logoColor=white)
+![Dart](https://img.shields.io/badge/Dart-3.11+-0175C2?logo=dart&logoColor=white)
+![Backend](https://img.shields.io/badge/server-Ktor-087CFA)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
 
-## Getting Started
+**MiMusic** — кроссплатформенный клиент для стриминга музыки с собственным backend.  
+Ты не просто слушаешь — ты проживаешь музыку: делишься мыслями, собираешь плейлисты, слушаешь вместе с друзьями и загружаешь свои треки в студию.
+
+> Обновления и инструкции — в [Telegram-канале](https://t.me/evtumi).
+
+---
+
+## ✨ Возможности
+
+| Область | Что умеет приложение |
+|--------|----------------------|
+| **Плеер** | Очередь, shuffle/repeat, мини- и полноэкранный режим, палитра из обложки, эквалайзер, системное медиа-уведомление с лайками |
+| **Каталог** | Поиск треков и исполнителей, чарты, рекомендации на главной, история прослушивания |
+| **Социальное** | Лайки, друзья, лента «мыслей», публичные профили, уведомления |
+| **Colisten** | Совместное прослушивание: открытые комнаты, синхронизация хоста и гостей по WebSocket |
+| **Студия** | Загрузка треков на сервер, обложки, жанры, статистика прослушиваний |
+| **Офлайн** | Скачивание треков и плейлистов с учётом лимита кеша |
+| **Обновления** | OTA для Android — проверка и установка новых сборок без магазина |
+| **UI** | Стеклянный (glass) интерфейс, тёмная тема, RU/EN локализация |
+
+---
+
+## 🛠 Технологии
+
+### Клиент (этот репозиторий)
+
+- **Flutter** + **Dart 3.11+**
+- **just_audio** + **audio_service** — воспроизведение и фоновый плеер
+- **Dio** — REST API с авторизацией
+- **web_socket_channel** — colisten в реальном времени
+- **shared_preferences**, **path_provider** — настройки и локальные файлы
+- **flutter_local_notifications** — медиа-уведомления
+
+### Сервер (отдельный репозиторий `mimusicback-master`)
+
+- **Ktor 3** + **Exposed** + **PostgreSQL**
+- Транскод аудио в AAC (ffmpeg), стрим с **Range**, обложки по URL
+- JWT-сессии, загрузки треков/аватаров/обложек, colisten API
+
+---
+
+## 📦 Структура проекта
+
+```
+MiMusic/
+├── lib/
+│   ├── core/                 # Аудио, сеть, auth, offline, colisten, OTA
+│   ├── features/             # Home, player, onboarding, friends
+│   ├── presentation/         # Shell, страницы, glass-виджеты, профиль
+│   └── main.dart
+├── assets/                   # Иконки, изображения, демо-музыка
+├── docs/                     # Роадмап, alignment с бэком, OTA, commit style
+├── android/                  # Gradle, adb reverse, API base URL
+└── README.md
+```
+
+Подробная документация для разработки — в каталоге [`docs/`](docs/).
+
+---
+
+## 🚀 Быстрый старт
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-### API (Ktor на ПК)
+### Подключение к backend (Ktor на ПК)
 
-- При **Run из Android Studio** базовый URL и `adb reverse` подставляются из **`android/app/build.gradle.kts`**; на эмуляторе хост корректируется в **`MainActivity`** (см. `lib/core/network/api_config.dart`).
-- **Wi‑Fi:** в **`android/local.properties`** добавь `flutter.apiBaseUrl=http://<IP_ПК>:8080`.
-- Вручную: `flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8080` (после `adb reverse tcp:8080 tcp:8080` на USB).
+| Сценарий | Настройка |
+|----------|-----------|
+| **USB + Android Studio** | `adb reverse tcp:8080 tcp:8080`; базовый URL задаётся в `android/app/build.gradle.kts` |
+| **Wi‑Fi** | В `android/local.properties`: `flutter.apiBaseUrl=http://<IP_ПК>:8080` |
+| **Вручную** | `flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8080` |
 
-Подробнее: в родительском каталоге репозитория — **`md/DEV_ANDROID_USB_AND_POSTGRES.md`**.
-
-Общая документация Flutter: [docs.flutter.dev](https://docs.flutter.dev/).
+Детали: [`docs/DEV_ANDROID_USB_AND_POSTGRES.md`](docs/DEV_ANDROID_USB_AND_POSTGRES.md).
 
 ---
 
-## Планы по клиенту (roadmap)
+## 📊 О проекте
 
-### Совместное прослушивание: убрать «плейлисты комнаты» (`selectedPlaylists`)
+- **~180** Dart-файлов в `lib/`, **~43k** строк кода — активная разработка
+- Единая медиатека: любой залогиненный пользователь слушает любой трек и добавляет его в **свои** плейлисты
+- Обложки, аватары и аудио хранятся на сервере; клиент кеширует изображения и офлайн-треки локально
 
-Сейчас в коде есть поле **`selectedPlaylists`** в `ListeningRoomSession` и UI выбора плейлистов на экране создания комнаты (`listening_room_page.dart` и др.). На бэкенде **не планируется** отдельная сущность «плейлисты, прикреплённые к colisten-сессии» — это слишком затратно в разработке и поддержке.
+---
 
-**Намерение:** удалить эту механику на фронте: оставить только **очередь треков** в комнате и настройки прав / видимость. Упростить вызовы `ListeningRoomSession.instance.start(...)` (убрать параметр и состояние `selectedPlaylists`), подчистить виджеты выбора плейлистов для режима комнаты.
+## 📚 Полезные ссылки
 
-Детали целевой модели без этой таблицы: `md/BACKEND_CLIENT_ALIGNMENT.md` §1.7.4.
+- [Документация Flutter](https://docs.flutter.dev/)
+- [Канал обновлений в Telegram](https://t.me/evtumi)
+- [Стиль коммитов](docs/COMMIT_STYLE.md)
+
+---
+
+*Музыка начинается там, где слова уже не справляются — пусть MiMusic поможет тебе найти нужную мелодию.* 🎶
