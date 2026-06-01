@@ -5,6 +5,13 @@ import 'package:flutter/foundation.dart';
 import '../audio/track.dart';
 import 'colisten_controller.dart';
 
+/// Почему завершилась сессия совместного прослушивания (для UI гостя).
+enum ListeningRoomEndCause {
+  local,
+  hostEnded,
+  kicked,
+}
+
 class ListeningRoomSession extends ChangeNotifier {
   ListeningRoomSession._();
 
@@ -27,8 +34,10 @@ class ListeningRoomSession extends ChangeNotifier {
   List<String> _selectedPlaylists = const [];
   List<Track> _queue = const [];
   bool _joining = false;
+  ListeningRoomEndCause? _lastEndCause;
 
   bool get active => _active;
+  ListeningRoomEndCause? get lastEndCause => _lastEndCause;
   String get roomTitle => _roomTitle;
   String get hostUsername => _hostUsername;
   String get currentUsername => _currentUsername;
@@ -85,6 +94,7 @@ class ListeningRoomSession extends ChangeNotifier {
     _playlistHostOnly = playlistHostOnly;
     _selectedPlaylists = List<String>.from(selectedPlaylists);
     _queue = List<Track>.from(queue);
+    _lastEndCause = null;
     notifyListeners();
   }
 
@@ -210,7 +220,8 @@ class ListeningRoomSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void end() {
+  void end({ListeningRoomEndCause cause = ListeningRoomEndCause.local}) {
+    _lastEndCause = cause;
     unawaited(ColistenController.instance.disconnect());
     _active = false;
     _roomTitle = '';

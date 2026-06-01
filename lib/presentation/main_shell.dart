@@ -41,6 +41,7 @@ import 'pages/profile_page.dart';
 import 'pages/release_page.dart';
 import 'pages/search_page.dart';
 import 'widgets/glass_bottom_menu_sheet.dart';
+import 'widgets/glass_snack_bar.dart';
 
 /// Главный shell приложения: одна активность — много фрагментов.
 /// Мини-плеер и боттом-бар остаются на месте при переключении вкладок.
@@ -99,6 +100,7 @@ class _MainShellState extends State<MainShell>
   /// Для setState только при смене трека / наличия трека (не при каждом тике позиции).
   bool _lastHadTrack = false;
   String _lastTrackId = '';
+  bool _listeningRoomWasActive = false;
 
   /// Насколько уезжает вниз блок мини + нижняя навигация при развороте плеера.
   static const double _bottomChromeSlideDistance = 188;
@@ -157,6 +159,8 @@ class _MainShellState extends State<MainShell>
     _lastHadTrack = initial != null;
     _lastTrackId = initial?.assetPath ?? '';
     widget.audioPlayerService.addListener(_onAudioServiceChanged);
+    _listeningRoomWasActive = ListeningRoomSession.instance.active;
+    ListeningRoomSession.instance.addListener(_onListeningRoomSessionChanged);
     _playerDockController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 560),
@@ -264,9 +268,27 @@ class _MainShellState extends State<MainShell>
     }
   }
 
+  void _onListeningRoomSessionChanged() {
+    final session = ListeningRoomSession.instance;
+    final active = session.active;
+    if (_listeningRoomWasActive && !active) {
+      if (session.lastEndCause == ListeningRoomEndCause.hostEnded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final ctx = _navigatorKey.currentContext;
+          if (ctx == null || !ctx.mounted) return;
+          showGlassSnackBar(ctx, ctx.t('colisten.roomClosedByHost'));
+          PlayerDockHost.collapse();
+        });
+      }
+    }
+    _listeningRoomWasActive = active;
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    ListeningRoomSession.instance.removeListener(_onListeningRoomSessionChanged);
     widget.audioPlayerService.removeListener(_onAudioServiceChanged);
     _playerDockController.removeListener(_syncFullPlayerVisibility);
     _playerDockController.removeStatusListener(_onPlayerDockStatus);
@@ -304,6 +326,7 @@ class _MainShellState extends State<MainShell>
         ReleasePage.show(
           navContext,
           title: intent.releaseTitle ?? 'Новый релиз',
+          audioPlayerService: widget.audioPlayerService,
           coverUrl: intent.releaseCoverUrl,
           artistName: intent.username,
           trackTitle: intent.releaseTitle,

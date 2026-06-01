@@ -2,18 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/player/shell_navigator_host.dart';
+import '../../core/player/shell_route_back_guard.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/cover_image.dart';
-import '../../core/player/shell_route_back_guard.dart';
 import 'artist_page.dart';
 
 class ReleasePage extends StatelessWidget {
   const ReleasePage({
     super.key,
     required this.title,
+    required this.audioPlayerService,
     this.coverUrl,
     this.artistName,
     this.trackTitle,
@@ -21,6 +24,7 @@ class ReleasePage extends StatelessWidget {
   });
 
   final String title;
+  final AudioPlayerService audioPlayerService;
   final String? coverUrl;
   final String? artistName;
   final String? trackTitle;
@@ -29,6 +33,7 @@ class ReleasePage extends StatelessWidget {
   static Future<void> show(
     BuildContext context, {
     required String title,
+    required AudioPlayerService audioPlayerService,
     String? coverUrl,
     String? artistName,
     String? trackTitle,
@@ -39,6 +44,7 @@ class ReleasePage extends StatelessWidget {
       barrierDismissible: true,
       builder: (_) => ReleasePage(
         title: title,
+        audioPlayerService: audioPlayerService,
         coverUrl: coverUrl,
         artistName: artistName,
         trackTitle: trackTitle,
@@ -112,13 +118,17 @@ class ReleasePage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                           onTap: () {
                             Navigator.of(context).pop();
-                            Navigator.of(context).push(
-                              ShellMaterialPageRoute<void>(
-                                builder: (_) => ArtistPage(
-                                  artistName: releaseArtist,
-                                ),
+                            final route = ShellMaterialPageRoute<void>(
+                              builder: (_) => ArtistPage(
+                                artistName: releaseArtist,
+                                coverImageUrl: coverUrl,
+                                audioPlayerService: audioPlayerService,
                               ),
                             );
+                            final pushed = ShellNavigatorHost.push(route);
+                            if (!pushed) {
+                              Navigator.of(context).push(route);
+                            }
                           },
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),

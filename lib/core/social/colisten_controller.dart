@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -577,7 +578,7 @@ class ColistenController {
       },
       onDone: () {
         _log('guest ws done room=$roomId');
-        _scheduleGuestWsReconnect(roomId, audio, generation);
+        unawaited(_onGuestWebSocketClosed(roomId, audio, generation));
       },
       cancelOnError: false,
     );
@@ -2008,7 +2009,46 @@ class ColistenController {
     try {
       await audio.stop();
     } catch (_) {}
-    ListeningRoomSession.instance.end();
+    ListeningRoomSession.instance.end(cause: ListeningRoomEndCause.kicked);
+  }
+
+  Future<void> _handleRoomClosedByHost(AudioPlayerService audio) async {
+    if (_isHost || !ListeningRoomSession.instance.active) return;
+    _log('guest room closed by host room=$_roomId');
+    ListeningRoomSession.instance.end(cause: ListeningRoomEndCause.hostEnded);
+  }
+
+  bool _isRoomNotFoundError(Object e) {
+    if (e is DioException) {
+      return e.response?.statusCode == 404;
+    }
+    final msg = e.toString().toLowerCase();
+    return msg.contains('404') || msg.contains('not found');
+  }
+
+  Future<void> _onGuestWebSocketClosed(
+    String roomId,
+    AudioPlayerService audio,
+    int generation,
+  ) async {
+    if (_connectionGeneration != generation ||
+        _isHost ||
+        _roomId != roomId ||
+        !ListeningRoomSession.instance.active) {
+      return;
+    }
+    try {
+      await ColistenApi()
+          .getRoomState(roomId)
+          .timeout(const Duration(seconds: 2));
+      _scheduleGuestWsReconnect(roomId, audio, generation);
+    } catch (e) {
+      if (_isRoomNotFoundError(e)) {
+        await _handleRoomClosedByHost(audio);
+      } else {
+        _scheduleGuestWsReconnect(roomId, audio, generation);
+      }
+    }
   }
 
   void _sink(String msg) {
@@ -2034,6 +2074,10 @@ class ColistenController {
       final j = jsonDecode(raw) as Map<String, dynamic>;
       if (j['type'] == 'kicked') {
         await _handleKickedFromRoom(audio);
+        return;
+      }
+      if (j['type'] == 'room_closed') {
+        await _handleRoomClosedByHost(audio);
         return;
       }
       if (!_isRoomStatePayload(j)) {
@@ -2525,6 +2569,10 @@ class ColistenController {
       if (_connectionGeneration != generation) return;
       _markGuestWsApplied(state.stateVersion);
     } catch (e) {
+      if (_isRoomNotFoundError(e)) {
+        await _handleRoomClosedByHost(audio);
+        return;
+      }
       _log('guest poll error room=$roomId error=$e');
     }
   }

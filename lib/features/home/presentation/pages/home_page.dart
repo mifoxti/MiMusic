@@ -428,6 +428,7 @@ class _HomePageState extends State<HomePage> {
     ReleasePage.show(
       context,
       title: title,
+      audioPlayerService: widget.audioPlayerService,
       coverUrl: coverUrl,
       artistName: artistName,
       trackTitle: title,
