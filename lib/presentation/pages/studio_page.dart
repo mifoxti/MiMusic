@@ -126,8 +126,24 @@ class _StudioPageState extends State<StudioPage> {
     await _load();
   }
 
-  void _addLinkedServerId(Set<int> linked, int? serverId) {
-    if (serverId != null) linked.add(serverId);
+  /// Локальный `custom_*`, привязанный к id на сервере (обложка и файл живут здесь).
+  String? _customPathLinkedToServerId(
+    Map<String, TrackMetadataOverride> overrides,
+    Iterable<String> customPaths,
+    int serverId,
+  ) {
+    for (final id in customPaths) {
+      if (overrides[id]?.serverTrackId == serverId) return id;
+    }
+    return null;
+  }
+
+  bool _hasActiveLocalCustomForServerId(
+    Map<String, TrackMetadataOverride> overrides,
+    Iterable<String> customPaths,
+    int serverId,
+  ) {
+    return _customPathLinkedToServerId(overrides, customPaths, serverId) != null;
   }
 
   /// Локальный `custom_*`, привязанный к id на сервере (обложка и файл живут здесь).
@@ -161,12 +177,12 @@ class _StudioPageState extends State<StudioPage> {
     final customPaths = await _repo.getCustomTrackPaths();
     if (!mounted) return;
 
-    final linkedServerIds = <int>{};
-    for (final o in overrides.values) {
-      _addLinkedServerId(linkedServerIds, o.serverTrackId);
-    }
-    for (final id in customPaths) {
-      _addLinkedServerId(linkedServerIds, TracksApi().parseServerTrackId(id));
+    // Удаляем метаданные без файла в библиотеке (иначе «призрачный» serverTrackId скрывает трек с сервера).
+    for (final key in overrides.keys.toList()) {
+      if (!customPaths.contains(key)) {
+        await _repo.saveTrackMetadataOverride(key, null);
+        overrides.remove(key);
+      }
     }
 
     final customTracks = <Track>[];
@@ -194,10 +210,23 @@ class _StudioPageState extends State<StudioPage> {
         showOfflineSheet: false,
       );
       if (remote != null) {
+        final myServerIds = remote.map((e) => e.id).toSet();
+        for (final id in customPaths) {
+          final o = overrides[id];
+          if (o == null) continue;
+          final sid = o.serverTrackId;
+          if (sid == null || myServerIds.contains(sid)) continue;
+          final cleared = o.copyWith(serverTrackId: null);
+          await _repo.saveTrackMetadataOverride(id, cleared);
+          overrides[id] = cleared;
+        }
+
         final unmatched = <ServerTrackListItem>[];
         for (final item in remote) {
           playCounts[item.id] = item.playCount;
-          if (linkedServerIds.contains(item.id)) continue;
+          if (_hasActiveLocalCustomForServerId(overrides, customPaths, item.id)) {
+            continue;
+          }
           unmatched.add(item);
         }
 
@@ -215,8 +244,7 @@ class _StudioPageState extends State<StudioPage> {
               o != null) {
             final repaired = o.copyWith(serverTrackId: serverItem.id);
             await _repo.saveTrackMetadataOverride(customId, repaired);
-            overrides = {...overrides, customId: repaired};
-            linkedServerIds.add(serverItem.id);
+            overrides[customId] = repaired;
             unmatched.clear();
           }
         }
