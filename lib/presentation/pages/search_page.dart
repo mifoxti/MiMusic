@@ -670,13 +670,25 @@ class _SearchPageState extends State<SearchPage> {
                 final track = tracks[index];
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: _SearchTrackTile(
-                    track: track,
-                    palette: palette,
-                    isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                      track.assetPath,
-                    ),
-                    onTap: () => _onTrackTap(track, tracks),
+                  child: ListenableBuilder(
+                    listenable: widget.audioPlayerService,
+                    builder: (context, _) {
+                      final current = widget.audioPlayerService.currentTrack;
+                      final playing = widget.audioPlayerService.isPlaying;
+                      final isActive = current != null &&
+                          current.assetPath == track.assetPath &&
+                          current.audioFilePath == track.audioFilePath;
+                      return _SearchTrackTile(
+                        track: track,
+                        palette: palette,
+                        isDownloaded: widget.audioPlayerService.isTrackDownloaded(
+                          track.assetPath,
+                        ),
+                        isActive: isActive,
+                        isPlaying: isActive && playing,
+                        onTap: () => _onTrackTap(track, tracks),
+                      );
+                    },
                   ),
                 );
               },
@@ -998,12 +1010,16 @@ class _SearchTrackTile extends StatelessWidget {
     required this.track,
     required this.palette,
     required this.isDownloaded,
+    required this.isActive,
+    required this.isPlaying,
     required this.onTap,
   });
 
   final Track track;
   final AppColorPalette palette;
   final bool isDownloaded;
+  final bool isActive;
+  final bool isPlaying;
   final VoidCallback onTap;
 
   @override
@@ -1092,7 +1108,9 @@ class _SearchTrackTile extends StatelessWidget {
                 ),
               ),
               Icon(
-                Icons.play_arrow_rounded,
+                isActive && isPlaying
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
                 color: palette.accent,
                 size: 28,
               ),

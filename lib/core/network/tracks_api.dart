@@ -17,6 +17,8 @@ class ServerTrackListItem {
     this.genres = const [],
     this.coverBytes,
     this.playCount = 0,
+    this.uploaderUserId,
+    this.uploaderNickname,
   });
 
   final int id;
@@ -25,6 +27,8 @@ class ServerTrackListItem {
   final int? durationSec;
   final List<String> genres;
   final int playCount;
+  final int? uploaderUserId;
+  final String? uploaderNickname;
 
   /// Растровые байты обложки из поля JSON `cover` (base64), если сервер их отдал.
   final Uint8List? coverBytes;
@@ -48,6 +52,8 @@ class ServerTrackListItem {
       genres: g is List ? g.map((e) => e.toString()).toList() : const [],
       coverBytes: coverBytes,
       playCount: (json['playCount'] as num?)?.toInt() ?? 0,
+      uploaderUserId: (json['uploaderUserId'] as num?)?.toInt(),
+      uploaderNickname: json['uploaderNickname'] as String?,
     );
   }
 
@@ -73,6 +79,20 @@ class ServerTrackListItem {
   }
 }
 
+class RecentUploaderDto {
+  const RecentUploaderDto({required this.userId, required this.nickname});
+
+  final int userId;
+  final String nickname;
+
+  factory RecentUploaderDto.fromJson(Map<String, dynamic> json) {
+    return RecentUploaderDto(
+      userId: (json['userId'] as num).toInt(),
+      nickname: json['nickname'] as String? ?? '',
+    );
+  }
+}
+
 class TracksApi {
   TracksApi({Dio? dio})
       : _dio = dio ??
@@ -87,6 +107,18 @@ class TracksApi {
   final Dio _dio;
 
   /// Последние по `id` (новые загрузки сверху). Параметр `limit` — query на сервере.
+  Future<List<RecentUploaderDto>> fetchRecentUploaders({int limit = 8}) async {
+    final res = await _dio.get<List<dynamic>>(
+      '/tracks/recent-uploaders',
+      queryParameters: {'limit': limit},
+    );
+    final data = res.data;
+    if (data == null) return [];
+    return data
+        .map((e) => RecentUploaderDto.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
   Future<List<ServerTrackListItem>> fetchTracks({int limit = 30}) async {
     final res = await _dio.get<List<dynamic>>(
       '/tracks',

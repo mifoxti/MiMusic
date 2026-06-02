@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio/audio_player_service.dart';
@@ -42,54 +44,92 @@ class ChartsPage extends StatefulWidget {
   State<ChartsPage> createState() => _ChartsPageState();
 }
 
+enum _ChartSortMode { today, total }
+
 class _ChartsPageState extends State<ChartsPage> {
   List<ChartEntry> _entries = [];
   List<Track> _chartTracks = [];
+  List<ChartTrackDto> _rows = [];
+  _ChartSortMode _sortMode = _ChartSortMode.today;
   bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
     _load();
   }
 
-  String _formatPlayCount(int count, bool isEn) {
+  String _formatCountShort(int count, bool isEn) {
     if (count >= 1000000) {
       final m = (count / 1000000).toStringAsFixed(1);
-      return isEn ? '${m}M plays' : '$m млн прослушиваний';
+      return isEn ? '${m}M' : '$m млн';
     }
     if (count >= 1000) {
       final k = (count / 1000).round();
-      return isEn ? '${k}K plays' : '$k тыс. прослушиваний';
+      return isEn ? '${k}K' : '$k тыс.';
     }
-    return isEn ? '$count plays' : '$count прослушиваний';
+    return '$count';
+  }
+
+  String _playsLabels(int today, int total, bool isEn) {
+    final todayStr = _formatCountShort(today, isEn);
+    final totalStr = _formatCountShort(total, isEn);
+    if (isEn) {
+      return '$todayStr today · $totalStr total';
+    }
+    return '$todayStr сегодня · $totalStr всего';
+  }
+
+  void _applySort() {
+    final isEn = Localizations.localeOf(context).languageCode == 'en';
+    final sorted = List<ChartTrackDto>.from(_rows);
+    if (_sortMode == _ChartSortMode.today) {
+      sorted.sort((a, b) {
+        final c = b.playCountToday.compareTo(a.playCountToday);
+        if (c != 0) return c;
+        return b.playCount.compareTo(a.playCount);
+      });
+    } else {
+      sorted.sort((a, b) {
+        final c = b.playCount.compareTo(a.playCount);
+        if (c != 0) return c;
+        return b.playCountToday.compareTo(a.playCountToday);
+      });
+    }
+    final tracks = <Track>[];
+    final entries = <ChartEntry>[];
+    for (var i = 0; i < sorted.length; i++) {
+      final row = sorted[i];
+      final track = row.toTrack();
+      tracks.add(track);
+      entries.add(
+        ChartEntry(
+          rank: i + 1,
+          track: track,
+          playsLabel: _playsLabels(row.playCountToday, row.playCount, isEn),
+          deltaLabel: row.isNew ? 'NEW' : null,
+        ),
+      );
+    }
+    setState(() {
+      _entries = entries;
+      _chartTracks = tracks;
+    });
   }
 
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final dto = await ChartsApi().fetchTopTracks(limit: 30);
+      final sortParam =
+          _sortMode == _ChartSortMode.today ? 'today' : 'total';
+      final dto = await ChartsApi().fetchTopTracks(limit: 30, sort: sortParam);
       if (!mounted) return;
-      final isEn = Localizations.localeOf(context).languageCode == 'en';
-      final tracks = <Track>[];
-      final entries = <ChartEntry>[];
-      for (final row in dto) {
-        final track = row.toTrack();
-        tracks.add(track);
-        entries.add(
-          ChartEntry(
-            rank: row.rank,
-            track: track,
-            playsLabel: _formatPlayCount(row.playCount, isEn),
-            deltaLabel: row.isNew ? 'NEW' : null,
-          ),
-        );
-      }
       setState(() {
-        _entries = entries;
-        _chartTracks = tracks;
+        _rows = dto;
         _isLoading = false;
       });
+      _applySort();
     } catch (e) {
       if (!mounted) return;
       await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
@@ -273,6 +313,26 @@ class _ChartsPageState extends State<ChartsPage> {
               fontSize: 14,
               color: palette.textSecondary,
             ),
+          ),
+          const SizedBox(height: 14),
+          SegmentedButton<_ChartSortMode>(
+            segments: [
+              ButtonSegment(
+                value: _ChartSortMode.today,
+                label: Text(context.t('charts.sortToday')),
+              ),
+              ButtonSegment(
+                value: _ChartSortMode.total,
+                label: Text(context.t('charts.sortTotal')),
+              ),
+            ],
+            selected: {_sortMode},
+            onSelectionChanged: (selected) {
+              final mode = selected.first;
+              if (mode == _sortMode) return;
+              setState(() => _sortMode = mode);
+              unawaited(_load());
+            },
           ),
           const SizedBox(height: 20),
           Material(

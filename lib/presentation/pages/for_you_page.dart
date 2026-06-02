@@ -11,6 +11,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/dual_track_cover_cluster.dart';
 import '../../core/widgets/track_cover.dart' show buildTrackCover;
 import '../../core/player/player_dock_host.dart';
+import '../widgets/track_playback_trailing_icon.dart';
 
 /// Экран «Для вас»: только [GET /recommendations/tracks] и события impression/click.
 class ForYouPage extends StatefulWidget {
@@ -263,6 +264,7 @@ class _ForYouPageState extends State<ForYouPage> {
                           return _ForYouTrackRow(
                             track: t,
                             palette: palette,
+                            audioPlayerService: widget.audioPlayerService,
                             onTap: () => _onServerRecTap(t),
                           );
                         },
@@ -282,11 +284,13 @@ class _ForYouTrackRow extends StatelessWidget {
   const _ForYouTrackRow({
     required this.track,
     required this.palette,
+    required this.audioPlayerService,
     required this.onTap,
   });
 
   final Track track;
   final AppColorPalette palette;
+  final AudioPlayerService audioPlayerService;
   final VoidCallback onTap;
 
   @override
@@ -338,7 +342,10 @@ class _ForYouTrackRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.play_circle_outline, color: palette.accent),
+              TrackPlaybackTrailingIcon(
+                audioPlayerService: audioPlayerService,
+                track: track,
+              ),
             ],
           ),
         ),

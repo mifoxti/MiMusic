@@ -4,7 +4,10 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/audio/audio_player_service.dart';
+import '../../../../core/audio/track.dart';
 import '../../../../core/widgets/cover_image.dart';
+import '../../../../presentation/widgets/track_playback_trailing_icon.dart';
 
 /// Горизонтальная секция рекомендаций с заголовком.
 class HomeRecommendationSection extends StatelessWidget {
@@ -70,15 +73,13 @@ class HomeRecommendationSection extends StatelessWidget {
 class RecommendedTrackCard extends StatelessWidget {
   const RecommendedTrackCard({
     super.key,
-    required this.title,
-    required this.artist,
-    required this.coverUrl,
+    required this.track,
+    required this.audioPlayerService,
     required this.onTap,
   });
 
-  final String title;
-  final String artist;
-  final String? coverUrl;
+  final Track track;
+  final AudioPlayerService audioPlayerService;
   final VoidCallback onTap;
 
   static const _coverSize = 54.0;
@@ -102,7 +103,7 @@ class RecommendedTrackCard extends StatelessWidget {
                 borderRadius:
                     BorderRadius.circular(AppConstants.radiusMedium),
                 child: buildCoverImage(
-                  imageUrl: coverUrl,
+                  imageUrl: track.coverFallbackPath,
                   width: _coverSize,
                   height: _coverSize,
                   borderRadius:
@@ -120,7 +121,7 @@ class RecommendedTrackCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      title,
+                      track.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -129,10 +130,10 @@ class RecommendedTrackCard extends StatelessWidget {
                         fontSize: 14,
                       ),
                     ),
-                    if (artist.trim().isNotEmpty) ...[
+                    if (track.artistDisplay.trim().isNotEmpty) ...[
                       const SizedBox(height: 3),
                       Text(
-                        artist,
+                        track.artistDisplay,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -144,10 +145,9 @@ class RecommendedTrackCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
-                Icons.play_circle_fill_rounded,
-                color: palette.accent.withValues(alpha: 0.85),
-                size: 28,
+              TrackPlaybackTrailingIcon(
+                audioPlayerService: audioPlayerService,
+                track: track,
               ),
             ],
           ),
@@ -242,15 +242,20 @@ class RecommendedPlaylistCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  height: 1.25,
+              SizedBox(
+                width: _size,
+                height: 32,
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    height: 1.15,
+                  ),
                 ),
               ),
             ],

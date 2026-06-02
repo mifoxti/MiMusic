@@ -1307,14 +1307,12 @@ class _ThoughtsPageState extends State<ThoughtsPage> {
         ),
       ),
       child: PopScope(
-        canPop: false,
+        canPop: _overlayDepth == 0,
         onPopInvokedWithResult: (didPop, result) {
           if (didPop) return;
           if (_overlayDepth > 0) {
             Navigator.of(context, rootNavigator: true).maybePop();
-            return;
           }
-          Navigator.of(context).pop();
         },
         child: widget.audioPlayerService == null
             ? _ThoughtsScaffoldBody(

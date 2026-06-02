@@ -21,6 +21,9 @@ class CollapsingProfileShell extends StatelessWidget {
     this.audioPlayerService,
     this.onRefresh,
     this.leading,
+    this.buildPinnedHeader,
+    this.collapsedHeaderAlignment = const Alignment(-0.9, -0.2),
+    this.expandedHeaderAlignment = const Alignment(0, 0.7),
   });
 
   static const double coverAspectRatio = 1.25;
@@ -36,6 +39,15 @@ class CollapsingProfileShell extends StatelessWidget {
   final AudioPlayerService? audioPlayerService;
   final Future<void> Function()? onRefresh;
   final Widget? leading;
+
+  /// Фиксированная шапка (назад + аватар + ник + действия). [collapseT]: 1 развёрнуто, 0 свёрнуто.
+  final Widget Function(double collapseT)? buildPinnedHeader;
+
+  /// Позиция блока аватар+ник при свёрнутой шапке.
+  final Alignment collapsedHeaderAlignment;
+
+  /// Позиция блока при развёрнутой шапке.
+  final Alignment expandedHeaderAlignment;
 
   @override
   Widget build(BuildContext context) {
@@ -80,14 +92,18 @@ class CollapsingProfileShell extends StatelessWidget {
               // Как на скрине: блок (аватар + ник + «Мысли») по центру обложки,
               // при скролле уезжает влево-вверх.
               final alignment = Alignment.lerp(
-                const Alignment(-0.9, -0.2),
-                const Alignment(0, 0.7),
+                collapsedHeaderAlignment,
+                expandedHeaderAlignment,
                 t,
               )!;
               final nicknameOffsetY = lerpDouble(0, -10, easedT)!;
               final buttonVisibility = easedT;
+              // При свёрнутой шапке опускаем блок аватар+ник, чтобы не заезжал на status bar.
+              final collapsedVerticalNudge = lerpDouble(topPadding * 0.45, 0, t)!;
 
               final top = MediaQuery.paddingOf(context).top;
+              final reserveBackInset =
+                  leading != null || Navigator.of(context).canPop();
 
               return Stack(
                 fit: StackFit.expand,
@@ -113,67 +129,82 @@ class CollapsingProfileShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Align(
-                    alignment: alignment,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: lerpDouble(16, 24, t)!,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: avatarSize,
-                            height: avatarSize,
-                            child: avatar,
-                          ),
-                          const SizedBox(width: 14),
-                          Transform.translate(
-                            offset: Offset(0, nicknameOffsetY),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: titleSize,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                    letterSpacing: -0.3,
-                                    shadows: [
-                                      Shadow(
-                                        color: Colors.black.withValues(alpha: 0.4),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (headerActions != null) ...[
-                                  SizedBox(height: 8 * buttonVisibility),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    heightFactor: buttonVisibility == 0
-                                        ? 0.001
-                                        : buttonVisibility,
-                                    child: Opacity(
-                                      opacity: buttonVisibility,
-                                      child: headerActions,
+                  if (buildPinnedHeader != null)
+                    Positioned(
+                      top: top + 6,
+                      left: 8,
+                      right: 8,
+                      child: buildPinnedHeader!(easedT),
+                    )
+                  else
+                    Align(
+                      alignment: alignment,
+                      child: Transform.translate(
+                        offset: Offset(0, collapsedVerticalNudge),
+                        child: Padding(
+                        padding: EdgeInsets.only(
+                          left: reserveBackInset
+                              ? lerpDouble(52, 24, t)!
+                              : lerpDouble(16, 24, t)!,
+                          right: lerpDouble(16, 24, t)!,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: avatarSize,
+                              height: avatarSize,
+                              child: avatar,
+                            ),
+                            const SizedBox(width: 14),
+                            Transform.translate(
+                              offset: Offset(0, nicknameOffsetY),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: titleSize,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                      letterSpacing: -0.3,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withValues(alpha: 0.4),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
                                     ),
                                   ),
+                                  if (headerActions != null) ...[
+                                    SizedBox(height: 8 * buttonVisibility),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      heightFactor: buttonVisibility == 0
+                                          ? 0.001
+                                          : buttonVisibility,
+                                      child: Opacity(
+                                        opacity: buttonVisibility,
+                                        child: headerActions,
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
                       ),
                     ),
-                  ),
-                  if (leading != null || Navigator.of(context).canPop())
+                  if (buildPinnedHeader == null &&
+                      (leading != null || Navigator.of(context).canPop()))
                     Positioned(
                       top: top + 8,
                       left: 8,

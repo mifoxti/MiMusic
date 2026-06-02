@@ -581,6 +581,20 @@ class AudioPlayerService extends ChangeNotifier {
     _syncPlayingFromHandler();
   }
 
+  /// Локальная пауза без colisten-ограничений (выход из комнаты, kick, room_closed).
+  Future<void> forceLocalPause() async {
+    _guestLocalPauseActive = false;
+    _suppressPlayingMirror(ms: 250);
+    _isPlaying = false;
+    notifyListeners();
+    try {
+      await _handler.pause();
+      _syncPlayingFromHandler(notify: true);
+    } catch (e, st) {
+      debugPrint('[audio] forceLocalPause error: $e\n$st');
+    }
+  }
+
   Future<void> pause() async {
     final room = ListeningRoomSession.instance;
     if (room.active && !room.canControlPause) return;

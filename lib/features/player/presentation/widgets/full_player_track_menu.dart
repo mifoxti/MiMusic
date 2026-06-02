@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -5,7 +6,10 @@ import 'package:flutter/material.dart';
 import '../../../../core/audio/audio_player_service.dart';
 import '../../../../core/audio/track.dart';
 import '../../../../core/l10n/app_localization.dart';
+import '../../../../core/network/authenticated_dio.dart';
+import '../../../../core/network/tracks_api.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../features/playlists/data/repositories/local_playlists_repository.dart';
 import '../../../../features/playlists/domain/repositories/playlists_repository.dart';
@@ -78,6 +82,7 @@ Future<void> showFullPlayerTrackMenu(
                     ),
                     onTap: () {
                       Navigator.pop(ctx);
+                      if (!context.mounted) return;
                       showTrackPlaylistPicker(
                         context,
                         track: track,
@@ -93,7 +98,7 @@ Future<void> showFullPlayerTrackMenu(
                     ),
                     onTap: () {
                       Navigator.pop(ctx);
-                      _showAboutTrack(context, track, palette);
+                      unawaited(_showAboutTrack(context, track, palette));
                     },
                   ),
                   ListTile(
@@ -262,45 +267,106 @@ Future<void> showTrackPlaylistPicker(
   ).whenComplete(GlassModalOverlay.pop);
 }
 
-void _showAboutTrack(
+Future<void> _showAboutTrack(
   BuildContext context,
   Track track,
   AppColorPalette palette,
-) {
-  showDialog<void>(
+) async {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  var uploaderLabel = '—';
+  final sid = TracksApi().resolveServerTrackId(
+    assetPath: track.assetPath,
+    audioFilePath: track.audioFilePath,
+  );
+  if (sid != null) {
+    try {
+      ServerTrackListItem item;
+      try {
+        final dio = await createAuthenticatedDio();
+        final res = await dio.get<Map<String, dynamic>>('/tracks/$sid');
+        final data = res.data;
+        if (data != null) {
+          item = ServerTrackListItem.fromJson(data);
+        } else {
+          item = await TracksApi().fetchTrackById(sid);
+        }
+      } catch (_) {
+        item = await TracksApi().fetchTrackById(sid);
+      }
+      final nick = item.uploaderNickname?.trim();
+      if (nick != null && nick.isNotEmpty) {
+        uploaderLabel = nick.startsWith('@') ? nick : '@$nick';
+      } else if (item.uploaderUserId != null) {
+        uploaderLabel = 'ID ${item.uploaderUserId}';
+      }
+    } catch (_) {}
+  }
+
+  if (!context.mounted) return;
+  await showDialog<void>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      backgroundColor: palette.cardBackground,
-      title: Text(
-        track.title,
-        style: TextStyle(color: palette.textPrimary),
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              context.tr('player.menu.artist', {'artist': track.artistDisplay.isEmpty ? '—' : track.artistDisplay}),
-              style: TextStyle(color: palette.textSecondary),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Файл: ${track.audioFilePath ?? track.assetPath}',
-              style: TextStyle(
-                fontSize: 12,
-                color: palette.textMuted,
+    barrierColor: Colors.black.withValues(alpha: 0.45),
+    builder: (ctx) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppGlass.border(isDark),
+                  ),
+                  color: AppGlass.tint(isDark),
+                  boxShadow: AppGlass.cardShadows(isDark),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        track.title,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        context.tr('player.menu.artist', {
+                          'artist': track.artistDisplay.isEmpty
+                              ? '—'
+                              : track.artistDisplay,
+                        }),
+                        style: TextStyle(color: palette.textSecondary),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        context.tr('player.menu.uploadedBy', {'name': uploaderLabel}),
+                        style: TextStyle(color: palette.textSecondary),
+                      ),
+                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text(context.t('common.close')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ],
+          ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: Text(context.t('common.close')),
-        ),
-      ],
-    ),
+      );
+    },
   );
 }

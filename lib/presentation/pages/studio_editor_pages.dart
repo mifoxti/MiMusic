@@ -406,6 +406,9 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
     }
     _genres = normalizeStudioGenreList(o?.genres ?? []);
     _coAuthors = List<String>.from(o?.coAuthors ?? []);
+    if (_coAuthors.isEmpty) {
+      _splitArtistDisplay(o?.artist ?? tr?.artist);
+    }
     final nick = widget.nickname ?? '';
     _authorIsMe = nick.isNotEmpty && _artistCtrl.text.trim() == nick;
     _coAuthorCtrl = TextEditingController();
@@ -431,6 +434,30 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
       });
     });
     unawaited(_hydrateFromServerIfNeeded());
+  }
+
+  void _splitArtistDisplay(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return;
+    final parts = raw
+        .split(RegExp(r'[,;]'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return;
+    _artistCtrl.text = parts.first;
+    if (parts.length > 1) {
+      _coAuthors = parts.sublist(1);
+    }
+  }
+
+  String? _artistPayloadForServer() {
+    final primary = _artistCtrl.text.trim();
+    final parts = <String>[
+      if (primary.isNotEmpty) primary,
+      ..._coAuthors.map((c) => c.trim()).where((c) => c.isNotEmpty && c != primary),
+    ];
+    if (parts.isEmpty) return null;
+    return parts.join(', ');
   }
 
   void _captureBaseline() {
@@ -475,7 +502,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
           _titleCtrl.text = item.title.trim();
         }
         if (item.artist != null && item.artist!.trim().isNotEmpty) {
-          _artistCtrl.text = item.artist!.trim();
+          _splitArtistDisplay(item.artist);
           _authorIsMe = nick.isNotEmpty && _artistCtrl.text.trim() == nick;
         }
         if (item.genres.isNotEmpty) {
@@ -694,12 +721,12 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
     final id = _serverTrackId;
     if (id == null || !_serverLoggedIn) return;
     final title = _titleCtrl.text.trim();
-    final artist = _artistCtrl.text.trim();
+    final artist = _artistPayloadForServer();
     try {
       await TracksApi().updateTrackMetadata(
         trackId: id,
         title: title.isEmpty ? null : title,
-        artist: artist.isEmpty ? null : artist,
+        artist: artist,
       );
     } catch (_) {}
   }
@@ -735,7 +762,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
           final result = await api.uploadTrack(
             audioFile: File(_audioPath),
             title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
-            artist: _artistCtrl.text.trim().isEmpty ? null : _artistCtrl.text.trim(),
+            artist: _artistPayloadForServer(),
             coverFile: coverForUpload,
             genreSlugs: const [],
           );
@@ -821,7 +848,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
 
   Future<void> _submit() async {
     final title = _titleCtrl.text.trim();
-    final artist = _artistCtrl.text.trim();
+    final artistPayload = _artistPayloadForServer();
     if (_serverLoggedIn && await _audioFileReady()) {
       final ok = await _syncTrackToServer(showSnack: false);
       if (!ok) {
@@ -834,7 +861,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
         await TracksApi().updateTrackMetadata(
           trackId: _serverTrackId!,
           title: title.isEmpty ? null : title,
-          artist: artist.isEmpty ? null : artist,
+          artist: artistPayload,
         );
       } catch (_) {
         if (!mounted) return;
@@ -849,7 +876,7 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
         assetPath: widget.assetPath,
         metadata: TrackMetadataOverride(
           title: title.isEmpty ? null : title,
-          artist: artist.isEmpty ? null : artist,
+          artist: _artistCtrl.text.trim().isEmpty ? null : _artistCtrl.text.trim(),
           coverPath: _coverPath.isEmpty ? null : _coverPath,
           genres: List<String>.from(_genres),
           audioFilePath: _audioPath.isEmpty ? null : _audioPath,
@@ -933,6 +960,71 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
           body: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
+                    if (!_isEditing || _hasLocalAudioFile()) ...[
+                      studioGlassPanel(
+                        context: context,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              context.t('studio.audioFile'),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: palette.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _audioPath.isEmpty
+                                        ? context.t('studio.notSelected')
+                                        : _isRemoteAudioPath(_audioPath)
+                                            ? context.t('studio.onServer')
+                                            : _audioPath.split(RegExp(r'[/\\]')).last,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: palette.textPrimary,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _parsingMetadata
+                                      ? null
+                                      : () => unawaited(_pickAudioFile()),
+                                  icon: _parsingMetadata
+                                      ? SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: palette.accent,
+                                          ),
+                                        )
+                                      : Icon(
+                                          _isEditing
+                                              ? Icons.swap_horiz_rounded
+                                              : Icons.upload_file_rounded,
+                                          size: 20,
+                                        ),
+                                  label: Text(
+                                    _parsingMetadata
+                                        ? context.t('studio.upload.parsingMetadata')
+                                        : _isEditing
+                                            ? context.t('playlists.replace')
+                                            : context.t('playlists.chooseFile'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     studioGlassPanel(
                       context: context,
                       child: Row(
@@ -1151,71 +1243,6 @@ class _StudioTrackEditorPageState extends State<StudioTrackEditorPage> {
                         ),
                       ),
                     ),
-                    if (!_isEditing || _hasLocalAudioFile()) ...[
-                      const SizedBox(height: 12),
-                      studioGlassPanel(
-                        context: context,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              context.t('studio.audioFile'),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: palette.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    _audioPath.isEmpty
-                                        ? context.t('studio.notSelected')
-                                        : _isRemoteAudioPath(_audioPath)
-                                            ? context.t('studio.onServer')
-                                            : _audioPath.split(RegExp(r'[/\\]')).last,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: palette.textPrimary,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                TextButton.icon(
-                                  onPressed: _parsingMetadata
-                                      ? null
-                                      : () => unawaited(_pickAudioFile()),
-                                  icon: _parsingMetadata
-                                      ? SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: palette.accent,
-                                          ),
-                                        )
-                                      : Icon(
-                                          _isEditing
-                                              ? Icons.swap_horiz_rounded
-                                              : Icons.upload_file_rounded,
-                                          size: 20,
-                                        ),
-                                  label: Text(
-                                    _parsingMetadata
-                                        ? context.t('studio.upload.parsingMetadata')
-                                        : _isEditing
-                                            ? context.t('playlists.replace')
-                                            : context.t('playlists.chooseFile'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                     if (_serverUploading) ...[
                       const SizedBox(height: 12),
                       Center(

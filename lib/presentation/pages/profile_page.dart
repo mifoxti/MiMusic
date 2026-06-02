@@ -70,17 +70,11 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   String? _serverNickname;
   String? _avatarPathOverride;
-  int? _tracksStat;
-  int? _playlistsStat;
-  int? _friendsStat;
-  bool _statsLoading = true;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_primeFromCacheAndSync());
-      unawaited(_loadStats());
     });
   }
 
@@ -99,7 +93,6 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
     await _primeFromCacheAndSync(showOfflineSheet: true);
-    await _loadStats(showOfflineSheet: true);
   }
 
   Future<void> _primeFromCacheAndSync({bool showOfflineSheet = false}) async {
@@ -141,31 +134,6 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
-  Future<void> _loadStats({bool showOfflineSheet = false}) async {
-    final acc = await AuthSessionStore.readAccount();
-    if (acc == null || acc.sessionToken.trim().isEmpty) {
-      if (mounted) setState(() => _statsLoading = false);
-      return;
-    }
-    if (!mounted) return;
-    final stats = await ServerConnectivity.instance.runOnline(
-      context,
-      () => ProfileApi().fetchMeStats(),
-      showOfflineSheet: showOfflineSheet,
-    );
-    if (!mounted) return;
-    if (stats != null) {
-      setState(() {
-        _tracksStat = stats.tracksCount;
-        _playlistsStat = stats.playlistsCount;
-        _friendsStat = stats.friendsCount;
-        _statsLoading = false;
-      });
-    } else {
-      setState(() => _statsLoading = false);
-    }
-  }
-
   String get _profileNickname =>
       (_serverNickname != null && _serverNickname!.trim().isNotEmpty)
           ? _serverNickname!
@@ -182,6 +150,8 @@ class _ProfilePageState extends State<ProfilePage> {
       title: _profileNickname,
       audioPlayerService: widget.audioPlayerService,
       onRefresh: _refreshProfileFromUser,
+      collapsedHeaderAlignment: const Alignment(-0.92, 0.22),
+      expandedHeaderAlignment: const Alignment(0, 0.7),
       cover: LayoutBuilder(
         builder: (context, constraints) => _buildCoverBackground(
           context,
@@ -251,8 +221,6 @@ class _ProfilePageState extends State<ProfilePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildActionRow(context, palette),
-          const SizedBox(height: 24),
-          _buildStatsSection(context, palette),
           const SizedBox(height: 20),
           GlassTapCard(
             title: isEn ? 'Open rooms' : 'Открытые комнаты',
@@ -460,83 +428,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildStatsSection(BuildContext context, AppColorPalette palette) {
-    String fmt(int? v) {
-      if (_statsLoading) return '…';
-      return '${v ?? 0}';
-    }
-    final isEn = Localizations.localeOf(context).languageCode == 'en';
-    return GlassPanel(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _StatItem(
-            value: fmt(_tracksStat),
-            label: isEn ? 'tracks' : 'треков',
-            palette: palette,
-          ),
-          Container(
-            width: 1,
-            height: 32,
-            color: palette.textMuted.withValues(alpha: 0.4),
-          ),
-          _StatItem(
-            value: fmt(_playlistsStat),
-            label: isEn ? 'playlists' : 'плейлистов',
-            palette: palette,
-          ),
-          Container(
-            width: 1,
-            height: 32,
-            color: palette.textMuted.withValues(alpha: 0.4),
-          ),
-          _StatItem(
-            value: fmt(_friendsStat),
-            label: isEn ? 'friends' : 'друзей',
-            palette: palette,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatItem extends StatelessWidget {
-  const _StatItem({
-    required this.value,
-    required this.label,
-    required this.palette,
-  });
-
-  final String value;
-  final String label;
-  final AppColorPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: palette.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: palette.textSecondary,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _ProfileNotificationBell extends StatefulWidget {

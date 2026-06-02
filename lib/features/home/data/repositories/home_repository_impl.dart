@@ -103,9 +103,13 @@ class HomeRepositoryImpl implements HomeRepository {
 
   Future<({List<RecommendedPlaylist> playlists, List<ListeningFriend> artists})>
       _loadRecommendedPlaylistsAndArtists(int myUserId) async {
+    var playlists = const <RecommendedPlaylist>[];
+    var artists = const <ListeningFriend>[];
+    List<PublicPlaylistItemRemote>? public;
+
     try {
-      final public = await PlaylistsApi().fetchPublicPlaylists(limit: 8);
-      final playlists = public
+      public = await PlaylistsApi().fetchPublicPlaylists(limit: 8);
+      playlists = public
           .map(
             (p) => RecommendedPlaylist(
               id: 'srv:${p.id}',
@@ -114,8 +118,13 @@ class HomeRepositoryImpl implements HomeRepository {
             ),
           )
           .toList();
+    } catch (_) {}
+
+    artists = await _loadRecommendedUploaders(myUserId);
+
+    if (artists.isEmpty && public != null) {
       final seen = <int>{};
-      final artists = public
+      artists = public
           .where((p) => p.ownerUserId != myUserId)
           .where((p) => seen.add(p.ownerUserId))
           .take(6)
@@ -127,13 +136,52 @@ class HomeRepositoryImpl implements HomeRepository {
             ),
           )
           .toList();
-      return (playlists: playlists, artists: artists);
-    } catch (_) {
-      return (
-        playlists: const <RecommendedPlaylist>[],
-        artists: const <ListeningFriend>[],
-      );
     }
+
+    return (playlists: playlists, artists: artists);
+  }
+
+  /// Загрузчики: API recent-uploaders → уникальные uploader из каталога треков → пусто.
+  Future<List<ListeningFriend>> _loadRecommendedUploaders(int myUserId) async {
+    try {
+      final uploaders = await TracksApi().fetchRecentUploaders(limit: 8);
+      if (uploaders.isNotEmpty) {
+        return uploaders
+            .where((u) => u.userId != myUserId)
+            .map(
+              (u) => ListeningFriend(
+                username: u.nickname,
+                avatarUrl: userAvatarUrl(u.userId),
+                userId: u.userId,
+              ),
+            )
+            .take(8)
+            .toList();
+      }
+    } catch (_) {}
+
+    try {
+      final tracks = await TracksApi().fetchTracks(limit: 48);
+      final seen = <int>{};
+      final fromTracks = <ListeningFriend>[];
+      for (final t in tracks) {
+        final uid = t.uploaderUserId;
+        if (uid == null || uid == myUserId || !seen.add(uid)) continue;
+        fromTracks.add(
+          ListeningFriend(
+            username: (t.uploaderNickname?.trim().isNotEmpty ?? false)
+                ? t.uploaderNickname!.trim()
+                : 'user_$uid',
+            avatarUrl: userAvatarUrl(uid),
+            userId: uid,
+          ),
+        );
+        if (fromTracks.length >= 8) break;
+      }
+      if (fromTracks.isNotEmpty) return fromTracks;
+    } catch (_) {}
+
+    return const [];
   }
 
   Future<_FriendRoomPreview?> _loadFriendListeningRoom() async {
@@ -151,11 +199,21 @@ class HomeRepositoryImpl implements HomeRepository {
         final roomId = friend.activeColistenRoomId!.trim();
         grouped.putIfAbsent(roomId, () => <FriendRemoteDto>[]).add(friend);
       }
-      final selected = grouped.entries.reduce(
-        (a, b) => a.value.length >= b.value.length ? a : b,
-      );
-
-      final room = await ColistenApi().getRoomState(selected.key);
+      // Пробуем все комнаты друзей (не только самую «популярную») — первая живая на сервере.
+      final roomCandidates = grouped.entries.toList()
+        ..sort((a, b) => b.value.length.compareTo(a.value.length));
+      ColistenRoomStateDto? room;
+      List<FriendRemoteDto>? selectedFriends;
+      for (final entry in roomCandidates) {
+        try {
+          room = await ColistenApi().getRoomState(entry.key);
+          selectedFriends = entry.value;
+          break;
+        } catch (_) {
+          continue;
+        }
+      }
+      if (room == null || selectedFriends == null) return null;
       ServerTrackListItem? track;
       final trackId = room.trackId;
       if (trackId != null) {
@@ -193,7 +251,7 @@ class HomeRepositoryImpl implements HomeRepository {
           ),
         );
       }
-      for (final friend in selected.value) {
+      for (final friend in selectedFriends) {
         if (listeners.any((listener) => listener.userId == friend.id)) continue;
         listeners.add(
           ListeningFriend(
@@ -206,10 +264,10 @@ class HomeRepositoryImpl implements HomeRepository {
       if (listeners.isEmpty) return null;
 
       final title =
-          (track?.title ?? selected.value.first.nowPlaying?.title ?? '').trim();
+          (track?.title ?? selectedFriends.first.nowPlaying?.title ?? '').trim();
       if (title.isEmpty) return null;
       final artist =
-          (track?.artist ?? selected.value.first.nowPlaying?.artist ?? '')
+          (track?.artist ?? selectedFriends.first.nowPlaying?.artist ?? '')
               .trim();
       return _FriendRoomPreview(
         playback: FriendPlayback(

@@ -2006,16 +2006,19 @@ class ColistenController {
 
   Future<void> _handleKickedFromRoom(AudioPlayerService audio) async {
     _log('guest kicked room=$_roomId');
-    try {
-      await audio.stop();
-    } catch (_) {}
+    _channel?.sink.close();
+    _channel = null;
     ListeningRoomSession.instance.end(cause: ListeningRoomEndCause.kicked);
+    await audio.forceLocalPause();
   }
 
   Future<void> _handleRoomClosedByHost(AudioPlayerService audio) async {
     if (_isHost || !ListeningRoomSession.instance.active) return;
     _log('guest room closed by host room=$_roomId');
+    _channel?.sink.close();
+    _channel = null;
     ListeningRoomSession.instance.end(cause: ListeningRoomEndCause.hostEnded);
+    await audio.forceLocalPause();
   }
 
   bool _isRoomNotFoundError(Object e) {

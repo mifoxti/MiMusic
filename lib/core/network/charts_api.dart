@@ -14,6 +14,7 @@ class ChartTrackDto {
     required this.title,
     this.artist,
     required this.playCount,
+    this.playCountToday = 0,
     this.coverBytes,
     this.isNew = false,
   });
@@ -23,6 +24,7 @@ class ChartTrackDto {
   final String title;
   final String? artist;
   final int playCount;
+  final int playCountToday;
   final Uint8List? coverBytes;
   final bool isNew;
 
@@ -42,6 +44,7 @@ class ChartTrackDto {
       title: j['title'] as String? ?? '',
       artist: j['artist'] as String?,
       playCount: (j['playCount'] as num?)?.toInt() ?? 0,
+      playCountToday: (j['playCountToday'] as num?)?.toInt() ?? 0,
       coverBytes: coverBytes,
       isNew: j['isNew'] as bool? ?? false,
     );
@@ -90,11 +93,15 @@ class ChartsApi {
     }
   }
 
-  Future<List<ChartTrackDto>> fetchTopTracks({int limit = 20}) async {
+  /// [sort]: `today` (по прослушиваниям за сегодня) или `total` (за всё время).
+  Future<List<ChartTrackDto>> fetchTopTracks({
+    int limit = 20,
+    String sort = 'today',
+  }) async {
     final Dio dio = await _chartsDio();
     final res = await dio.get<List<dynamic>>(
       '/charts/tracks',
-      queryParameters: {'limit': limit},
+      queryParameters: {'limit': limit, 'sort': sort},
     );
     final data = res.data;
     if (data == null) return [];

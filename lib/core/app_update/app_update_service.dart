@@ -42,15 +42,19 @@ class AppUpdateService {
     }
   }
 
-  /// Автопроверка не чаще [_autoCheckInterval], если [force] — сразу.
+  /// Автопроверка: не чаще [_autoCheckInterval] ходим в API, если уже есть
+  /// закэшированное обновление — можно вернуть сразу. Раньше при «нет обновления»
+  /// кэш блокировал повторный запрос 12 ч (настройки при этом проверяли заново).
   Future<AppUpdateCheckResult?> checkIfStale({bool force = false}) async {
     if (!isAndroid) return null;
     if (!force) {
       final prefs = await SharedPreferences.getInstance();
       final lastMs = prefs.getInt(_prefsLastAutoCheckMs) ?? 0;
       final last = DateTime.fromMillisecondsSinceEpoch(lastMs);
-      if (DateTime.now().difference(last) < _autoCheckInterval) {
-        return _cachedResult?.updateAvailable == true ? _cachedResult : null;
+      final withinInterval =
+          DateTime.now().difference(last) < _autoCheckInterval;
+      if (withinInterval && _cachedResult?.updateAvailable == true) {
+        return _cachedResult;
       }
     }
     final result = await checkForUpdate(force: force);

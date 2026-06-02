@@ -1487,7 +1487,11 @@ class _TransportGlyph extends StatelessWidget {
         : accentColor.withValues(alpha: 0.82);
     return Material(
       color: enabled ? backgroundColor : disabledColor.withValues(alpha: 0.95),
-      shape: const CircleBorder(),
+      shape: CircleBorder(
+        side: active && enabled
+            ? BorderSide(color: accentColor, width: 2.5)
+            : BorderSide(color: palette.textMuted.withValues(alpha: 0.35), width: 1.2),
+      ),
       child: IconButton(
         visualDensity: VisualDensity.compact,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -1537,9 +1541,14 @@ class _RepeatGlyph extends StatelessWidget {
         break;
     }
     final enabled = onPressed != null;
+    final active = mode != LoopMode.off;
     return Material(
       color: enabled ? backgroundColor : disabledColor.withValues(alpha: 0.95),
-      shape: const CircleBorder(),
+      shape: CircleBorder(
+        side: active && enabled
+            ? BorderSide(color: accentColor, width: 2.5)
+            : BorderSide(color: palette.textMuted.withValues(alpha: 0.35), width: 1.2),
+      ),
       child: IconButton(
         visualDensity: VisualDensity.compact,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),

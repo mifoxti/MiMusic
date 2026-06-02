@@ -590,9 +590,8 @@ class _HomePageState extends State<HomePage> {
                       itemBuilder: (context, index) {
                         final e = recommendedTracks[index];
                         return RecommendedTrackCard(
-                          title: e.title,
-                          artist: e.artistDisplay,
-                          coverUrl: e.coverFallbackPath,
+                          track: e,
+                          audioPlayerService: widget.audioPlayerService,
                           onTap: () => _playRecommendedTrack(
                             selected: e,
                             queue: recommendedTracks,
@@ -621,9 +620,7 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 20),
                   if (section.recommendedArtists.isNotEmpty)
                     HomeRecommendationSection(
-                      title: Localizations.localeOf(context).languageCode == 'en'
-                          ? 'Recommended artists'
-                          : 'Рекомендованные авторы',
+                      title: context.t('home.uploaders'),
                       height: 152,
                       itemCount: section.recommendedArtists.length,
                       itemBuilder: (context, index) {

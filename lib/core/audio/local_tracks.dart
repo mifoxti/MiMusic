@@ -2,24 +2,18 @@ import 'track.dart';
 import 'track_metadata_loader.dart';
 import '../studio/local_studio_repository.dart';
 
-/// Список локальных треков в assets. Временное решение — при подключении сервера заменить на API.
-const List<String> localTrackAssets = [
-  'assets/music/Gotarux - Lost Control.mp3',
-  'assets/music/Cartoon - Why We Lose - Cartoon.mp3',
-  'assets/music/Urbandawn - Fly Away.mp3',
-];
+/// Встроенные MP3 в APK отключены — только пользовательские файлы из студии.
+const List<String> localTrackAssets = <String>[];
 
-/// Загружает все локальные треки с метаданными.
+/// Загружает локальные треки (студия / пользовательские файлы на устройстве).
 Future<List<Track>> loadLocalTracks() async {
-  final loader = TrackMetadataLoader.instance;
   final tracks = <Track>[];
+  final loader = TrackMetadataLoader.instance;
   for (final assetPath in localTrackAssets) {
     try {
       final track = await loader.loadFromAsset(assetPath);
       tracks.add(track);
-    } catch (_) {
-      // Пропускаем треки с ошибками
-    }
+    } catch (_) {}
   }
 
   try {
@@ -49,8 +43,7 @@ Future<List<Track>> loadLocalTracks() async {
         ),
       );
     }
-  } catch (_) {
-    // ignore studio data errors and keep bundled tracks available
-  }
+  } catch (_) {}
+
   return tracks;
 }

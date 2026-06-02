@@ -332,6 +332,15 @@ class _StudioPageState extends State<StudioPage> {
     );
   }
 
+  String? _artistPayloadForServer(String? primary, List<String> coAuthors) {
+    final parts = <String>[
+      if (primary != null && primary.trim().isNotEmpty) primary.trim(),
+      ...coAuthors.map((c) => c.trim()).where((c) => c.isNotEmpty),
+    ];
+    if (parts.isEmpty) return null;
+    return parts.join(', ');
+  }
+
   List<String> _artistSuggestions(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
@@ -596,27 +605,31 @@ class _StudioPageState extends State<StudioPage> {
       metadataServerTrackId: meta.serverTrackId,
     );
     if (sid != null) {
-      try {
-        await TracksApi().updateTrackMetadata(
-          trackId: sid,
-          title: meta.title,
-          artist: meta.displayArtist.isNotEmpty ? meta.displayArtist : meta.artist,
-        );
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.t('studio.serverUploadFail'))),
-        );
-        return;
+      final artistPayload = _artistPayloadForServer(meta.artist, meta.coAuthors);
+      final titlePatch = meta.title?.trim();
+      final hasServerPatch = (titlePatch != null && titlePatch.isNotEmpty) ||
+          (artistPayload != null && artistPayload.isNotEmpty);
+      if (hasServerPatch) {
+        try {
+          await TracksApi().updateTrackMetadata(
+            trackId: sid,
+            title: titlePatch?.isEmpty == true ? null : titlePatch,
+            artist: artistPayload,
+          );
+        } catch (_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(context.t('studio.serverUploadFail'))),
+          );
+          return;
+        }
       }
       await _repo.saveTrackMetadataOverride(
         result.assetPath,
-        TrackMetadataOverride(
-          coverPath: meta.coverPath,
-          genres: meta.genres,
-          audioFilePath: meta.audioFilePath,
-          coAuthors: meta.coAuthors,
+        meta.copyWith(
           serverTrackId: sid,
+          title: meta.title ?? track.title,
+          artist: meta.artist ?? track.artist,
         ),
       );
     } else {

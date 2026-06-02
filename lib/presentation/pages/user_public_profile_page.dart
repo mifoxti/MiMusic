@@ -210,6 +210,8 @@ class _UserPublicProfilePageState extends State<UserPublicProfilePage> {
       title: nick,
       audioPlayerService: widget.audioPlayerService,
       onRefresh: _load,
+      collapsedHeaderAlignment: const Alignment(-0.92, 0.22),
+      expandedHeaderAlignment: const Alignment(0, 0.58),
       cover: Image.network(
         avatarUrl,
         fit: BoxFit.cover,
@@ -223,9 +225,29 @@ class _UserPublicProfilePageState extends State<UserPublicProfilePage> {
         backgroundImage: NetworkImage(avatarUrl),
         onBackgroundImageError: (_, _) {},
       ),
-      headerActions: GlassPillButton(
-        label: context.t('profile.thoughts'),
-        onTap: () => unawaited(_openThoughts(nick)),
+      headerActions: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GlassPillButton(
+            label: context.t('profile.thoughts'),
+            onTap: () => unawaited(_openThoughts(nick)),
+          ),
+          if (!self) ...[
+            const SizedBox(width: 6),
+            Opacity(
+              opacity: _friendBusy ? 0.55 : 1,
+              child: IgnorePointer(
+                ignoring: _friendBusy,
+                child: GlassIconButton(
+                  icon: _isFriend
+                      ? Icons.person_remove_rounded
+                      : Icons.person_add_alt_1_rounded,
+                  onPressed: () => unawaited(_toggleFriend()),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -357,27 +379,6 @@ class _UserPublicProfilePageState extends State<UserPublicProfilePage> {
                         .toList(),
                   ),
           ),
-          if (!self) ...[
-            const SizedBox(height: 16),
-            Opacity(
-              opacity: _friendBusy ? 0.55 : 1,
-              child: IgnorePointer(
-                ignoring: _friendBusy,
-                child: GlassTapCard(
-                  title: _isFriend
-                      ? context.t('friends.removeFriend')
-                      : context.t('friends.addFriend'),
-                  subtitle: _isFriend
-                      ? context.t('userProfile.removeFriendHint')
-                      : context.t('userProfile.addFriendHint'),
-                  icon: _isFriend
-                      ? Icons.person_remove_rounded
-                      : Icons.person_add_rounded,
-                  onTap: () => unawaited(_toggleFriend()),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
