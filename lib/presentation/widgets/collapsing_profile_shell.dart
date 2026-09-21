@@ -24,6 +24,7 @@ class CollapsingProfileShell extends StatelessWidget {
     this.buildPinnedHeader,
     this.collapsedHeaderAlignment = const Alignment(-0.9, -0.2),
     this.expandedHeaderAlignment = const Alignment(0, 0.7),
+    this.scrollController,
   });
 
   static const double coverAspectRatio = 1.25;
@@ -48,14 +49,17 @@ class CollapsingProfileShell extends StatelessWidget {
 
   /// Позиция блока при развёрнутой шапке.
   final Alignment expandedHeaderAlignment;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
     final size = MediaQuery.sizeOf(context);
     final topPadding = MediaQuery.paddingOf(context).top;
-    final coverHeight =
-        (size.width * coverAspectRatio).clamp(260.0, size.height * 0.58);
+    final coverHeight = (size.width * coverAspectRatio).clamp(
+      260.0,
+      size.height * 0.58,
+    );
     final expandedHeight = coverHeight + 96;
     final collapsedHeight = kToolbarHeight + topPadding + 12;
 
@@ -65,6 +69,7 @@ class CollapsingProfileShell extends StatelessWidget {
         : AppConstants.shellBottomInset;
 
     Widget scroll = CustomScrollView(
+      controller: scrollController,
       physics: const BouncingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
@@ -82,12 +87,12 @@ class CollapsingProfileShell extends StatelessWidget {
           flexibleSpace: LayoutBuilder(
             builder: (context, constraints) {
               final currentHeight = constraints.maxHeight;
-              final t = ((currentHeight - collapsedHeight) /
-                      (expandedHeight - collapsedHeight))
-                  .clamp(0.0, 1.0);
+              final t =
+                  ((currentHeight - collapsedHeight) /
+                          (expandedHeight - collapsedHeight))
+                      .clamp(0.0, 1.0);
               final easedT = Curves.easeInOut.transform(t);
-              final avatarSize =
-                  lerpDouble(avatarMinSize, avatarMaxSize, t)!;
+              final avatarSize = lerpDouble(avatarMinSize, avatarMaxSize, t)!;
               final titleSize = lerpDouble(18, 28, t)!;
               // Как на скрине: блок (аватар + ник + «Мысли») по центру обложки,
               // при скролле уезжает влево-вверх.
@@ -99,7 +104,11 @@ class CollapsingProfileShell extends StatelessWidget {
               final nicknameOffsetY = lerpDouble(0, -10, easedT)!;
               final buttonVisibility = easedT;
               // При свёрнутой шапке опускаем блок аватар+ник, чтобы не заезжал на status bar.
-              final collapsedVerticalNudge = lerpDouble(topPadding * 0.45, 0, t)!;
+              final collapsedVerticalNudge = lerpDouble(
+                topPadding * 0.45,
+                0,
+                t,
+              )!;
 
               final top = MediaQuery.paddingOf(context).top;
               final reserveBackInset =
@@ -142,65 +151,67 @@ class CollapsingProfileShell extends StatelessWidget {
                       child: Transform.translate(
                         offset: Offset(0, collapsedVerticalNudge),
                         child: Padding(
-                        padding: EdgeInsets.only(
-                          left: reserveBackInset
-                              ? lerpDouble(52, 24, t)!
-                              : lerpDouble(16, 24, t)!,
-                          right: lerpDouble(16, 24, t)!,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              width: avatarSize,
-                              height: avatarSize,
-                              child: avatar,
-                            ),
-                            const SizedBox(width: 14),
-                            Transform.translate(
-                              offset: Offset(0, nicknameOffsetY),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: titleSize,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                      letterSpacing: -0.3,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black.withValues(alpha: 0.4),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (headerActions != null) ...[
-                                    SizedBox(height: 8 * buttonVisibility),
-                                    Align(
-                                      alignment: Alignment.centerLeft,
-                                      heightFactor: buttonVisibility == 0
-                                          ? 0.001
-                                          : buttonVisibility,
-                                      child: Opacity(
-                                        opacity: buttonVisibility,
-                                        child: headerActions,
+                          padding: EdgeInsets.only(
+                            left: reserveBackInset
+                                ? lerpDouble(52, 24, t)!
+                                : lerpDouble(16, 24, t)!,
+                            right: lerpDouble(16, 24, t)!,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: avatarSize,
+                                height: avatarSize,
+                                child: avatar,
+                              ),
+                              const SizedBox(width: 14),
+                              Transform.translate(
+                                offset: Offset(0, nicknameOffsetY),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: titleSize,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                        letterSpacing: -0.3,
+                                        shadows: [
+                                          Shadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.4,
+                                            ),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
                                       ),
                                     ),
+                                    if (headerActions != null) ...[
+                                      SizedBox(height: 8 * buttonVisibility),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        heightFactor: buttonVisibility == 0
+                                            ? 0.001
+                                            : buttonVisibility,
+                                        child: Opacity(
+                                          opacity: buttonVisibility,
+                                          child: headerActions,
+                                        ),
+                                      ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
                       ),
                     ),
                   if (buildPinnedHeader == null &&
@@ -208,18 +219,15 @@ class CollapsingProfileShell extends StatelessWidget {
                     Positioned(
                       top: top + 8,
                       left: 8,
-                      child: leading ??
+                      child:
+                          leading ??
                           GlassIconButton(
                             icon: Icons.arrow_back_ios_new_rounded,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
                     ),
                   if (trailingActions != null)
-                    Positioned(
-                      top: top + 8,
-                      right: 8,
-                      child: trailingActions!,
-                    ),
+                    Positioned(top: top + 8, right: 8, child: trailingActions!),
                 ],
               );
             },
@@ -231,10 +239,7 @@ class CollapsingProfileShell extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  palette.gradientMiddle,
-                  palette.gradientEnd,
-                ],
+                colors: [palette.gradientMiddle, palette.gradientEnd],
               ),
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(AppConstants.radiusXLarge),

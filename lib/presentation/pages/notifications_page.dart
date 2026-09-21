@@ -15,10 +15,12 @@ import '../../core/network/playlists_api.dart';
 import '../../core/network/server_connectivity.dart';
 import '../../core/social/colisten_controller.dart';
 import '../../core/social/listening_room_session.dart';
+import '../../core/player/full_player_visibility.dart';
 import '../../core/player/player_dock_host.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/player/shell_route_back_guard.dart';
+import '../widgets/glass_bottom_menu_sheet.dart';
 import 'user_public_profile_page.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -57,6 +59,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return;
       }
     }
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -279,11 +282,40 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
+  void _handleBack(BuildContext context) {
+    if (FullPlayerVisibility.open.value) {
+      PlayerDockHost.collapse();
+      return;
+    }
+    if (GlassModalOverlay.depth.value > 0) {
+      final root = Navigator.of(context, rootNavigator: true);
+      if (root.canPop()) {
+        root.pop();
+        return;
+      }
+    }
+    Navigator.of(context).maybePop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPaletteExtension.of(context).palette;
 
-    return Container(
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        FullPlayerVisibility.open,
+        GlassModalOverlay.depth,
+      ]),
+      builder: (context, _) {
+        final playerFullOpen = FullPlayerVisibility.open.value;
+        final glassModalOpen = GlassModalOverlay.depth.value > 0;
+        return PopScope(
+          canPop: !playerFullOpen && !glassModalOpen,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            _handleBack(context);
+          },
+          child: Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -299,6 +331,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => _handleBack(context),
+          ),
           title: Text(context.t('notifications.title')),
           actions: [
             if (_loggedIn && _items.isNotEmpty) ...[
@@ -389,7 +425,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   },
                 ),
               ),
+        ),
       ),
+        );
+      },
     );
   }
 }

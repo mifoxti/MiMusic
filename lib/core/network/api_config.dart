@@ -20,10 +20,10 @@ abstract final class ApiConfig {
   static String? _androidResolved;
 
   static String get baseUrl {
-    final android = _androidResolved?.trim();
-    if (android != null && android.isNotEmpty) return android;
     final fromCompile = _fromEnv.trim();
     if (fromCompile.isNotEmpty) return fromCompile;
+    final android = _androidResolved?.trim();
+    if (android != null && android.isNotEmpty) return android;
     if (kIsWeb) return 'http://localhost:8080';
     if (defaultTargetPlatform == TargetPlatform.android) {
       return 'http://127.0.0.1:8080';

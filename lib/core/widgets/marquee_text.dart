@@ -1,14 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 /// Текст, который при переполнении прокручивается с паузами (бегущая строка).
 class MarqueeText extends StatefulWidget {
-  const MarqueeText({
-    super.key,
-    required this.text,
-    this.style,
-  });
+  const MarqueeText({super.key, required this.text, this.style});
 
   final String text;
   final TextStyle? style;
@@ -17,9 +14,12 @@ class MarqueeText extends StatefulWidget {
   State<MarqueeText> createState() => _MarqueeTextState();
 }
 
-class _MarqueeTextState extends State<MarqueeText> {
+class _MarqueeTextState extends State<MarqueeText>
+    with SingleTickerProviderStateMixin {
   final ScrollController _controller = ScrollController();
   Timer? _timer;
+  Ticker? _ticker;
+  Duration _lastTick = Duration.zero;
   bool _isPaused = false;
 
   static const double _step = 0.4;
@@ -28,6 +28,8 @@ class _MarqueeTextState extends State<MarqueeText> {
 
   void _startScrolling(double textWidth, double gap) {
     _timer?.cancel();
+    _ticker?.dispose();
+    _ticker = null;
     final totalWidth = textWidth * 2 + gap;
     if (totalWidth <= 0) return;
 
@@ -56,14 +58,21 @@ class _MarqueeTextState extends State<MarqueeText> {
       _controller.jumpTo(offset);
     }
 
-    _timer = Timer.periodic(_scrollInterval, (_) {
-      if (!_isPaused) scrollTick();
-    });
+    _lastTick = Duration.zero;
+    _ticker = createTicker((elapsed) {
+      if (_isPaused) return;
+      if (_lastTick == Duration.zero ||
+          elapsed - _lastTick >= _scrollInterval) {
+        _lastTick = elapsed;
+        scrollTick();
+      }
+    })..start();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _ticker?.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -96,7 +105,9 @@ class _MarqueeTextState extends State<MarqueeText> {
         final totalWidth = textWidth * 2 + gap;
         final lineHeight = (tp.height + 1).clamp(14.0, 36.0);
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _controller.hasClients) _startScrolling(textWidth, gap);
+          if (mounted && _controller.hasClients) {
+            _startScrolling(textWidth, gap);
+          }
         });
 
         return SizedBox(

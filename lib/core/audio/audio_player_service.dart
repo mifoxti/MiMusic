@@ -44,9 +44,24 @@ class AudioPlayerService extends ChangeNotifier {
   StreamSubscription<MediaItem?>? _mediaItemSub;
   int? _lastSyncedNowPlayingTrackId;
   String? _lastLikeStatusSyncKey;
+  final _libraryErrorNotifier = ValueNotifier<String?>(null);
+  ValueListenable<String?> get libraryErrorListenable => _libraryErrorNotifier;
+  final Set<String> _pendingLikeChanges = {};
+  final Map<String, int> _likeRevisions = {};
+  bool _disposed = false;
+
+  void _reportLibraryError() {
+    if (_disposed) return;
+    _libraryErrorNotifier.value = null;
+    _libraryErrorNotifier.value =
+        'Не удалось сохранить изменение в медиатеке. Проверьте подключение и вход в аккаунт.';
+  }
 
   Track? _currentTrack;
   Duration _position = Duration.zero;
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier<Duration>(
+    Duration.zero,
+  );
   Duration? _duration;
   bool _isPlaying = false;
   bool _guestLocalPauseActive = false;
@@ -66,12 +81,15 @@ class AudioPlayerService extends ChangeNotifier {
 
   Track? get currentTrack => _currentTrack;
   bool get isPlaying => _isPlaying;
+
   /// Фактическое состояние движка (не UI-кэш `_isPlaying`).
   bool get engineIsPlaying => _handler.playbackState.value.playing;
+
   /// Позиция из audio_service (актуальнее UI-кэша сразу после seek/skip).
   Duration get enginePosition => _handler.playbackState.value.updatePosition;
   bool get guestLocalPauseActive => _guestLocalPauseActive;
   Duration get position => _position;
+  ValueListenable<Duration> get positionListenable => _positionNotifier;
   Duration? get duration => _duration;
 
   /// Пути (assetPath) треков, отмеченных как избранные.
@@ -94,9 +112,7 @@ class AudioPlayerService extends ChangeNotifier {
   bool get hasMultiTrackQueue => _handler.hasMultiTrackQueue;
   List<Track> get activeQueue => List.unmodifiable(_activeQueue);
   Set<String> get downloadedPaths {
-    return _offlineDownloads.downloadedTracks
-        .map((t) => t.assetKey)
-        .toSet();
+    return _offlineDownloads.downloadedTracks.map((t) => t.assetKey).toSet();
   }
 
   Set<String> get downloadingPaths => _offlineDownloads.downloadingKeys;
@@ -122,10 +138,12 @@ class AudioPlayerService extends ChangeNotifier {
     _handler.loopModeNotifier.addListener(_onLikedPathsChanged);
     _playbackStateSub = _handler.playbackState.listen((state) {
       final newPos = state.updatePosition;
-      final posChanged = _position != newPos;
       _position = newPos;
+      if (_positionNotifier.value != newPos) {
+        _positionNotifier.value = newPos;
+      }
 
-      var changed = posChanged;
+      var changed = false;
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       final room = ListeningRoomSession.instance;
       final hostOwnsPlayState =
@@ -154,8 +172,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _suppressPlayingMirror({int ms = 120}) {
-    _playbackMirrorSuppressUntilMs =
-        DateTime.now().millisecondsSinceEpoch + ms;
+    _playbackMirrorSuppressUntilMs = DateTime.now().millisecondsSinceEpoch + ms;
   }
 
   /// Сериализует play/pause в комнате (без блокировки повторных нажатий).
@@ -261,8 +278,8 @@ class AudioPlayerService extends ChangeNotifier {
       artUri = await _coverBytesToFileUri(track.coverBytes!);
     }
     final path = resolvedPlayablePath(track);
-    final queueMaps = queue
-        ?.map(
+    final queueMaps = _activeQueue
+        .map(
           (t) => {
             'path': resolvedPlayablePath(t),
             'itemId': t.assetPath,
@@ -281,7 +298,7 @@ class AudioPlayerService extends ChangeNotifier {
       'artPath': track.coverFallbackPath,
       'artUri': artUri,
       'autoPlay': autoPlay,
-      if (queueMaps?.isNotEmpty ?? false) 'queue': queueMaps,
+      'queue': queueMaps,
     });
     final room = ListeningRoomSession.instance;
     if (room.active && room.isHost && !leaveListeningRoomSession) {
@@ -481,7 +498,8 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// @deprecated Используйте [downloadTrack].
-  Future<DownloadTrackResult> cacheTrackMock(Track track) => downloadTrack(track);
+  Future<DownloadTrackResult> cacheTrackMock(Track track) =>
+      downloadTrack(track);
 
   static Future<String?> _coverBytesToFileUri(List<int> bytes) async {
     try {
@@ -546,7 +564,9 @@ class AudioPlayerService extends ChangeNotifier {
         '[colisten] togglePlayPause engine timeout willPlay=$willPlay',
       );
     } catch (e, st) {
-      debugPrint('[colisten] togglePlayPause engine error willPlay=$willPlay: $e\n$st');
+      debugPrint(
+        '[colisten] togglePlayPause engine error willPlay=$willPlay: $e\n$st',
+      );
     }
   }
 
@@ -617,6 +637,7 @@ class AudioPlayerService extends ChangeNotifier {
       );
     }
     _position = position;
+    _positionNotifier.value = position;
     notifyListeners();
     unawaited(_syncColistenEngineSeek(position));
   }
@@ -627,7 +648,9 @@ class AudioPlayerService extends ChangeNotifier {
       _syncPlayingFromHandler(notify: false);
       notifyListeners();
     } on TimeoutException {
-      debugPrint('[colisten] seek engine timeout pos=${position.inMilliseconds}ms');
+      debugPrint(
+        '[colisten] seek engine timeout pos=${position.inMilliseconds}ms',
+      );
     } catch (e, st) {
       debugPrint('[colisten] seek engine error: $e\n$st');
     }
@@ -641,6 +664,7 @@ class AudioPlayerService extends ChangeNotifier {
         'positionSeconds': position.inMilliseconds / 1000.0,
       });
       _position = position;
+      _positionNotifier.value = position;
       notifyListeners();
     } catch (e, st) {
       debugPrint('[colisten] seekFromRoomSync error: $e\n$st');
@@ -675,6 +699,7 @@ class AudioPlayerService extends ChangeNotifier {
     _guestLocalPauseActive = false;
     _currentTrack = null;
     _position = Duration.zero;
+    _positionNotifier.value = Duration.zero;
     _duration = null;
     _isPlaying = false;
     notifyListeners();
@@ -725,7 +750,11 @@ class AudioPlayerService extends ChangeNotifier {
   String? get _currentLikeKey {
     final track = _currentTrack;
     if (track != null && track.assetPath.trim().isNotEmpty) {
-      return track.assetPath.trim();
+      final id = TracksApi().resolveServerTrackId(
+        assetPath: track.assetPath,
+        audioFilePath: track.audioFilePath ?? track.assetPath,
+      );
+      return id == null ? track.assetPath.trim() : 'server_track_$id';
     }
     return currentPlayablePath;
   }
@@ -738,6 +767,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
     if (path == _lastLikeStatusSyncKey) return;
     _lastLikeStatusSyncKey = path;
+    final revision = _likeRevisions[path] ?? 0;
 
     final trackId = TracksApi().parseServerTrackId(path);
     final acc = await AuthSessionStore.readAccount();
@@ -749,12 +779,16 @@ class AudioPlayerService extends ChangeNotifier {
         trackId: trackId,
         userId: userId,
       );
+      if (_disposed ||
+          (_likeRevisions[path] ?? 0) != revision ||
+          _pendingLikeChanges.contains(path))
+        return;
       await _handler.customAction('setLikePath', {
         'path': path,
         'liked': liked,
       });
     } catch (_) {
-      // офлайн / ошибка — оставляем локальное состояние
+      if (_lastLikeStatusSyncKey == path) _lastLikeStatusSyncKey = null;
     }
   }
 
@@ -767,26 +801,42 @@ class AudioPlayerService extends ChangeNotifier {
   /// Лайк/снятие лайка по пути воспроизведения (для строк списков, не только текущий трек).
   Future<void> toggleLikePath(String path) async {
     if (path.isEmpty) return;
-    final trackId = TracksApi().parseServerTrackId(path);
-    final acc = await AuthSessionStore.readAccount();
-    final userId = acc?.userId;
-    if (trackId != null && userId != null) {
-      try {
-        final liked = await TracksApi().toggleTrackLike(
-          trackId: trackId,
-          userId: userId,
-        );
-        await _handler.customAction('setLikePath', {
-          'path': path,
-          'liked': liked,
-        });
-        _lastLikeStatusSyncKey = path;
-        return;
-      } catch (_) {
-        // fallback локального переключения
+    final resolvedId = TracksApi().resolveServerTrackId(
+      assetPath: path,
+      audioFilePath: path,
+    );
+    if (resolvedId != null) path = 'server_track_$resolvedId';
+    if (!_pendingLikeChanges.add(path)) return;
+    _likeRevisions[path] = (_likeRevisions[path] ?? 0) + 1;
+    try {
+      final trackId = TracksApi().parseServerTrackId(path);
+      final acc = await AuthSessionStore.readAccount();
+      final userId = acc?.userId;
+      if (trackId != null) {
+        if (userId == null) {
+          _reportLibraryError();
+          return;
+        }
+        try {
+          final liked = await TracksApi().toggleTrackLike(
+            trackId: trackId,
+            userId: userId,
+          );
+          await _handler.customAction('setLikePath', {
+            'path': path,
+            'liked': liked,
+          });
+          _lastLikeStatusSyncKey = path;
+          return;
+        } catch (_) {
+          _reportLibraryError();
+          return;
+        }
       }
+      await _handler.customAction('toggleLikePath', {'path': path});
+    } finally {
+      _pendingLikeChanges.remove(path);
     }
-    await _handler.customAction('toggleLikePath', {'path': path});
   }
 
   /// Дизлайк: локально помечает трек; при постановке снимает лайк на сервере (если был).
@@ -806,9 +856,14 @@ class AudioPlayerService extends ChangeNotifier {
 
     final trackId = TracksApi().parseServerTrackId(path);
     final userId = (await AuthSessionStore.readAccount())?.userId;
-    if (trackId != null && userId != null) {
+    if (trackId != null) {
+      if (userId == null) {
+        _reportLibraryError();
+        return;
+      }
       try {
-        final likedOnServer = isPathLiked(path) ||
+        final likedOnServer =
+            isPathLiked(path) ||
             await TracksApi().getTrackLikeStatus(
               trackId: trackId,
               userId: userId,
@@ -822,7 +877,8 @@ class AudioPlayerService extends ChangeNotifier {
           'liked': false,
         });
       } catch (_) {
-        // офлайн — только локальный дизлайк ниже
+        _reportLibraryError();
+        return;
       }
     }
 
@@ -884,7 +940,11 @@ class AudioPlayerService extends ChangeNotifier {
     final trackId = TracksApi().parseServerTrackId(assetPath);
     final acc = await AuthSessionStore.readAccount();
     final userId = acc?.userId;
-    if (trackId != null && userId != null) {
+    if (trackId != null) {
+      if (userId == null) {
+        _reportLibraryError();
+        return;
+      }
       try {
         final liked = await TracksApi().getTrackLikeStatus(
           trackId: trackId,
@@ -899,7 +959,8 @@ class AudioPlayerService extends ChangeNotifier {
         });
         return;
       } catch (_) {
-        // fallback ниже
+        _reportLibraryError();
+        return;
       }
     }
     await _handler.customAction('dislike', {'path': assetPath});
@@ -936,6 +997,8 @@ class AudioPlayerService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _libraryErrorNotifier.dispose();
     setMiMusicHandlerRemoteActions(onLike: null, onDislike: null);
     _offlineDownloads.removeListener(_onOfflineDownloadsChanged);
     if (ColistenController.instance.isConnected ||
@@ -948,6 +1011,7 @@ class AudioPlayerService extends ChangeNotifier {
     _handler.loopModeNotifier.removeListener(_onLikedPathsChanged);
     _playbackStateSub?.cancel();
     _mediaItemSub?.cancel();
+    _positionNotifier.dispose();
     super.dispose();
   }
 }

@@ -58,7 +58,6 @@ class FullPlayerDockPanel extends StatelessWidget {
           final coverColors =
               playerCoverPalette?.colors ?? PlayerCoverGlassColors.fallback;
           final track = audioPlayerService.currentTrack;
-          final position = audioPlayerService.position;
           final duration = audioPlayerService.duration ?? Duration.zero;
           final isPlaying = audioPlayerService.isPlaying;
           final path = audioPlayerService.currentPlayablePath ?? '';
@@ -84,8 +83,9 @@ class FullPlayerDockPanel extends StatelessWidget {
           final guestControlSurface = guestMode
               ? const Color(0xFF3B1A57).withValues(alpha: 0.82)
               : Colors.white.withValues(alpha: 0.18);
-          final trackAccent =
-              roomActive ? roomAccent : coverColors.contrastAccent(isDark);
+          final trackAccent = roomActive
+              ? roomAccent
+              : coverColors.contrastAccent(isDark);
           final trackTitleAccent = roomActive
               ? palette.textPrimary
               : coverColors.titleAccent(isDark);
@@ -106,17 +106,6 @@ class FullPlayerDockPanel extends StatelessWidget {
           final trackKey = track.assetPath;
           final downloading = audioPlayerService.isTrackDownloading(trackKey);
           final downloaded = audioPlayerService.isTrackDownloaded(trackKey);
-
-          final clampedPosition = position.inMilliseconds.clamp(
-            0,
-            duration.inMilliseconds == 0 ? 0 : duration.inMilliseconds,
-          );
-          final sliderMax = duration.inMilliseconds == 0
-              ? 1.0
-              : duration.inMilliseconds.toDouble();
-          final sliderValue = duration.inMilliseconds == 0
-              ? 0.0
-              : clampedPosition.toDouble();
 
           return Column(
             children: [
@@ -187,8 +176,8 @@ class FullPlayerDockPanel extends StatelessWidget {
                                   .ensureOnline(context)) {
                                 return;
                               }
-                              final result =
-                                  await audioPlayerService.downloadTrack(track);
+                              final result = await audioPlayerService
+                                  .downloadTrack(track);
                               if (!context.mounted) return;
                               showTrackDownloadSnackBar(context, result);
                             },
@@ -288,20 +277,28 @@ class FullPlayerDockPanel extends StatelessWidget {
                                     ),
                             ),
                             const SizedBox(height: 24),
-                            _PlayerSeekBar(
-                              audioPlayerService: audioPlayerService,
-                              accentColor: trackAccent,
-                              timeLabelColor: trackAccentMuted,
-                              disabledColor: guestDisabledColor,
-                              enabled:
-                                  !roomActive || roomSession.canControlSeek,
-                              clampedPositionMs: clampedPosition,
-                              duration: duration,
-                              sliderMax: sliderMax,
-                              sliderValueFromService: sliderValue.clamp(
-                                0.0,
-                                sliderMax,
-                              ),
+                            ValueListenableBuilder<Duration>(
+                              valueListenable:
+                                  audioPlayerService.positionListenable,
+                              builder: (context, position, _) {
+                                final max = duration.inMilliseconds.toDouble();
+                                final value = position.inMilliseconds.clamp(
+                                  0,
+                                  duration.inMilliseconds,
+                                );
+                                return _PlayerSeekBar(
+                                  audioPlayerService: audioPlayerService,
+                                  accentColor: trackAccent,
+                                  timeLabelColor: trackAccentMuted,
+                                  disabledColor: guestDisabledColor,
+                                  enabled:
+                                      !roomActive || roomSession.canControlSeek,
+                                  clampedPositionMs: value,
+                                  duration: duration,
+                                  sliderMax: max > 0 ? max : 1,
+                                  sliderValueFromService: value.toDouble(),
+                                );
+                              },
                             ),
                             const SizedBox(height: 20),
                             Row(
@@ -505,7 +502,7 @@ class FullPlayerDockPanel extends StatelessWidget {
                                         palette: palette,
                                         accentWhenOn: guestMode
                                             ? guestEnabledColor
-                                            : trackAccentSoft,
+                                            : const Color(0xFFE57373),
                                         backgroundColor: guestMode
                                             ? guestControlSurface
                                             : null,
@@ -690,70 +687,6 @@ void _showPlayerQueueSheet({
                               direction: canEditQueue
                                   ? DismissDirection.endToStart
                                   : DismissDirection.none,
-                              confirmDismiss: (_) async {
-                                return await showDialog<bool>(
-                                      context: context,
-                                      barrierDismissible: true,
-                                      builder: (_) {
-                                        return AlertDialog(
-                                          backgroundColor: palette
-                                              .cardBackground
-                                              .withValues(alpha: 0.82),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                            side: BorderSide(
-                                              color: palette.textPrimary
-                                                  .withValues(alpha: 0.16),
-                                            ),
-                                          ),
-                                          title: Text(
-                                            Localizations.localeOf(
-                                                      context,
-                                                    ).languageCode ==
-                                                    'en'
-                                                ? 'Remove from queue?'
-                                                : 'Удалить из очереди?',
-                                          ),
-                                          content: Text(
-                                            item.title,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.of(
-                                                context,
-                                              ).pop(false),
-                                              child: Text(
-                                                Localizations.localeOf(
-                                                          context,
-                                                        ).languageCode ==
-                                                        'en'
-                                                    ? 'Cancel'
-                                                    : 'Отмена',
-                                              ),
-                                            ),
-                                            FilledButton(
-                                              onPressed: () => Navigator.of(
-                                                context,
-                                              ).pop(true),
-                                              child: Text(
-                                                Localizations.localeOf(
-                                                          context,
-                                                        ).languageCode ==
-                                                        'en'
-                                                    ? 'Delete'
-                                                    : 'Удалить',
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ) ??
-                                    false;
-                              },
                               background: Container(
                                 alignment: Alignment.centerRight,
                                 padding: const EdgeInsets.symmetric(
@@ -791,8 +724,16 @@ void _showPlayerQueueSheet({
                                       ? palette.accent
                                       : palette.textSecondary,
                                 ),
-                                title: Text(item.title),
-                                subtitle: Text(item.artistDisplay),
+                                title: Text(
+                                  item.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(
+                                  item.artistDisplay,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                                 trailing: IconButton(
                                   tooltip:
                                       Localizations.localeOf(
@@ -1099,20 +1040,28 @@ class _QueueTrackList extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final item = tracks[index];
-        return ListTile(
-          tileColor: palette.primaryDark.withValues(alpha: 0.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+        return Material(
+          color: palette.primaryDark.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            leading: const Icon(Icons.music_note_rounded),
+            title: Text(
+              item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              item.artistDisplay,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.add_circle_outline_rounded),
+            onTap: () => onAdd(item),
           ),
-          leading: const Icon(Icons.music_note_rounded),
-          title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            item.artistDisplay,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: const Icon(Icons.add_circle_outline_rounded),
-          onTap: () => onAdd(item),
         );
       },
     );
@@ -1151,30 +1100,34 @@ class _QueuePlaylistList extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final playlist = playlists[index];
-        return ListTile(
-          tileColor: palette.primaryDark.withValues(alpha: 0.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+        return Material(
+          color: palette.primaryDark.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            leading: const Icon(Icons.library_music_rounded),
+            title: Text(
+              playlist.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text('${playlist.displayTrackCount} tracks'),
+            trailing: const Icon(Icons.add_circle_outline_rounded),
+            onTap: () async {
+              final selected = await _tracksFromPlaylist(
+                playlist: playlist,
+                knownTracks: tracks,
+                playlistsRepository: playlistsRepository,
+              );
+              for (final track in selected) {
+                await audioPlayerService.addToQueue(track);
+              }
+              onDone();
+            },
           ),
-          leading: const Icon(Icons.library_music_rounded),
-          title: Text(
-            playlist.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text('${playlist.displayTrackCount} tracks'),
-          trailing: const Icon(Icons.add_circle_outline_rounded),
-          onTap: () async {
-            final selected = await _tracksFromPlaylist(
-              playlist: playlist,
-              knownTracks: tracks,
-              playlistsRepository: playlistsRepository,
-            );
-            for (final track in selected) {
-              await audioPlayerService.addToQueue(track);
-            }
-            onDone();
-          },
         );
       },
     );
@@ -1490,7 +1443,10 @@ class _TransportGlyph extends StatelessWidget {
       shape: CircleBorder(
         side: active && enabled
             ? BorderSide(color: accentColor, width: 2.5)
-            : BorderSide(color: palette.textMuted.withValues(alpha: 0.35), width: 1.2),
+            : BorderSide(
+                color: palette.textMuted.withValues(alpha: 0.35),
+                width: 1.2,
+              ),
       ),
       child: IconButton(
         visualDensity: VisualDensity.compact,
@@ -1547,7 +1503,10 @@ class _RepeatGlyph extends StatelessWidget {
       shape: CircleBorder(
         side: active && enabled
             ? BorderSide(color: accentColor, width: 2.5)
-            : BorderSide(color: palette.textMuted.withValues(alpha: 0.35), width: 1.2),
+            : BorderSide(
+                color: palette.textMuted.withValues(alpha: 0.35),
+                width: 1.2,
+              ),
       ),
       child: IconButton(
         visualDensity: VisualDensity.compact,

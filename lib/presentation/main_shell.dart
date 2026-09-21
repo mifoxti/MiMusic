@@ -5,8 +5,6 @@ import 'package:flutter/services.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/settings/local_settings_repository.dart';
-
 import '../core/audio/audio_player_service.dart';
 import '../core/auth/auth_session_store.dart';
 import '../core/audio/local_tracks.dart';
@@ -86,7 +84,11 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   int _selectedIndex = 0;
+  final List<int> _tabHistory = <int>[];
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final ScrollController _homeScrollController = ScrollController();
+  final ScrollController _searchScrollController = ScrollController();
+  final ScrollController _profileScrollController = ScrollController();
 
   /// Увеличивается при переходе на вкладку «Главная», чтобы перечитать [GET /tracks].
   final ValueNotifier<int> _homeCatalogReloadToken = ValueNotifier<int>(0);
@@ -101,6 +103,7 @@ class _MainShellState extends State<MainShell>
   bool _lastHadTrack = false;
   String _lastTrackId = '';
   bool _listeningRoomWasActive = false;
+  bool _serverNotifPollInFlight = false;
 
   /// Насколько уезжает вниз блок мини + нижняя навигация при развороте плеера.
   static const double _bottomChromeSlideDistance = 188;
@@ -129,9 +132,10 @@ class _MainShellState extends State<MainShell>
   void _syncFullPlayerVisibility() {
     final expanded = _isPlayerDockExpanded();
     FullPlayerVisibility.open.value = expanded;
-    // Predictive back: пока оверлей развёрнут — фреймворк обрабатывает «назад»;
-    // при свёрнутом мини-плеере возвращаем поведение по умолчанию.
-    SystemNavigator.setFrameworkHandlesBack(expanded);
+    // Shell сам упорядочивает системное «назад»: оверлеи, вложенный Navigator,
+    // история вкладок и лишь затем выход из Activity. Если выключить это при
+    // свёрнутом доке, Android завершает Activity до вызова [PopScope].
+    SystemNavigator.setFrameworkHandlesBack(true);
   }
 
   void _expandPlayerDock() {
@@ -194,12 +198,17 @@ class _MainShellState extends State<MainShell>
   }
 
   Future<void> _pollServerFriendNotifications() async {
+    if (_serverNotifPollInFlight ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    _serverNotifPollInFlight = true;
+    try {
     final acc = await AuthSessionStore.readAccount();
     if (acc == null || acc.sessionToken.trim().isEmpty) return;
     final userId = acc.userId;
     if (userId == null) return;
-    try {
-      final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
       final friendKey = 'mimusic_last_friend_push_notif_id_$userId';
       final adminKey = 'mimusic_last_admin_push_notif_id_$userId';
       var lastFriendShown = prefs.getInt(friendKey) ?? 0;
@@ -211,14 +220,12 @@ class _MainShellState extends State<MainShell>
       for (final n in list) {
         if (n.isAdminMessage) {
           if (n.id <= lastAdminShown) continue;
-          final title =
-              n.adminMessageTitle?.trim().isNotEmpty == true
-                  ? n.adminMessageTitle!.trim()
-                  : 'MiMusic';
-          final body =
-              n.adminMessageBody?.trim().isNotEmpty == true
-                  ? n.adminMessageBody!.trim()
-                  : 'Новое сообщение';
+          final title = n.adminMessageTitle?.trim().isNotEmpty == true
+              ? n.adminMessageTitle!.trim()
+              : 'MiMusic';
+          final body = n.adminMessageBody?.trim().isNotEmpty == true
+              ? n.adminMessageBody!.trim()
+              : 'Новое сообщение';
           await LocalNotificationsService.instance.showAdminMessageNotification(
             title: title,
             body: body,
@@ -250,13 +257,17 @@ class _MainShellState extends State<MainShell>
                 fromUsername: nick,
                 fromAvatarUrl: url,
                 roomId: roomId,
+                notificationId: n.id,
               );
         }
         if (n.id > lastFriendShown) lastFriendShown = n.id;
       }
       await prefs.setInt(friendKey, lastFriendShown);
       await prefs.setInt(adminKey, lastAdminShown);
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _serverNotifPollInFlight = false;
+    }
   }
 
   @override
@@ -288,7 +299,9 @@ class _MainShellState extends State<MainShell>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    ListeningRoomSession.instance.removeListener(_onListeningRoomSessionChanged);
+    ListeningRoomSession.instance.removeListener(
+      _onListeningRoomSessionChanged,
+    );
     widget.audioPlayerService.removeListener(_onAudioServiceChanged);
     _playerDockController.removeListener(_syncFullPlayerVisibility);
     _playerDockController.removeStatusListener(_onPlayerDockStatus);
@@ -296,6 +309,9 @@ class _MainShellState extends State<MainShell>
     _notificationIntentSub?.cancel();
     _serverNotifPollTimer?.cancel();
     _homeCatalogReloadToken.dispose();
+    _homeScrollController.dispose();
+    _searchScrollController.dispose();
+    _profileScrollController.dispose();
     PlayerDockHost.unregister();
     ShellNavigatorHost.unregister();
     ShellChromeVisibility.seeThroughOverlay.value = false;
@@ -342,6 +358,7 @@ class _MainShellState extends State<MainShell>
             ? acc!.nickname
             : 'me';
         final route = ShellMaterialPageRoute<void>(
+          settings: const RouteSettings(name: 'notifications'),
           builder: (_) => NotificationsPage(
             currentUsername: nick,
             audioPlayerService: widget.audioPlayerService,
@@ -438,6 +455,10 @@ class _MainShellState extends State<MainShell>
       nav.pop();
       return;
     }
+    if (_tabHistory.isNotEmpty) {
+      setState(() => _selectedIndex = _tabHistory.removeLast());
+      return;
+    }
     SystemNavigator.pop();
   }
 
@@ -489,12 +510,32 @@ class _MainShellState extends State<MainShell>
         (route) => route.settings.name == _ShellRoutes.tabs || route.isFirst,
       );
     }
+    if (index == _selectedIndex) {
+      _scrollSelectedTabToTop();
+      return;
+    }
+    _tabHistory.remove(index);
+    _tabHistory.add(_selectedIndex);
     if (index == 0) {
       _homeCatalogReloadToken.value++;
     }
-    if (index != _selectedIndex) {
-      setState(() => _selectedIndex = index);
-    }
+    setState(() => _selectedIndex = index);
+  }
+
+  void _scrollSelectedTabToTop() {
+    final controller = switch (_selectedIndex) {
+      0 => _homeScrollController,
+      1 => _searchScrollController,
+      _ => _profileScrollController,
+    };
+    if (!controller.hasClients) return;
+    unawaited(
+      controller.animateTo(
+        controller.position.minScrollExtent,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      ),
+    );
   }
 
   @override
@@ -541,8 +582,7 @@ class _MainShellState extends State<MainShell>
                                 return ShellMaterialPageRoute<void>(
                                   builder: (_) => _TabsView(
                                     selectedIndex: _selectedIndex,
-                                    onTabTap: (i) =>
-                                        setState(() => _selectedIndex = i),
+                                    onTabTap: _onBottomNavTap,
                                     homeCatalogReloadToken:
                                         _homeCatalogReloadToken,
                                     getHomeSectionUseCase:
@@ -563,6 +603,11 @@ class _MainShellState extends State<MainShell>
                                     initialSettings: widget.initialSettings,
                                     settingsDisplayGeneration:
                                         widget.settingsDisplayGeneration,
+                                    homeScrollController: _homeScrollController,
+                                    searchScrollController:
+                                        _searchScrollController,
+                                    profileScrollController:
+                                        _profileScrollController,
                                   ),
                                   settings: const RouteSettings(
                                     name: _ShellRoutes.tabs,
@@ -614,10 +659,10 @@ class _MainShellState extends State<MainShell>
                                     ShellChromeVisibility.seeThroughOverlay,
                                 builder: (context, seeThrough, _) =>
                                     _BottomNavBar(
-                                  seeThroughChrome: seeThrough,
-                                  selectedIndex: _selectedIndex,
-                                  onTap: _onBottomNavTap,
-                                ),
+                                      seeThroughChrome: seeThrough,
+                                      selectedIndex: _selectedIndex,
+                                      onTap: _onBottomNavTap,
+                                    ),
                               ),
                             ),
                           ],
@@ -645,8 +690,7 @@ class _MainShellState extends State<MainShell>
                                 child: ExpandablePlayerDock(
                                   expandController: _playerDockController,
                                   audioPlayerService: widget.audioPlayerService,
-                                  playerCoverPalette:
-                                      widget.playerCoverPalette,
+                                  playerCoverPalette: widget.playerCoverPalette,
                                   onCollapse: _collapsePlayerDock,
                                   playlistsRepository:
                                       widget.playlistsRepository,
@@ -679,81 +723,83 @@ class _MainShellState extends State<MainShell>
                                               ListeningRoomSession.instance,
                                             ]),
                                             builder: (context, _) {
+                                              final room =
+                                                  ListeningRoomSession.instance;
                                               final t = widget
                                                   .audioPlayerService
                                                   .currentTrack;
                                               if (t == null) {
                                                 return const SizedBox.shrink();
                                               }
-                                              final dur = widget
-                                                  .audioPlayerService
-                                                  .duration;
-                                              final pos = widget
-                                                  .audioPlayerService
-                                                  .position;
-                                              final progress =
-                                                  dur != null &&
-                                                      dur.inMilliseconds > 0
-                                                  ? pos.inMilliseconds /
-                                                        dur.inMilliseconds
-                                                  : 0.0;
-                                              return ValueListenableBuilder<bool>(
-                                                valueListenable:
-                                                    ShellChromeVisibility
-                                                        .seeThroughOverlay,
-                                                builder: (context, seeThrough, _) {
-                                                  return FloatingMiniPlayer(
+                                              return FloatingMiniPlayer(
                                                 track: t,
                                                 playerCoverPalette:
                                                     widget.playerCoverPalette,
-                                                seeThroughChrome: seeThrough,
-                                                trackProgress: progress,
+                                                seeThroughChrome: false,
+                                                positionListenable: widget
+                                                    .audioPlayerService
+                                                    .positionListenable,
+                                                duration: widget
+                                                    .audioPlayerService
+                                                    .duration,
                                                 isPlaying: widget
                                                     .audioPlayerService
                                                     .isPlaying,
                                                 collaborativeMode:
-                                                    ListeningRoomSession
-                                                        .instance
-                                                        .active,
+                                                    room.active,
                                                 collaborativeGuestMode:
-                                                    ListeningRoomSession
-                                                        .instance
-                                                        .active &&
-                                                    !ListeningRoomSession
-                                                        .instance
-                                                        .isHost,
+                                                    room.active && !room.isHost,
                                                 guestLocalPauseActive: widget
                                                     .audioPlayerService
                                                     .guestLocalPauseActive,
                                                 onTap: _expandPlayerDock,
                                                 onPlayPause:
-                                                    ListeningRoomSession
-                                                            .instance
-                                                            .active &&
-                                                        !ListeningRoomSession
-                                                            .instance
-                                                            .canControlPause
+                                                    room.active &&
+                                                        !room.canControlPause
                                                     ? null
                                                     : () {
                                                         widget
                                                             .audioPlayerService
                                                             .togglePlayPause();
                                                       },
-                                              );
+                                                onNext:
+                                                    room.active &&
+                                                        !room.canControlSkip
+                                                    ? null
+                                                    : () => unawaited(
+                                                          widget
+                                                              .audioPlayerService
+                                                              .skipToNext(),
+                                                        ),
+                                                onPrevious:
+                                                    room.active &&
+                                                        !room.canControlSkip
+                                                    ? null
+                                                    : () => unawaited(
+                                                          widget
+                                                              .audioPlayerService
+                                                              .skipToPrevious(),
+                                                        ),
+                                                onDismiss: () {
+                                                  if (room.active) room.end();
+                                                  unawaited(
+                                                    widget.audioPlayerService
+                                                        .stop(),
+                                                  );
                                                 },
                                               );
                                             },
                                           ),
                                         ),
                                       ValueListenableBuilder<bool>(
-                                        valueListenable:
-                                            ShellChromeVisibility.seeThroughOverlay,
+                                        valueListenable: ShellChromeVisibility
+                                            .seeThroughOverlay,
                                         builder: (context, seeThrough, _) =>
                                             _BottomNavBar(
-                                          seeThroughChrome: seeThrough,
-                                          selectedIndex: _selectedIndex,
-                                          onTap: _onBottomNavTap,
-                                        ),
+                                              seeThroughChrome: seeThrough,
+                                              selectedIndex: _selectedIndex,
+                                              onTap: _onBottomNavTap,
+                                            ),
                                       ),
                                     ],
                                   ),
@@ -796,6 +842,9 @@ class _TabsView extends StatelessWidget {
     required this.settingsRepository,
     required this.initialSettings,
     required this.settingsDisplayGeneration,
+    required this.homeScrollController,
+    required this.searchScrollController,
+    required this.profileScrollController,
   });
 
   final int selectedIndex;
@@ -812,6 +861,9 @@ class _TabsView extends StatelessWidget {
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
   final int settingsDisplayGeneration;
+  final ScrollController homeScrollController;
+  final ScrollController searchScrollController;
+  final ScrollController profileScrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -824,10 +876,13 @@ class _TabsView extends StatelessWidget {
           listeningHistoryRepository: listeningHistoryRepository,
           playlistsRepository: playlistsRepository,
           catalogReloadToken: homeCatalogReloadToken,
+          isVisible: selectedIndex == 0,
+          scrollController: homeScrollController,
         ),
         SearchPage(
           audioPlayerService: audioPlayerService,
           playlistsRepository: playlistsRepository,
+          scrollController: searchScrollController,
         ),
         ProfilePage(
           themeMode: themeMode,
@@ -840,6 +895,7 @@ class _TabsView extends StatelessWidget {
           audioPlayerService: audioPlayerService,
           playlistsRepository: playlistsRepository,
           listeningHistoryRepository: listeningHistoryRepository,
+          scrollController: profileScrollController,
         ),
       ],
     );

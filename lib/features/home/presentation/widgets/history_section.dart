@@ -1,25 +1,17 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/history/listening_history_entry.dart';
 import '../../../../core/history/listening_history_repository.dart';
 import '../../../../core/l10n/app_localization.dart';
 import '../../../../core/network/tracks_api.dart';
+import '../../../../core/network/api_config.dart';
 import '../../../../core/theme/app_glass.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cover_image.dart';
 import '../../../../core/widgets/track_cover.dart';
-
-class _HistoryCoverPack {
-  const _HistoryCoverPack({required this.trackId, required this.source});
-
-  final int trackId;
-  final dynamic source;
-}
 
 /// Карточка «История» с подгрузкой обложек для мозаики 2×2.
 class HistorySectionCard extends StatefulWidget {
@@ -42,22 +34,22 @@ class HistorySectionCard extends StatefulWidget {
 
 class _HistorySectionCardState extends State<HistorySectionCard> {
   List<dynamic> _coverSources = const ['', '', '', ''];
-  int _loadGen = 0;
 
   @override
   void initState() {
     super.initState();
     widget.listeningHistoryRepository.addListener(_onHistoryChanged);
-    unawaited(_reloadCovers());
+    _reloadCovers();
   }
 
   @override
   void didUpdateWidget(covariant HistorySectionCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.listeningHistoryRepository != widget.listeningHistoryRepository) {
+    if (oldWidget.listeningHistoryRepository !=
+        widget.listeningHistoryRepository) {
       oldWidget.listeningHistoryRepository.removeListener(_onHistoryChanged);
       widget.listeningHistoryRepository.addListener(_onHistoryChanged);
-      unawaited(_reloadCovers());
+      _reloadCovers();
     }
   }
 
@@ -68,65 +60,31 @@ class _HistorySectionCardState extends State<HistorySectionCard> {
   }
 
   void _onHistoryChanged() {
-    unawaited(_reloadCovers());
+    _reloadCovers();
   }
 
-  Future<_HistoryCoverPack?> _coverFor(ListeningHistoryEntry e) async {
-    final id = TracksApi().parseServerTrackId(e.playablePath);
-    if (id == null) return null;
-    try {
-      final t = await TracksApi().fetchTrackById(id);
-      if (t.coverBytes != null && t.coverBytes!.isNotEmpty) {
-        return _HistoryCoverPack(trackId: id, source: t.coverBytes);
-      }
-      return _HistoryCoverPack(trackId: id, source: t.coverUrl());
-    } catch (_) {
-      final c = e.coverAssetPath?.trim();
-      if (c != null && c.isNotEmpty) {
-        return _HistoryCoverPack(trackId: id, source: c);
-      }
+  void _reloadCovers() {
+    final slots = <String>[];
+    final used = <String>{};
+    for (final entry in widget.listeningHistoryRepository.entries) {
+      if (!used.add(entry.playablePath)) continue;
+      final id = TracksApi().parseServerTrackId(entry.playablePath);
+      final saved = entry.coverAssetPath?.trim() ?? '';
+      final source = saved.isNotEmpty
+          ? saved
+          : id != null
+          ? '${ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '')}/tracks/$id/cover'
+          : '';
+      if (source.isEmpty) continue;
+      slots.add(source);
+      if (slots.length == 4) break;
     }
-    return null;
-  }
-
-  Future<void> _reloadCovers() async {
-    final gen = ++_loadGen;
-    final entries = widget.listeningHistoryRepository.entries;
-    final slots = List<dynamic>.filled(4, '');
-    final usedTrackIds = <int>{};
-
-    bool applySlot(int index, _HistoryCoverPack? pack) {
-      if (pack == null || usedTrackIds.contains(pack.trackId)) return false;
-      if (!_isUsableCover(pack.source)) return false;
-      usedTrackIds.add(pack.trackId);
-      slots[index] = pack.source;
-      return true;
+    while (slots.length < 4) {
+      slots.add('');
     }
-
-    for (var i = 0; i < 4 && i < entries.length; i++) {
-      applySlot(i, await _coverFor(entries[i]));
-    }
-
-    for (var slot = 0; slot < 4; slot++) {
-      if (_isUsableCover(slots[slot])) continue;
-      for (var j = 4; j < entries.length && j < 16; j++) {
-        final id = TracksApi().parseServerTrackId(entries[j].playablePath);
-        if (id != null && usedTrackIds.contains(id)) continue;
-        if (applySlot(slot, await _coverFor(entries[j]))) break;
-      }
-    }
-
-    if (gen != _loadGen || !mounted) return;
+    if (slots.asMap().entries.every((e) => _coverSources[e.key] == e.value))
+      return;
     setState(() => _coverSources = slots);
-  }
-
-  static bool _isUsableCover(dynamic source) {
-    if (source == null) return false;
-    if (source is Uint8List || source is List<int>) {
-      return source.isNotEmpty;
-    }
-    if (source is String) return source.trim().isNotEmpty;
-    return false;
   }
 
   @override
@@ -213,7 +171,7 @@ class HistorySection extends StatelessWidget {
                     borderRadius: _coverGridClipRadius(),
                     child: SizedBox(
                       width: cardHeight,
-                      child: _buildCoverGrid(palette, isDark),
+                      child: _buildCoverGrid(palette, isDark, cardHeight / 2),
                     ),
                   ),
                   Expanded(
@@ -270,7 +228,11 @@ class HistorySection extends StatelessWidget {
     );
   }
 
-  Widget _buildCoverGrid(AppColorPalette palette, bool isDark) {
+  Widget _buildCoverGrid(
+    AppColorPalette palette,
+    bool isDark,
+    double cellSize,
+  ) {
     final cells = coverSources.take(4).toList();
     while (cells.length < 4) {
       cells.add('');
@@ -283,7 +245,8 @@ class HistorySection extends StatelessWidget {
       mainAxisSpacing: 0,
       crossAxisSpacing: 0,
       children: [
-        for (var i = 0; i < 4; i++) _coverCell(cells[i], palette, isDark, i),
+        for (var i = 0; i < 4; i++)
+          _coverCell(cells[i], palette, isDark, i, cellSize),
       ],
     );
   }
@@ -293,6 +256,7 @@ class HistorySection extends StatelessWidget {
     AppColorPalette palette,
     bool isDark,
     int index,
+    double cellSize,
   ) {
     final radius = _coverCellRadius(index);
     final emptyColor = Color.lerp(
@@ -309,8 +273,8 @@ class HistorySection extends StatelessWidget {
     } else if (source is Uint8List || source is List<int>) {
       inner = buildTrackCover(
         coverSource: source,
-        width: double.infinity,
-        height: double.infinity,
+        width: cellSize,
+        height: cellSize,
         borderRadius: radius,
         placeholder: placeholder,
         fit: BoxFit.cover,
@@ -318,8 +282,8 @@ class HistorySection extends StatelessWidget {
     } else {
       inner = buildCoverImage(
         imageUrl: source as String,
-        width: double.infinity,
-        height: double.infinity,
+        width: cellSize,
+        height: cellSize,
         borderRadius: radius,
         placeholder: placeholder,
         fit: BoxFit.cover,

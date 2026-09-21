@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 /// Единый «стеклянный» вид мини-плеера, нижней навигации и полноэкранного плеера.
 abstract final class AppGlass {
-  static const double blurSigma = 24;
+  // Keep the glass impression while avoiding the raster cost of sigma 24 on
+  // every repeated list card and navigation surface.
+  static const double blurSigma = 14;
 
   static Color tint(bool isDark) => isDark
       ? Colors.white.withValues(alpha: 0.12)

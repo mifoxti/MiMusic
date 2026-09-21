@@ -8,10 +8,22 @@ import 'package:flutter/foundation.dart';
 import '../auth/auth_session_store.dart';
 import '../network/push_api.dart';
 import 'local_notifications_service.dart';
+import 'notification_delivery_ledger.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
+  // FCM already displays notification payloads while the app is backgrounded.
+  // Remember their server identity so foreground polling cannot show them again.
+  if (message.notification != null) {
+    if (message.data['type'] == 'colisten_invite') {
+      await NotificationDeliveryLedger.claim(NotificationDeliveryLedger.inviteKey(
+        roomId: message.data['roomId'] ?? '',
+        notificationId: int.tryParse(message.data['notificationId'] ?? ''),
+      ));
+    }
+    return;
+  }
   await LocalNotificationsService.instance.initialize();
   await _showFromRemoteMessage(message);
 }
@@ -113,6 +125,7 @@ Future<void> _showFromRemoteMessage(RemoteMessage message) async {
     await LocalNotificationsService.instance.showColistenInviteNotification(
       fromUsername: nick,
       roomId: roomId,
+      notificationId: int.tryParse(data['notificationId'] ?? ''),
     );
     return;
   }

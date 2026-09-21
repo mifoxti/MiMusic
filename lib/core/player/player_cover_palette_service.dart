@@ -29,10 +29,11 @@ class PlayerCoverPaletteService extends ChangeNotifier {
   AudioPlayerService? _audio;
   int _generation = 0;
   Timer? _animTimer;
+  Stopwatch? _animClock;
+  bool _frameScheduled = false;
   String? _lastTrackKey;
   String? _loadingKey;
 
-  static const _frameMs = 16;
   static const _crossfadeMs = 380;
   static const _maxCacheEntries = 48;
 
@@ -61,6 +62,8 @@ class PlayerCoverPaletteService extends ChangeNotifier {
     _audio?.removeListener(_onAudioChanged);
     _audio = null;
     _animTimer?.cancel();
+    _animClock = null;
+    _frameScheduled = false;
     _animTimer = null;
     _generation++;
     _lastTrackKey = null;
@@ -176,14 +179,23 @@ class PlayerCoverPaletteService extends ChangeNotifier {
     _toCover = nextCover;
     _setCrossfadeRaw(0.0);
 
-    final steps = (_crossfadeMs / _frameMs).ceil().clamp(1, 120);
-    var step = 0;
-    _animTimer = Timer.periodic(const Duration(milliseconds: _frameMs), (_) {
-      step++;
-      _setCrossfadeRaw(step / steps);
+    _animClock = Stopwatch()..start();
+    _scheduleAnimationFrame(target, nextCover);
+    notifyListeners();
+  }
+
+  void _scheduleAnimationFrame(
+    PlayerCoverGlassColors target,
+    Uint8List? nextCover,
+  ) {
+    if (_frameScheduled) return;
+    _frameScheduled = true;
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _frameScheduled = false;
+      final elapsed = _animClock?.elapsedMilliseconds ?? _crossfadeMs;
+      _setCrossfadeRaw(elapsed / _crossfadeMs);
       if (_crossfadeRaw >= 1.0) {
-        _animTimer?.cancel();
-        _animTimer = null;
+        _animClock = null;
         notifyListeners();
         SchedulerBinding.instance.addPostFrameCallback((_) {
           if (_fromColors == null || _toColors != target) return;
@@ -192,8 +204,8 @@ class PlayerCoverPaletteService extends ChangeNotifier {
         return;
       }
       notifyListeners();
+      _scheduleAnimationFrame(target, nextCover);
     });
-    notifyListeners();
   }
 
   void _settleInFlightCrossfade() {
@@ -215,6 +227,8 @@ class PlayerCoverPaletteService extends ChangeNotifier {
   void _resetTo(PlayerCoverGlassColors target, {Uint8List? coverBytes}) {
     _animTimer?.cancel();
     _animTimer = null;
+    _animClock = null;
+    _frameScheduled = false;
 
     final nextCover = target.isCloseTo(PlayerCoverGlassColors.fallback)
         ? null

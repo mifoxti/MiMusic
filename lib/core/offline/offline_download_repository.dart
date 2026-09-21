@@ -23,12 +23,7 @@ enum DownloadTrackResult {
   failed,
 }
 
-enum DownloadPlaylistResult {
-  success,
-  partial,
-  cacheLimitExceeded,
-  failed,
-}
+enum DownloadPlaylistResult { success, partial, cacheLimitExceeded, failed }
 
 class OfflineTrackRecord {
   const OfflineTrackRecord({
@@ -50,14 +45,14 @@ class OfflineTrackRecord {
   final DateTime downloadedAt;
 
   Map<String, dynamic> toJson() => {
-        'serverTrackId': serverTrackId,
-        'assetKey': assetKey,
-        'title': title,
-        'artist': artist,
-        'localFilePath': localFilePath,
-        'fileSizeBytes': fileSizeBytes,
-        'downloadedAt': downloadedAt.toIso8601String(),
-      };
+    'serverTrackId': serverTrackId,
+    'assetKey': assetKey,
+    'title': title,
+    'artist': artist,
+    'localFilePath': localFilePath,
+    'fileSizeBytes': fileSizeBytes,
+    'downloadedAt': downloadedAt.toIso8601String(),
+  };
 
   factory OfflineTrackRecord.fromJson(Map<String, dynamic> j) {
     return OfflineTrackRecord(
@@ -67,7 +62,8 @@ class OfflineTrackRecord {
       artist: j['artist'] as String?,
       localFilePath: j['localFilePath'] as String? ?? '',
       fileSizeBytes: (j['fileSizeBytes'] as num?)?.toInt() ?? 0,
-      downloadedAt: DateTime.tryParse(j['downloadedAt'] as String? ?? '') ??
+      downloadedAt:
+          DateTime.tryParse(j['downloadedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
@@ -101,11 +97,11 @@ class OfflinePlaylistRecord {
   final DateTime downloadedAt;
 
   Map<String, dynamic> toJson() => {
-        'playlistId': playlistId,
-        'title': title,
-        'trackIds': trackIds,
-        'downloadedAt': downloadedAt.toIso8601String(),
-      };
+    'playlistId': playlistId,
+    'title': title,
+    'trackIds': trackIds,
+    'downloadedAt': downloadedAt.toIso8601String(),
+  };
 
   factory OfflinePlaylistRecord.fromJson(Map<String, dynamic> j) {
     final raw = j['trackIds'];
@@ -115,7 +111,8 @@ class OfflinePlaylistRecord {
       trackIds: raw is List
           ? raw.map((e) => (e as num).toInt()).toList()
           : const [],
-      downloadedAt: DateTime.tryParse(j['downloadedAt'] as String? ?? '') ??
+      downloadedAt:
+          DateTime.tryParse(j['downloadedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
@@ -124,7 +121,7 @@ class OfflinePlaylistRecord {
 /// Локальное хранилище скачанных треков и плейлистов.
 class OfflineDownloadRepository extends ChangeNotifier {
   OfflineDownloadRepository({required SettingsRepository settingsRepository})
-      : _settingsRepository = settingsRepository;
+    : _settingsRepository = settingsRepository;
 
   static const _tracksKey = 'mimusic_offline_tracks_v1';
   static const _playlistsKey = 'mimusic_offline_playlists_v1';
@@ -134,9 +131,11 @@ class OfflineDownloadRepository extends ChangeNotifier {
   List<OfflineTrackRecord> _tracks = const [];
   List<OfflinePlaylistRecord> _playlists = const [];
   bool _loaded = false;
+  Future<void> _downloadCommit = Future<void>.value();
 
   List<OfflineTrackRecord> get downloadedTracks => List.unmodifiable(_tracks);
-  List<OfflinePlaylistRecord> get savedPlaylists => List.unmodifiable(_playlists);
+  List<OfflinePlaylistRecord> get savedPlaylists =>
+      List.unmodifiable(_playlists);
   Set<String> get downloadingKeys => Set.unmodifiable(_downloadingKeys);
 
   Future<void> ensureLoaded() async {
@@ -147,9 +146,11 @@ class OfflineDownloadRepository extends ChangeNotifier {
       try {
         final list = jsonDecode(rawTracks) as List<dynamic>;
         _tracks = list
-            .map((e) => OfflineTrackRecord.fromJson(
-                  Map<String, dynamic>.from(e as Map),
-                ))
+            .map(
+              (e) => OfflineTrackRecord.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              ),
+            )
             .where((t) => File(t.localFilePath).existsSync())
             .toList();
       } catch (_) {
@@ -161,9 +162,11 @@ class OfflineDownloadRepository extends ChangeNotifier {
       try {
         final list = jsonDecode(rawPlaylists) as List<dynamic>;
         _playlists = list
-            .map((e) => OfflinePlaylistRecord.fromJson(
-                  Map<String, dynamic>.from(e as Map),
-                ))
+            .map(
+              (e) => OfflinePlaylistRecord.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              ),
+            )
             .toList();
       } catch (_) {
         _playlists = const [];
@@ -201,7 +204,7 @@ class OfflineDownloadRepository extends ChangeNotifier {
     var total = 0;
     for (final t in _tracks) {
       try {
-        total += File(t.localFilePath).lengthSync();
+        total += await File(t.localFilePath).length();
       } catch (_) {}
     }
     return total;
@@ -233,6 +236,7 @@ class OfflineDownloadRepository extends ChangeNotifier {
     _downloadingKeys.add(assetKey);
     notifyListeners();
 
+    File? partialFile;
     try {
       final dio = await createAuthenticatedDio();
       final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -256,35 +260,56 @@ class OfflineDownloadRepository extends ChangeNotifier {
 
       final dir = await _downloadsDirectory();
       final file = File('${dir.path}/track_$serverId.bin');
+      partialFile = file;
       await dio.download(url, file.path);
 
       final size = await file.length();
-      final used = await getCombinedCacheUsageBytes();
-      final settings = await _settingsRepository.getSettings();
-      final limit = settings.cacheLimitBytes;
-      if (limit != AppSettings.cacheLimitUnlimited &&
-          limit > 0 &&
-          used > limit) {
-        await file.delete();
-        return DownloadTrackResult.cacheLimitExceeded;
-      }
+      // Serialize admission so simultaneous downloads cannot both spend the
+      // same free space before either has been registered in _tracks.
+      final result = _downloadCommit.then((_) async {
+        final used = await getCombinedCacheUsageBytes();
+        final settings = await _settingsRepository.getSettings();
+        final limit = settings.cacheLimitBytes;
+        if (limit != AppSettings.cacheLimitUnlimited &&
+            (limit <= 0 || used + size > limit)) {
+          await file.delete();
+          return DownloadTrackResult.cacheLimitExceeded;
+        }
 
-      final record = OfflineTrackRecord(
-        serverTrackId: serverId,
-        assetKey: assetKey,
-        title: track.title,
-        artist: track.artist,
-        localFilePath: file.path,
-        fileSizeBytes: size,
-        downloadedAt: DateTime.now(),
+        final record = OfflineTrackRecord(
+          serverTrackId: serverId,
+          assetKey: assetKey,
+          title: track.title,
+          artist: track.artist,
+          localFilePath: file.path,
+          fileSizeBytes: size,
+          downloadedAt: DateTime.now(),
+        );
+        _tracks = [..._tracks.where((t) => t.assetKey != assetKey), record];
+        try {
+          await _persistTracks();
+        } catch (_) {
+          _tracks = _tracks.where((t) => !identical(t, record)).toList();
+          rethrow;
+        }
+        notifyListeners();
+        return DownloadTrackResult.success;
+      });
+      _downloadCommit = result.then<void>(
+        (_) {},
+        onError: (Object _, StackTrace _) {},
       );
-      _tracks = [..._tracks.where((t) => t.assetKey != assetKey), record];
-      await _persistTracks();
-      notifyListeners();
-      return DownloadTrackResult.success;
+      final committed = await result;
+      if (committed == DownloadTrackResult.success) partialFile = null;
+      return committed;
     } catch (_) {
       return DownloadTrackResult.failed;
     } finally {
+      if (partialFile != null) {
+        try {
+          if (await partialFile.exists()) await partialFile.delete();
+        } catch (_) {}
+      }
       _downloadingKeys.remove(assetKey);
       notifyListeners();
     }
@@ -366,9 +391,9 @@ class OfflineDownloadRepository extends ChangeNotifier {
     }
     _tracks = _tracks.where((t) => t.assetKey != assetKey).toList();
     _playlists = _playlists
-        .where((p) => p.trackIds.every(
-              (id) => isDownloaded('server_track_$id'),
-            ))
+        .where(
+          (p) => p.trackIds.every((id) => isDownloaded('server_track_$id')),
+        )
         .toList();
     await _persistTracks();
     await _persistPlaylists();

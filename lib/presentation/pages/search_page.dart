@@ -34,10 +34,12 @@ class SearchPage extends StatefulWidget {
     super.key,
     required this.audioPlayerService,
     required this.playlistsRepository,
+    this.scrollController,
   });
 
   final AudioPlayerService audioPlayerService;
   final PlaylistsRepository playlistsRepository;
+  final ScrollController? scrollController;
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -58,8 +60,10 @@ class _SearchPageState extends State<SearchPage> {
   Timer? _peopleSearchDebounce;
   List<ListeningFriend> _peopleResults = [];
   bool _peopleSearchBusy = false;
+
   /// В выдаче был только текущий пользователь — показываем шутку вместо «не найдено».
   bool _peopleSearchOnlySelf = false;
+  int _searchGeneration = 0;
 
   @override
   void initState() {
@@ -79,6 +83,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _onQueryChanged() {
+    _searchGeneration++;
     setState(() {});
     _scheduleMusicSearch();
     _schedulePublicPlaylistSearch();
@@ -97,6 +102,7 @@ class _SearchPageState extends State<SearchPage> {
       });
       return;
     }
+    final generation = _searchGeneration;
     _musicSearchDebounce = Timer(const Duration(milliseconds: 400), () async {
       if (!mounted) return;
       setState(() => _musicSearchBusy = true);
@@ -107,9 +113,13 @@ class _SearchPageState extends State<SearchPage> {
           limit: 40,
           userId: acc?.userId,
         );
-        final albumsFuture = AlbumsApi().searchPublicAlbums(query: q, limit: 30);
+        final albumsFuture = AlbumsApi().searchPublicAlbums(
+          query: q,
+          limit: 30,
+        );
         final results = await Future.wait([tracksFuture, albumsFuture]);
-        if (!mounted) return;
+        if (!mounted || generation != _searchGeneration || q != _query.trim())
+          return;
         final trackDtos = results[0] as List<SearchTrackResult>;
         final albumDtos = results[1] as List<PublicAlbumItemRemote>;
         setState(() {
@@ -118,7 +128,8 @@ class _SearchPageState extends State<SearchPage> {
           _musicSearchBusy = false;
         });
       } catch (_) {
-        if (!mounted) return;
+        if (!mounted || generation != _searchGeneration || q != _query.trim())
+          return;
         setState(() {
           _trackResults = [];
           _albumResults = [];
@@ -138,24 +149,34 @@ class _SearchPageState extends State<SearchPage> {
       });
       return;
     }
-    _playlistSearchDebounce = Timer(const Duration(milliseconds: 400), () async {
-      if (!mounted) return;
-      setState(() => _playlistSearchBusy = true);
-      try {
-        final list = await PlaylistsApi().fetchPublicPlaylists(query: _query.trim(), limit: 40);
+    final generation = _searchGeneration;
+    final q = _query.trim();
+    _playlistSearchDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () async {
         if (!mounted) return;
-        setState(() {
-          _publicPlaylistResults = list;
-          _playlistSearchBusy = false;
-        });
-      } catch (_) {
-        if (!mounted) return;
-        setState(() {
-          _publicPlaylistResults = [];
-          _playlistSearchBusy = false;
-        });
-      }
-    });
+        setState(() => _playlistSearchBusy = true);
+        try {
+          final list = await PlaylistsApi().fetchPublicPlaylists(
+            query: q,
+            limit: 40,
+          );
+          if (!mounted || generation != _searchGeneration || q != _query.trim())
+            return;
+          setState(() {
+            _publicPlaylistResults = list;
+            _playlistSearchBusy = false;
+          });
+        } catch (_) {
+          if (!mounted || generation != _searchGeneration || q != _query.trim())
+            return;
+          setState(() {
+            _publicPlaylistResults = [];
+            _playlistSearchBusy = false;
+          });
+        }
+      },
+    );
   }
 
   void _schedulePeopleSearch() {
@@ -178,6 +199,7 @@ class _SearchPageState extends State<SearchPage> {
       });
       return;
     }
+    final generation = _searchGeneration;
     _peopleSearchDebounce = Timer(const Duration(milliseconds: 400), () async {
       if (!mounted) return;
       setState(() {
@@ -186,17 +208,21 @@ class _SearchPageState extends State<SearchPage> {
       });
       try {
         final rows = await UsersApi().searchUsers(q);
-        if (!mounted) return;
+        if (!mounted || generation != _searchGeneration || q != _query.trim())
+          return;
         final acc = await AuthSessionStore.readAccount();
         final myId = acc?.userId;
         final bust = DateTime.now().millisecondsSinceEpoch;
-        final others =
-            myId == null ? rows : rows.where((u) => u.id != myId).toList(growable: false);
-        final onlySelf = myId != null &&
+        final others = myId == null
+            ? rows
+            : rows.where((u) => u.id != myId).toList(growable: false);
+        final onlySelf =
+            myId != null &&
             rows.isNotEmpty &&
             others.isEmpty &&
             rows.every((u) => u.id == myId);
-        if (!mounted) return;
+        if (!mounted || generation != _searchGeneration || q != _query.trim())
+          return;
         setState(() {
           _peopleSearchOnlySelf = onlySelf;
           _peopleResults = others
@@ -211,7 +237,8 @@ class _SearchPageState extends State<SearchPage> {
           _peopleSearchBusy = false;
         });
       } catch (_) {
-        if (!mounted) return;
+        if (!mounted || generation != _searchGeneration || q != _query.trim())
+          return;
         setState(() {
           _peopleResults = [];
           _peopleSearchBusy = false;
@@ -233,7 +260,8 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _onTrackTap(Track track, List<Track> queue) async {
     final service = widget.audioPlayerService;
-    final same = service.currentTrack?.assetPath == track.assetPath &&
+    final same =
+        service.currentTrack?.assetPath == track.assetPath &&
         service.currentTrack?.audioFilePath == track.audioFilePath;
     if (same) {
       await service.togglePlayPause();
@@ -256,7 +284,9 @@ class _SearchPageState extends State<SearchPage> {
         } catch (_) {
           final stub = ServerTrackListItem(
             id: entry.trackId,
-            title: entry.title?.trim().isNotEmpty == true ? entry.title! : 'Track',
+            title: entry.title?.trim().isNotEmpty == true
+                ? entry.title!
+                : 'Track',
             artist: entry.artist,
           );
           queue.add(stub.toTrack());
@@ -266,9 +296,9 @@ class _SearchPageState extends State<SearchPage> {
       await _onTrackTap(queue.first, queue);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.t('common.errorLoading'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.t('common.errorLoading'))));
     }
   }
 
@@ -300,6 +330,7 @@ class _SearchPageState extends State<SearchPage> {
               );
             }
             return CustomScrollView(
+              controller: widget.scrollController,
               slivers: [
                 SliverToBoxAdapter(
                   child: Padding(
@@ -339,8 +370,9 @@ class _SearchPageState extends State<SearchPage> {
                           decoration: InputDecoration(
                             isDense: true,
                             filled: true,
-                            fillColor:
-                                palette.cardBackground.withValues(alpha: 0.92),
+                            fillColor: palette.cardBackground.withValues(
+                              alpha: 0.92,
+                            ),
                             hintText: _mode == _SearchMode.music
                                 ? context.t('search.musicHint')
                                 : context.t('search.peopleHint'),
@@ -448,9 +480,7 @@ class _SearchPageState extends State<SearchPage> {
       decoration: BoxDecoration(
         color: palette.cardBackground.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        border: Border.all(
-          color: palette.primaryLight.withValues(alpha: 0.4),
-        ),
+        border: Border.all(color: palette.primaryLight.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [
@@ -500,10 +530,7 @@ class _SearchPageState extends State<SearchPage> {
               child: Text(
                 context.t('search.peopleMinChars'),
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: palette.textSecondary,
-                ),
+                style: TextStyle(fontSize: 16, color: palette.textSecondary),
               ),
             ),
           ),
@@ -525,10 +552,7 @@ class _SearchPageState extends State<SearchPage> {
             child: Center(
               child: Text(
                 context.t('search.notFound'),
-                style: TextStyle(
-                  fontSize: 16,
-                  color: palette.textSecondary,
-                ),
+                style: TextStyle(fontSize: 16, color: palette.textSecondary),
               ),
             ),
           ),
@@ -574,31 +598,30 @@ class _SearchPageState extends State<SearchPage> {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
           sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final p = playlists[index];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _PublicPlaylistSearchTile(
-                    item: p,
-                    palette: palette,
-                    audioPlayerService: widget.audioPlayerService,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        ShellMaterialPageRoute<void>(
-                          builder: (_) => PlaylistDetailPage(
-                            playlistId: RemotePlaylistsRepository.idForServer(p.id),
-                            audioPlayerService: widget.audioPlayerService,
-                            repository: widget.playlistsRepository,
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final p = playlists[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _PublicPlaylistSearchTile(
+                  item: p,
+                  palette: palette,
+                  audioPlayerService: widget.audioPlayerService,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      ShellMaterialPageRoute<void>(
+                        builder: (_) => PlaylistDetailPage(
+                          playlistId: RemotePlaylistsRepository.idForServer(
+                            p.id,
                           ),
+                          audioPlayerService: widget.audioPlayerService,
+                          repository: widget.playlistsRepository,
                         ),
-                      );
-                    },
-                  ),
-                );
-              },
-              childCount: playlists.length,
-            ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            }, childCount: playlists.length),
           ),
         ),
       );
@@ -625,20 +648,17 @@ class _SearchPageState extends State<SearchPage> {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
           sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final album = albums[index];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _AlbumResultTile(
-                    album: album,
-                    palette: palette,
-                    onTap: () => _onAlbumTap(album),
-                  ),
-                );
-              },
-              childCount: albums.length,
-            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final album = albums[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _AlbumResultTile(
+                  album: album,
+                  palette: palette,
+                  onTap: () => _onAlbumTap(album),
+                ),
+              );
+            }, childCount: albums.length),
           ),
         ),
       );
@@ -648,7 +668,12 @@ class _SearchPageState extends State<SearchPage> {
       children.add(
         SliverToBoxAdapter(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(20, (albums.isNotEmpty || playlists.isNotEmpty) ? 12 : 8, 20, 8),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              (albums.isNotEmpty || playlists.isNotEmpty) ? 12 : 8,
+              20,
+              8,
+            ),
             child: Text(
               context.t('search.tracks'),
               style: TextStyle(
@@ -665,42 +690,38 @@ class _SearchPageState extends State<SearchPage> {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
           sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final track = tracks[index];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: ListenableBuilder(
-                    listenable: widget.audioPlayerService,
-                    builder: (context, _) {
-                      final current = widget.audioPlayerService.currentTrack;
-                      final playing = widget.audioPlayerService.isPlaying;
-                      final isActive = current != null &&
-                          current.assetPath == track.assetPath &&
-                          current.audioFilePath == track.audioFilePath;
-                      return _SearchTrackTile(
-                        track: track,
-                        palette: palette,
-                        isDownloaded: widget.audioPlayerService.isTrackDownloaded(
-                          track.assetPath,
-                        ),
-                        isActive: isActive,
-                        isPlaying: isActive && playing,
-                        onTap: () => _onTrackTap(track, tracks),
-                      );
-                    },
-                  ),
-                );
-              },
-              childCount: tracks.length,
-            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final track = tracks[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: ListenableBuilder(
+                  listenable: widget.audioPlayerService,
+                  builder: (context, _) {
+                    final current = widget.audioPlayerService.currentTrack;
+                    final playing = widget.audioPlayerService.isPlaying;
+                    final isActive =
+                        current != null &&
+                        current.assetPath == track.assetPath &&
+                        current.audioFilePath == track.audioFilePath;
+                    return _SearchTrackTile(
+                      track: track,
+                      palette: palette,
+                      isDownloaded: widget.audioPlayerService.isTrackDownloaded(
+                        track.assetPath,
+                      ),
+                      isActive: isActive,
+                      isPlaying: isActive && playing,
+                      onTap: () => _onTrackTap(track, tracks),
+                    );
+                  },
+                ),
+              );
+            }, childCount: tracks.length),
           ),
         ),
       );
     } else if (albums.isNotEmpty) {
-      children.add(
-        const SliverToBoxAdapter(child: SizedBox(height: 120)),
-      );
+      children.add(const SliverToBoxAdapter(child: SizedBox(height: 120)));
     }
 
     return children;
@@ -717,10 +738,7 @@ class _SearchPageState extends State<SearchPage> {
               child: Text(
                 context.t('search.peopleMinChars'),
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: palette.textSecondary,
-                ),
+                style: TextStyle(fontSize: 16, color: palette.textSecondary),
               ),
             ),
           ),
@@ -743,7 +761,10 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
     final users = q.length >= 2 ? _peopleResults : const <ListeningFriend>[];
-    if (q.length >= 2 && !_peopleSearchBusy && users.isEmpty && _peopleSearchOnlySelf) {
+    if (q.length >= 2 &&
+        !_peopleSearchBusy &&
+        users.isEmpty &&
+        _peopleSearchOnlySelf) {
       children.add(
         SliverToBoxAdapter(
           child: Padding(
@@ -772,10 +793,7 @@ class _SearchPageState extends State<SearchPage> {
             child: Center(
               child: Text(
                 context.t('search.usersNotFound'),
-                style: TextStyle(
-                  fontSize: 16,
-                  color: palette.textSecondary,
-                ),
+                style: TextStyle(fontSize: 16, color: palette.textSecondary),
               ),
             ),
           ),
@@ -790,42 +808,39 @@ class _SearchPageState extends State<SearchPage> {
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
         sliver: SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final friend = users[index];
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _UserResultTile(
-                  friend: friend,
-                  palette: palette,
-                  onTap: () {
-                    if (friend.userId != null) {
-                      Navigator.of(context).push(
-                        ShellMaterialPageRoute<void>(
-                          builder: (_) => UserPublicProfilePage(
-                            userId: friend.userId!,
-                            nickname: friend.username,
-                            audioPlayerService: widget.audioPlayerService,
-                          ),
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final friend = users[index];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _UserResultTile(
+                friend: friend,
+                palette: palette,
+                onTap: () {
+                  if (friend.userId != null) {
+                    Navigator.of(context).push(
+                      ShellMaterialPageRoute<void>(
+                        builder: (_) => UserPublicProfilePage(
+                          userId: friend.userId!,
+                          nickname: friend.username,
+                          audioPlayerService: widget.audioPlayerService,
                         ),
-                      );
-                    } else {
-                      Navigator.of(context).push(
-                        ShellMaterialPageRoute<void>(
-                          builder: (_) => ArtistPage(
-                            artistName: friend.username,
-                            coverImageUrl: friend.avatarUrl,
-                            audioPlayerService: widget.audioPlayerService,
-                          ),
+                      ),
+                    );
+                  } else {
+                    Navigator.of(context).push(
+                      ShellMaterialPageRoute<void>(
+                        builder: (_) => ArtistPage(
+                          artistName: friend.username,
+                          coverImageUrl: friend.avatarUrl,
+                          audioPlayerService: widget.audioPlayerService,
                         ),
-                      );
-                    }
-                  },
-                ),
-              );
-            },
-            childCount: users.length,
-          ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            );
+          }, childCount: users.length),
         ),
       ),
     );
@@ -915,10 +930,12 @@ class _AlbumResultTile extends StatelessWidget {
     final isEn = Localizations.localeOf(context).languageCode == 'en';
     final owner = (album.ownerNickname ?? '').trim();
     final subtitle = owner.isEmpty
-        ? (isEn ? 'Album · $album.trackCount tracks' : 'Альбом · ${album.trackCount} треков')
+        ? (isEn
+              ? 'Album · $album.trackCount tracks'
+              : 'Альбом · ${album.trackCount} треков')
         : (isEn
-            ? 'Album · @$owner · ${album.trackCount} tracks'
-            : 'Альбом · @$owner · ${album.trackCount} треков');
+              ? 'Album · @$owner · ${album.trackCount} tracks'
+              : 'Альбом · @$owner · ${album.trackCount} треков');
     return Material(
       color: palette.cardBackground.withValues(alpha: 0.85),
       borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
@@ -948,7 +965,9 @@ class _AlbumResultTile extends StatelessWidget {
                     imageUrl: coverUrl,
                     width: 56,
                     height: 56,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.radiusMedium,
+                    ),
                     placeholder: _albumPlaceholder(palette),
                     fit: BoxFit.cover,
                   ),
@@ -960,7 +979,9 @@ class _AlbumResultTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      album.title?.trim().isNotEmpty == true ? album.title! : '—',
+                      album.title?.trim().isNotEmpty == true
+                          ? album.title!
+                          : '—',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -996,11 +1017,7 @@ class _AlbumResultTile extends StatelessWidget {
     return Container(
       color: palette.primaryDark.withValues(alpha: 0.45),
       alignment: Alignment.center,
-      child: Icon(
-        Icons.album_rounded,
-        color: palette.textMuted,
-        size: 28,
-      ),
+      child: Icon(Icons.album_rounded, color: palette.textMuted, size: 28),
     );
   }
 }
@@ -1056,8 +1073,9 @@ class _SearchTrackTile extends StatelessWidget {
                     coverSource: coverSource,
                     width: coverSize,
                     height: coverSize,
-                    borderRadius:
-                        BorderRadius.circular(AppConstants.radiusMedium),
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.radiusMedium,
+                    ),
                     placeholder: Container(
                       color: palette.primaryDark.withValues(alpha: 0.5),
                       child: Icon(
@@ -1136,7 +1154,8 @@ class _PublicPlaylistSearchTile extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_PublicPlaylistSearchTile> createState() => _PublicPlaylistSearchTileState();
+  State<_PublicPlaylistSearchTile> createState() =>
+      _PublicPlaylistSearchTileState();
 }
 
 class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
@@ -1154,9 +1173,8 @@ class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
 
   Future<void> _initLike() async {
     final acc = await AuthSessionStore.readAccount();
-    final ok = acc != null &&
-        acc.sessionToken.trim().isNotEmpty &&
-        acc.userId != null;
+    final ok =
+        acc != null && acc.sessionToken.trim().isNotEmpty && acc.userId != null;
     if (!mounted) return;
     setState(() => _canUseLike = ok);
     if (!ok) return;
@@ -1206,7 +1224,9 @@ class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
         ? '${item.trackCount} tracks · ♥ $_likesCount'
         : '${item.trackCount} треков · ♥ $_likesCount';
     final nick = (item.ownerNickname ?? '').trim();
-    final authorLabel = nick.isNotEmpty ? '@$nick' : (isEn ? 'Author' : 'Автор');
+    final authorLabel = nick.isNotEmpty
+        ? '@$nick'
+        : (isEn ? 'Author' : 'Автор');
     final coverUrl = playlistCoverUrl(item.id);
     final authorAvatar = userAvatarUrl(item.ownerUserId);
     final placeholder = Container(
@@ -1238,7 +1258,9 @@ class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
                     coverSource: coverUrl,
                     width: 56,
                     height: 56,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.radiusMedium,
+                    ),
                     placeholder: placeholder,
                   ),
                 ),
@@ -1261,7 +1283,10 @@ class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
                     const SizedBox(height: 4),
                     Text(
                       sub,
-                      style: TextStyle(fontSize: 13, color: palette.textSecondary),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: palette.textSecondary,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Material(
@@ -1271,7 +1296,9 @@ class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
                           Navigator.of(context).push(
                             ShellMaterialPageRoute<void>(
                               builder: (_) => ArtistPage(
-                                artistName: nick.isNotEmpty ? nick : authorLabel,
+                                artistName: nick.isNotEmpty
+                                    ? nick
+                                    : authorLabel,
                                 coverImageUrl: authorAvatar,
                                 audioPlayerService: widget.audioPlayerService,
                               ),
@@ -1293,7 +1320,9 @@ class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
                                   errorBuilder: (_, _, _) => Container(
                                     width: 22,
                                     height: 22,
-                                    color: palette.primaryDark.withValues(alpha: 0.5),
+                                    color: palette.primaryDark.withValues(
+                                      alpha: 0.5,
+                                    ),
                                     alignment: Alignment.center,
                                     child: Icon(
                                       Icons.person_rounded,
@@ -1338,7 +1367,9 @@ class _PublicPlaylistSearchTileState extends State<_PublicPlaylistSearchTile> {
                           ),
                         )
                       : Icon(
-                          _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          _liked
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
                           color: _liked ? palette.accent : palette.textMuted,
                         ),
                 )
@@ -1472,7 +1503,9 @@ class _UserResultTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      Localizations.localeOf(context).languageCode == 'en' ? 'User' : 'Пользователь',
+                      Localizations.localeOf(context).languageCode == 'en'
+                          ? 'User'
+                          : 'Пользователь',
                       style: TextStyle(
                         fontSize: 13,
                         color: palette.textSecondary,
@@ -1481,10 +1514,7 @@ class _UserResultTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: palette.textMuted,
-              ),
+              Icon(Icons.chevron_right_rounded, color: palette.textMuted),
             ],
           ),
         ),

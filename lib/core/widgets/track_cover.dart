@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'cover_image.dart';
+import 'image_decode_extent.dart';
 
 /// Обложка трека: поддерживает ID3 (байты), asset-путь или заглушку.
 Widget buildTrackCover({
@@ -20,7 +21,9 @@ Widget buildTrackCover({
     );
   }
   if (coverSource is List<int> || coverSource is Uint8List) {
-    final bytes = coverSource is Uint8List ? coverSource : Uint8List.fromList(coverSource as List<int>);
+    final bytes = coverSource is Uint8List
+        ? coverSource
+        : Uint8List.fromList(coverSource as List<int>);
     return ClipRRect(
       borderRadius: borderRadius,
       child: SizedBox(
@@ -31,6 +34,8 @@ Widget buildTrackCover({
           fit: fit,
           width: width,
           height: height,
+          cacheWidth: imageDecodeExtent(width),
+          cacheHeight: imageDecodeExtent(height),
           errorBuilder: (context, error, stackTrace) => placeholder,
         ),
       ),

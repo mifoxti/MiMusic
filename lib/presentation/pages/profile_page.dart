@@ -49,6 +49,7 @@ class ProfilePage extends StatefulWidget {
     required this.audioPlayerService,
     required this.playlistsRepository,
     required this.listeningHistoryRepository,
+    this.scrollController,
   });
 
   final ThemeMode themeMode;
@@ -57,11 +58,13 @@ class ProfilePage extends StatefulWidget {
   final Future<void> Function() onShellSettingsReload;
   final SettingsRepository settingsRepository;
   final AppSettings initialSettings;
+
   /// Синхронизирован с [MiMusicApp] после сохранения настроек; сбрасывает кэш картинок.
   final int settingsDisplayGeneration;
   final AudioPlayerService audioPlayerService;
   final PlaylistsRepository playlistsRepository;
   final ListeningHistoryRepository listeningHistoryRepository;
+  final ScrollController? scrollController;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -81,7 +84,8 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void didUpdateWidget(covariant ProfilePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.settingsDisplayGeneration != widget.settingsDisplayGeneration) {
+    if (oldWidget.settingsDisplayGeneration !=
+        widget.settingsDisplayGeneration) {
       unawaited(_primeFromCacheAndSync());
     }
   }
@@ -97,7 +101,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _primeFromCacheAndSync({bool showOfflineSheet = false}) async {
     final acc = await AuthSessionStore.readAccount();
-    if (acc == null || acc.sessionToken.trim().isEmpty || acc.userId == null) return;
+    if (acc == null || acc.sessionToken.trim().isEmpty || acc.userId == null)
+      return;
     final uid = acc.userId!;
 
     final cached = await MeProfileCache.loadForUser(uid);
@@ -106,8 +111,9 @@ class _ProfilePageState extends State<ProfilePage> {
         if (cached.nickname.trim().isNotEmpty) {
           _serverNickname = cached.nickname;
         }
-        _avatarPathOverride =
-            cached.hasServerAvatar ? kServerMeAvatarMarker : null;
+        _avatarPathOverride = cached.hasServerAvatar
+            ? kServerMeAvatarMarker
+            : null;
       });
     }
 
@@ -125,7 +131,8 @@ class _ProfilePageState extends State<ProfilePage> {
       if (me.nickname.trim().isNotEmpty) {
         _serverNickname = me.nickname;
       }
-      if (me.avatarStorageKey != null && me.avatarStorageKey!.trim().isNotEmpty) {
+      if (me.avatarStorageKey != null &&
+          me.avatarStorageKey!.trim().isNotEmpty) {
         _avatarPathOverride = kServerMeAvatarMarker;
       } else {
         _avatarPathOverride = null;
@@ -136,10 +143,11 @@ class _ProfilePageState extends State<ProfilePage> {
 
   String get _profileNickname =>
       (_serverNickname != null && _serverNickname!.trim().isNotEmpty)
-          ? _serverNickname!
-          : widget.initialSettings.nickname;
+      ? _serverNickname!
+      : widget.initialSettings.nickname;
 
-  String? get _profileAvatarPath => _avatarPathOverride ?? widget.initialSettings.avatarPath;
+  String? get _profileAvatarPath =>
+      _avatarPathOverride ?? widget.initialSettings.avatarPath;
 
   @override
   Widget build(BuildContext context) {
@@ -147,6 +155,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final isEn = Localizations.localeOf(context).languageCode == 'en';
 
     return CollapsingProfileShell(
+      scrollController: widget.scrollController,
       title: _profileNickname,
       audioPlayerService: widget.audioPlayerService,
       onRefresh: _refreshProfileFromUser,
@@ -294,9 +303,16 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildCoverBackground(BuildContext context, AppColorPalette palette, double width, double height) {
+  Widget _buildCoverBackground(
+    BuildContext context,
+    AppColorPalette palette,
+    double width,
+    double height,
+  ) {
     final raw = _profileAvatarPath?.trim();
-    final resolved = (raw != null && raw.isNotEmpty) ? raw : kDefaultUserAvatarAsset;
+    final resolved = (raw != null && raw.isNotEmpty)
+        ? raw
+        : kDefaultUserAvatarAsset;
     final placeholder = Container(
       width: width,
       height: height,
@@ -307,7 +323,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
     if (resolved == kServerMeAvatarMarker) {
       return ClipRect(
-        key: ValueKey('profile-cover-server-${widget.settingsDisplayGeneration}'),
+        key: ValueKey(
+          'profile-cover-server-${widget.settingsDisplayGeneration}',
+        ),
         child: SizedBox(
           width: width,
           height: height,
@@ -427,7 +445,6 @@ class _ProfilePageState extends State<ProfilePage> {
       ],
     );
   }
-
 }
 
 class _ProfileNotificationBell extends StatefulWidget {
@@ -440,7 +457,8 @@ class _ProfileNotificationBell extends StatefulWidget {
   final String profileNickname;
 
   @override
-  State<_ProfileNotificationBell> createState() => _ProfileNotificationBellState();
+  State<_ProfileNotificationBell> createState() =>
+      _ProfileNotificationBellState();
 }
 
 class _ProfileNotificationBellState extends State<_ProfileNotificationBell> {
@@ -479,6 +497,7 @@ class _ProfileNotificationBellState extends State<_ProfileNotificationBell> {
       onPressed: () async {
         await Navigator.of(context).push<void>(
           ShellMaterialPageRoute<void>(
+            settings: const RouteSettings(name: 'notifications'),
             builder: (context) => NotificationsPage(
               currentUsername: widget.profileNickname,
               audioPlayerService: widget.audioPlayerService,
@@ -492,7 +511,11 @@ class _ProfileNotificationBellState extends State<_ProfileNotificationBell> {
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          const Icon(Icons.notifications_rounded, color: Colors.white, size: 22),
+          const Icon(
+            Icons.notifications_rounded,
+            color: Colors.white,
+            size: 22,
+          ),
           if (_unread > 0)
             Positioned(
               right: -6,

@@ -9,6 +9,7 @@ import '../platform/platform.dart';
 import '../settings/settings_repository.dart';
 import '../social/listening_room_session.dart';
 import 'mimusic_ios_remote_commands.dart';
+import 'audio_transport_coordinator.dart';
 
 /// Конфигурация для [MiMusicAudioHandler]. Задаётся до [AudioService.init].
 SettingsRepository? _handlerSettingsRepository;
@@ -88,6 +89,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   List<Map<String, dynamic>> _queue = [];
   int _queueIndex = 0;
   bool _concatenatingSourceUsed = false;
+  bool _editingQueue = false;
   final Set<String> _likedPaths = {};
   final Set<String> _dislikedPaths = {};
 
@@ -307,10 +309,11 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void _onSequenceStateChanged(SequenceState? state) {
+    if (_editingQueue || !_concatenatingSourceUsed) return;
     final idx = state?.currentIndex ?? 0;
     if (idx != _queueIndex && idx >= 0 && idx < _queue.length) {
       _queueIndex = idx;
-      unawaited(_updateMediaItemFromQueue());
+      unawaited(_publishEngineTrackChange());
       if (_player.playing) {
         _recordListeningHistoryOnce();
       }
@@ -360,10 +363,41 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _webPositionPoll = null;
   }
 
+  /// just_audio's play Future covers the entire playback lifetime. Commands
+  /// must finish after requesting playback so room synchronization can continue.
+  void _startPlayback() {
+    final source = _player.audioSource;
+    unawaited(_player.play().catchError((Object error, StackTrace stack) {
+      debugPrint('[audio] Playback failed: $error\n$stack');
+      if (_handlerDisposed || !identical(source, _player.audioSource)) return;
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.error,
+          playing: false,
+          errorMessage: error.toString(),
+        ),
+      );
+    }));
+  }
+
+  Future<void> _publishEngineTrackChange() async {
+    final index = _queueIndex;
+    await _updateMediaItemFromQueue();
+    if (_handlerDisposed || index != _queueIndex || _editingQueue) return;
+    AudioTransportCoordinator.instance.emit(
+      AudioTransportKind.trackChanged,
+      origin: AudioTransportOrigin.engine,
+      trackId: mediaItem.value?.id,
+      position: _player.position,
+    );
+  }
+
   @override
   Future<void> play() async {
     if (_roomGuest && !ListeningRoomSession.instance.canControlPause) return;
-    await _player.play();
+    _startPlayback();
+    AudioTransportCoordinator.instance.emit(AudioTransportKind.play,
+        origin: AudioTransportOrigin.notification);
     playbackState.add(
       playbackState.value.copyWith(
         playing: true,
@@ -380,6 +414,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> pause() async {
     if (_roomGuest && !ListeningRoomSession.instance.canControlPause) return;
     await _player.pause();
+    AudioTransportCoordinator.instance.emit(AudioTransportKind.pause,
+        origin: AudioTransportOrigin.notification);
     playbackState.add(
       playbackState.value.copyWith(
         playing: false,
@@ -413,6 +449,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> seek(Duration position) async {
     if (!_canUseSeekControl) return;
     await _player.seek(position);
+    AudioTransportCoordinator.instance.emit(AudioTransportKind.seek,
+        origin: AudioTransportOrigin.notification, position: position);
     playbackState.add(
       playbackState.value.copyWith(
         updatePosition: position,
@@ -427,6 +465,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> skipToNext() async {
     if (!_canUseSkipControls) return;
     if (_queue.isEmpty) return;
+    final generation = AudioTransportCoordinator.instance.beginTrackGeneration();
     if (_useConcatenatingSource) {
       if (_queueIndex < _queue.length - 1) {
         await _player.seekToNext();
@@ -436,6 +475,11 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         _queueIndex = 0;
       }
       await _updateMediaItemFromQueue();
+      if (!AudioTransportCoordinator.instance.isCurrent(generation)) return;
+      AudioTransportCoordinator.instance.emit(AudioTransportKind.next,
+          origin: AudioTransportOrigin.notification,
+          generation: generation,
+          trackId: mediaItem.value?.id);
       if (_player.playing) _recordListeningHistoryOnce();
       return;
     }
@@ -445,12 +489,19 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueIndex++;
     }
     await _playFromQueue();
+    if (AudioTransportCoordinator.instance.isCurrent(generation)) {
+      AudioTransportCoordinator.instance.emit(AudioTransportKind.next,
+          origin: AudioTransportOrigin.notification,
+          generation: generation,
+          trackId: mediaItem.value?.id);
+    }
   }
 
   @override
   Future<void> skipToPrevious() async {
     if (!_canUseSkipControls) return;
     if (_queue.isEmpty) return;
+    final generation = AudioTransportCoordinator.instance.beginTrackGeneration();
     if (_player.position.inSeconds > 3) {
       await _player.seek(Duration.zero);
       playbackState.add(
@@ -465,6 +516,11 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       await _player.seekToPrevious();
       _queueIndex = _player.currentIndex ?? _queueIndex - 1;
       await _updateMediaItemFromQueue();
+      if (!AudioTransportCoordinator.instance.isCurrent(generation)) return;
+      AudioTransportCoordinator.instance.emit(AudioTransportKind.previous,
+          origin: AudioTransportOrigin.notification,
+          generation: generation,
+          trackId: mediaItem.value?.id);
       if (_player.playing) _recordListeningHistoryOnce();
       return;
     }
@@ -481,6 +537,12 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     _queueIndex--;
     await _playFromQueue();
+    if (AudioTransportCoordinator.instance.isCurrent(generation)) {
+      AudioTransportCoordinator.instance.emit(AudioTransportKind.previous,
+          origin: AudioTransportOrigin.notification,
+          generation: generation,
+          trackId: mediaItem.value?.id);
+    }
   }
 
   bool get _useConcatenatingSource =>
@@ -509,6 +571,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> _updateMediaItemFromQueue() async {
     if (_queueIndex < 0 || _queueIndex >= _queue.length) return;
+    final index = _queueIndex;
     final t = _queue[_queueIndex];
     final path = t['path'] as String? ?? '';
     final itemId = (t['itemId'] as String?)?.trim();
@@ -518,6 +581,8 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       artPath: artPath,
       artUri: t['artUri'] as String?,
     );
+    if (_handlerDisposed || index != _queueIndex ||
+        index >= _queue.length || !identical(t, _queue[index])) return;
     final duration = _player.duration ?? Duration.zero;
     mediaItem.add(
       MediaItem(
@@ -732,6 +797,39 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         ? _player.position
         : Duration(milliseconds: (positionSeconds * 1000).round());
     final autoPlay = extras?['autoPlay'] as bool? ?? _player.playing;
+    final source = _player.audioSource;
+    if (source is ConcatenatingAudioSource) {
+      // Keep the currently decoded source alive. Rebuilding the playlist here
+      // interrupts audio even when only a later item was added or removed.
+      final paths = _queue.map((t) => t['path'] as String? ?? '').toList();
+      _editingQueue = true;
+      try {
+        for (var i = 0; i < queue.length; i++) {
+          final wanted = queue[i]['path'] as String? ?? '';
+          if (i < paths.length && paths[i] == wanted) continue;
+          final existing = paths.indexOf(wanted, i);
+          if (existing >= 0) {
+            await source.move(existing, i);
+            paths.insert(i, paths.removeAt(existing));
+          } else {
+            await source.insert(i, createAudioSource(wanted));
+            paths.insert(i, wanted);
+          }
+        }
+        if (paths.length > queue.length) {
+          await source.removeRange(queue.length, paths.length);
+        }
+        _queue = queue;
+        _queueIndex = _player.currentIndex ?? index;
+        _syncHandlerQueue();
+        await _updateMediaItemFromQueue();
+        if (autoPlay && !_player.playing) _startPlayback();
+        if (!autoPlay && _player.playing) await _player.pause();
+      } finally {
+        _editingQueue = false;
+      }
+      return;
+    }
     _queue = queue;
     _queueIndex = index;
     final current = queue[index];
@@ -781,7 +879,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         ),
       );
       if (autoPlay) {
-        await _player.play();
+        _startPlayback();
       } else {
         await _player.pause();
       }
@@ -816,6 +914,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     List<Map<String, dynamic>>? queue,
     bool autoPlay = true,
   }) async {
+    final generation = AudioTransportCoordinator.instance.beginTrackGeneration();
     if (queue != null && queue.isNotEmpty) {
       _queue = queue;
       _queueIndex = _queue.indexWhere((t) => (t['path'] as String?) == path);
@@ -835,6 +934,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueIndex = 0;
     }
     Uri? coverUri = await _coverUriFromPath(artPath: artPath, artUri: artUri);
+    if (!AudioTransportCoordinator.instance.isCurrent(generation)) return;
     final resolvedMediaId = () {
       final trimmed = mediaItemId?.trim();
       if (trimmed != null && trimmed.isNotEmpty) return trimmed;
@@ -864,8 +964,9 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
     );
 
     try {
-      if (queue != null && queue.length > 1) {
-        final sources = queue
+      if (_queue.isNotEmpty) {
+        _concatenatingSourceUsed = false;
+        final sources = _queue
             .map((t) => createAudioSource(t['path'] as String? ?? ''))
             .toList();
         await _player.setAudioSource(
@@ -881,6 +982,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
           await _player.setShuffleModeEnabled(false);
         } catch (_) {}
       }
+      if (!AudioTransportCoordinator.instance.isCurrent(generation)) return;
       await _applyEqualizerFromSettings();
       final duration = _player.duration ?? Duration.zero;
       mediaItem.add(
@@ -893,7 +995,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         ),
       );
       if (autoPlay) {
-        await _player.play();
+        _startPlayback();
       }
       _syncHandlerQueue();
       playbackState.add(
@@ -909,6 +1011,10 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
         ),
       );
       _refreshPlatformRemoteCommands();
+      AudioTransportCoordinator.instance.emit(AudioTransportKind.trackChanged,
+          origin: AudioTransportOrigin.ui,
+          generation: generation,
+          trackId: item.id);
     } catch (e) {
       playbackState.add(
         playbackState.value.copyWith(
@@ -1104,7 +1210,7 @@ class MiMusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> _roomSyncPlay() async {
     if (!_canRoomSyncPlayer) return;
     try {
-      await _player.play();
+      _startPlayback();
       playbackState.add(
         playbackState.value.copyWith(
           playing: true,

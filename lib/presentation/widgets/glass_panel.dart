@@ -25,8 +25,8 @@ class GlassPanel extends StatelessWidget {
       margin: margin,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-        child: AppGlass.blurredTintLayer(
-          isDark: isDark,
+        child: AppGlass.blurredTintLayerWithSigma(
+          sigma: 8,
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
@@ -76,8 +76,8 @@ class GlassTapCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
-          child: AppGlass.blurredTintLayer(
-            isDark: isDark,
+          child: AppGlass.blurredTintLayerWithSigma(
+            sigma: 8,
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -93,7 +93,9 @@ class GlassTapCard extends StatelessWidget {
                     height: 44,
                     decoration: BoxDecoration(
                       color: accent.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusMedium,
+                      ),
                     ),
                     child: Icon(icon, color: accent, size: 24),
                   ),
@@ -113,12 +115,19 @@ class GlassTapCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           subtitle,
-                          style: TextStyle(fontSize: 13, color: palette.textSecondary),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: palette.textSecondary,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: palette.textMuted, size: 24),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: palette.textMuted,
+                    size: 24,
+                  ),
                 ],
               ),
             ),
@@ -299,11 +308,7 @@ class GlassHeroAction extends StatelessWidget {
 
 /// Стеклянная «пилюля» (кнопка «Мысли» в шапке профиля).
 class GlassPillButton extends StatelessWidget {
-  const GlassPillButton({
-    super.key,
-    required this.label,
-    required this.onTap,
-  });
+  const GlassPillButton({super.key, required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;
@@ -462,7 +467,10 @@ class GlassSettingsRow extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         subtitle!,
-                        style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: palette.textSecondary,
+                        ),
                       ),
                     ],
                   ],
@@ -471,7 +479,11 @@ class GlassSettingsRow extends StatelessWidget {
               if (trailing != null)
                 trailing!
               else if (onTap != null)
-                Icon(Icons.chevron_right_rounded, size: 20, color: palette.textMuted),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: palette.textMuted,
+                ),
             ],
           ),
         ),
@@ -558,7 +570,9 @@ class GlassChoiceChip extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                      color: selected ? palette.textPrimary : palette.textSecondary,
+                      color: selected
+                          ? palette.textPrimary
+                          : palette.textSecondary,
                     ),
                     textAlign: TextAlign.center,
                     maxLines: 1,

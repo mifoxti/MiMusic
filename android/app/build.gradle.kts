@@ -24,10 +24,8 @@ if (localPropertiesFile.exists()) {
 val flutterApiBaseUrl: String =
     localProperties.getProperty("flutter.apiBaseUrl")?.trim()?.takeIf { it.isNotEmpty() }
         ?: "http://127.0.0.1:8080"
-extra["dart-defines"] =
-    Base64.getEncoder().encodeToString(
-        "API_BASE_URL=$flutterApiBaseUrl".toByteArray(Charsets.UTF_8),
-    )
+// Do not overwrite Flutter's `dart-defines`: command-line defines must survive
+// release builds. The native BuildConfig value below remains the local fallback.
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")

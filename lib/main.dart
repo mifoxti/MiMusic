@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,14 @@ import 'presentation/main_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('[flutter] ${details.exceptionAsString()}\n${details.stack}');
+  };
+  ui.PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('[platform] $error\n$stack');
+    return false;
+  };
   await ApiConfig.ensureAndroidDevBaseUrl();
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -107,13 +116,20 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
         config: AudioServiceConfig(
           androidNotificationChannelId: 'com.example.mimusic.audio',
           androidNotificationChannelName: 'Playback',
-          // ongoing + stopForegroundOnPause:false в audio_service несовместимы
-          androidStopForegroundOnPause: false,
+          // Keep the media notification dismissible. An ongoing foreground
+          // notification cannot be swiped away on Android.
+          androidNotificationOngoing: false,
+          androidStopForegroundOnPause: true,
           androidResumeOnClick: true,
         ),
       );
       setListeningHistoryRepository(listeningHistoryRepository);
-      return _InitResult(settings, repository, handler, listeningHistoryRepository);
+      return _InitResult(
+        settings,
+        repository,
+        handler,
+        listeningHistoryRepository,
+      );
     } catch (e, st) {
       debugPrint('Init error: $e');
       debugPrint('Stack trace: $st');
@@ -163,10 +179,7 @@ class _SettingsLoaderState extends State<_SettingsLoader> {
                       ),
                       if (error != null) ...[
                         const SizedBox(height: 16),
-                        Text(
-                          '$error',
-                          style: const TextStyle(fontSize: 14),
-                        ),
+                        Text('$error', style: const TextStyle(fontSize: 14)),
                       ],
                     ],
                   ),
@@ -207,12 +220,14 @@ class MiMusicApp extends StatefulWidget {
 }
 
 class _MiMusicAppState extends State<MiMusicApp> {
-  final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<NavigatorState> _rootNavigatorKey =
+      GlobalKey<NavigatorState>();
 
   _AppGate _gate = _AppGate.loading;
   late ThemeMode _themeMode;
   late Locale _locale;
   late AppSettings _shellSettings;
+
   /// Сбрасывает кэш [Image] для аватара, если путь к файлу тот же, а содержимое изменилось.
   int _shellSettingsDisplayGeneration = 0;
   AudioPlayerService? _audioPlayerService;
@@ -220,7 +235,8 @@ class _MiMusicAppState extends State<MiMusicApp> {
       PlayerCoverPaletteService();
   OfflineDownloadRepository? _offlineDownloadRepository;
   GetHomeSectionUseCase? _getHomeSectionUseCase;
-  final PlaylistsRepository _playlistsRepository = SessionAwarePlaylistsRepository();
+  final PlaylistsRepository _playlistsRepository =
+      SessionAwarePlaylistsRepository();
 
   @override
   void initState() {
@@ -247,9 +263,8 @@ class _MiMusicAppState extends State<MiMusicApp> {
     await AuthSessionStore.refreshIssuedInviteKeysCache();
     var s = await widget.settingsRepository.getSettings();
     final acc = await AuthSessionStore.readAccount();
-    final serverSession = acc != null &&
-        acc.sessionToken.trim().isNotEmpty &&
-        acc.userId != null;
+    final serverSession =
+        acc != null && acc.sessionToken.trim().isNotEmpty && acc.userId != null;
     if (serverSession && s.password.isNotEmpty) {
       s = s.copyWith(password: '');
       await widget.settingsRepository.saveSettings(s);
@@ -259,7 +274,8 @@ class _MiMusicAppState extends State<MiMusicApp> {
       try {
         final me = await ProfileApi().fetchMe();
         await MeProfileCache.save(uid, me);
-        if (me.avatarStorageKey != null && me.avatarStorageKey!.trim().isNotEmpty) {
+        if (me.avatarStorageKey != null &&
+            me.avatarStorageKey!.trim().isNotEmpty) {
           s = s.copyWith(avatarPath: kServerMeAvatarMarker);
           await widget.settingsRepository.saveSettings(s);
           await refreshCachedMeAvatar();
@@ -287,7 +303,9 @@ class _MiMusicAppState extends State<MiMusicApp> {
     if (mounted) setState(() => _gate = _AppGate.main);
     unawaited(PushRegistrationService.instance.syncTokenAfterLogin());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_audioPlayerService?.applyEqualizerFromSettings() ?? Future.value());
+      unawaited(
+        _audioPlayerService?.applyEqualizerFromSettings() ?? Future.value(),
+      );
       _scheduleAutoUpdateCheck();
     });
   }
@@ -360,7 +378,9 @@ class _MiMusicAppState extends State<MiMusicApp> {
   Future<void> _onThemeChanged(ThemeMode mode) async {
     setState(() => _themeMode = mode);
     final current = await widget.settingsRepository.getSettings();
-    await widget.settingsRepository.saveSettings(current.copyWith(themeMode: mode));
+    await widget.settingsRepository.saveSettings(
+      current.copyWith(themeMode: mode),
+    );
     final s = await widget.settingsRepository.getSettings();
     if (mounted) setState(() => _shellSettings = s);
   }
@@ -407,9 +427,7 @@ class _MiMusicAppState extends State<MiMusicApp> {
   Widget _buildHome() {
     switch (_gate) {
       case _AppGate.loading:
-        return const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        );
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
       case _AppGate.onboarding:
         return OnboardingFlow(onCompleted: _onOnboardingDone);
       case _AppGate.auth:

@@ -59,7 +59,11 @@ Future<String?> copyPickedAudioToApp(String sourcePath, String trackId) async {
 }
 
 /// Аудио из памяти в каталог треков (аналог [copyPickedAudioToApp] для байтов).
-Future<String?> saveAudioBytesToApp(List<int> bytes, String trackId, String extension) async {
+Future<String?> saveAudioBytesToApp(
+  List<int> bytes,
+  String trackId,
+  String extension,
+) async {
   try {
     if (bytes.isEmpty) return null;
     var ext = extension.trim();
@@ -77,7 +81,11 @@ Future<String?> saveAudioBytesToApp(List<int> bytes, String trackId, String exte
 
 /// Writes image bytes directly into app-private storage (avoids gallery indexing
 /// from picker cache paths on some Android versions).
-Future<String?> saveCoverBytesToApp(List<int> bytes, String id, String extension) async {
+Future<String?> saveCoverBytesToApp(
+  List<int> bytes,
+  String id,
+  String extension,
+) async {
   try {
     if (bytes.isEmpty) return null;
     var ext = extension.trim();
@@ -151,10 +159,11 @@ Widget buildCoverImageFromFile(
   double height,
   BorderRadius borderRadius,
   Widget placeholder,
-  BoxFit fit,
-) {
+  BoxFit fit, [
+  int? cacheWidth,
+  int? cacheHeight,
+]) {
   final file = File(path);
-  if (!file.existsSync()) return placeholder;
   return ClipRRect(
     borderRadius: borderRadius,
     child: SizedBox(
@@ -165,6 +174,8 @@ Widget buildCoverImageFromFile(
         fit: fit,
         width: width,
         height: height,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
         errorBuilder: (_, e, st) => placeholder,
       ),
     ),
@@ -172,11 +183,7 @@ Widget buildCoverImageFromFile(
 }
 
 // --- studio_cover_image
-Widget studioCoverImageFromFile(
-  String path,
-  double size,
-  Widget placeholder,
-) {
+Widget studioCoverImageFromFile(String path, double size, Widget placeholder) {
   final file = File(path);
   if (!file.existsSync()) return placeholder;
   return Image.file(

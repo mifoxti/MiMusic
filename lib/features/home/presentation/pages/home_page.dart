@@ -16,6 +16,7 @@ import '../../../../core/network/recommendations_api.dart';
 import '../../../../core/network/tracks_api.dart';
 import '../../../../core/widgets/dual_track_cover_cluster.dart';
 import '../../domain/entities/home_recommended_track.dart';
+import '../../domain/entities/recommended_playlist.dart';
 import '../../../../core/player/player_dock_host.dart';
 import '../../../../core/player/shell_route_back_guard.dart';
 import '../../../../core/social/colisten_controller.dart';
@@ -27,7 +28,7 @@ import '../../../../core/widgets/track_cover.dart';
 import '../../../../presentation/pages/artist_page.dart';
 import '../../../../presentation/pages/listening_history_page.dart';
 import '../../../../features/playlists/domain/repositories/playlists_repository.dart';
-import '../../../../presentation/pages/playlists_page.dart';
+import '../../../../presentation/pages/playlist_detail_page.dart';
 import '../../../../presentation/pages/release_page.dart';
 import '../../../../presentation/pages/charts_page.dart';
 import '../../../../presentation/pages/for_you_page.dart';
@@ -49,6 +50,8 @@ class HomePage extends StatefulWidget {
     required this.listeningHistoryRepository,
     required this.playlistsRepository,
     this.catalogReloadToken,
+    this.isVisible = true,
+    this.scrollController,
   });
 
   final GetHomeSectionUseCase getHomeSectionUseCase;
@@ -58,6 +61,8 @@ class HomePage extends StatefulWidget {
 
   /// Счётчик из [MainShell]: при переходе на вкладку «Главная» перечитываем каталог с сервера.
   final ValueNotifier<int>? catalogReloadToken;
+  final bool isVisible;
+  final ScrollController? scrollController;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -71,12 +76,14 @@ class _HomePageState extends State<HomePage> {
   List<Track> _chartNavTracks = const [];
   bool _isLoading = true;
   Timer? _homeSectionRefreshTimer;
+  bool _homeRefreshInFlight = false;
+  int _homeRefreshGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _startHomeSectionAutoRefresh();
+    if (widget.isVisible) _startHomeSectionAutoRefresh();
     widget.catalogReloadToken?.addListener(_onCatalogReloadToken);
   }
 
@@ -94,6 +101,16 @@ class _HomePageState extends State<HomePage> {
       oldWidget.catalogReloadToken?.removeListener(_onCatalogReloadToken);
       widget.catalogReloadToken?.addListener(_onCatalogReloadToken);
     }
+    if (oldWidget.isVisible != widget.isVisible) {
+      if (widget.isVisible) {
+        _startHomeSectionAutoRefresh();
+        unawaited(_refreshHomeSectionSilently());
+      } else {
+        _homeSectionRefreshTimer?.cancel();
+        _homeSectionRefreshTimer = null;
+        ++_homeRefreshGeneration;
+      }
+    }
   }
 
   void _onCatalogReloadToken() {
@@ -108,11 +125,35 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _refreshHomeSectionSilently() async {
+    if (_homeRefreshInFlight) return;
+    _homeRefreshInFlight = true;
+    final generation = ++_homeRefreshGeneration;
     try {
       final next = await widget.getHomeSectionUseCase();
-      if (!mounted) return;
-      setState(() => _section = next);
-    } catch (_) {}
+      if (!mounted || generation != _homeRefreshGeneration) return;
+      if (_homeSectionKey(_section) != _homeSectionKey(next)) {
+        setState(() => _section = next);
+      }
+    } catch (_) {
+    } finally {
+      _homeRefreshInFlight = false;
+    }
+  }
+
+  String _homeSectionKey(HomeSection? value) {
+    if (value == null) return '';
+    return <Object?>[
+      value.featuredTrackTitle,
+      value.featuredTrackCoverAsset,
+      value.isPlaying,
+      value.listeningFriends.map((e) => '${e.userId}:${e.username}').join(','),
+      value.friendPlayback?.title,
+      value.friendPlayback?.positionSeconds,
+      value.latestReleases.length,
+      value.recommendedTrackAssetPaths.join(','),
+      value.recommendedServerTracks.length,
+      value.recommendedPlaylists.length,
+    ].join('|');
   }
 
   Future<void> _reloadServerTracks() async {
@@ -152,7 +193,10 @@ class _HomePageState extends State<HomePage> {
       } catch (e) {
         remoteErr = e.toString();
         if (fromUser && mounted) {
-          await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+          await ServerConnectivity.instance.reportNetworkErrorIfOffline(
+            context,
+            e,
+          );
         }
       }
       var chartTracks = const <Track>[];
@@ -174,7 +218,10 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (e) {
       if (fromUser && mounted) {
-        await ServerConnectivity.instance.reportNetworkErrorIfOffline(context, e);
+        await ServerConnectivity.instance.reportNetworkErrorIfOffline(
+          context,
+          e,
+        );
       }
       if (mounted) {
         setState(() => _isLoading = false);
@@ -261,9 +308,8 @@ class _HomePageState extends State<HomePage> {
   void _openForYou(BuildContext context) {
     Navigator.of(context).push(
       ShellMaterialPageRoute<void>(
-        builder: (_) => ForYouPage(
-          audioPlayerService: widget.audioPlayerService,
-        ),
+        builder: (_) =>
+            ForYouPage(audioPlayerService: widget.audioPlayerService),
       ),
     );
   }
@@ -318,10 +364,14 @@ class _HomePageState extends State<HomePage> {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
-  void _openRecommendedPlaylists(BuildContext context) {
+  void _openRecommendedPlaylist(
+    BuildContext context,
+    RecommendedPlaylist playlist,
+  ) {
     Navigator.of(context).push(
       ShellMaterialPageRoute<void>(
-        builder: (_) => PlaylistsPage(
+        builder: (_) => PlaylistDetailPage(
+          playlistId: playlist.id,
           audioPlayerService: widget.audioPlayerService,
           repository: widget.playlistsRepository,
         ),
@@ -489,6 +539,7 @@ class _HomePageState extends State<HomePage> {
     return Container(
       decoration: BoxDecoration(gradient: _homeGradient(palette)),
       child: CustomScrollView(
+        controller: widget.scrollController,
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
@@ -582,7 +633,8 @@ class _HomePageState extends State<HomePage> {
                   ],
                   if (recommendedTracks.isNotEmpty)
                     HomeRecommendationSection(
-                      title: Localizations.localeOf(context).languageCode == 'en'
+                      title:
+                          Localizations.localeOf(context).languageCode == 'en'
                           ? 'Recommended tracks'
                           : 'Рекомендованные треки',
                       height: 72,
@@ -602,7 +654,8 @@ class _HomePageState extends State<HomePage> {
                   if (recommendedTracks.isNotEmpty) const SizedBox(height: 20),
                   if (section.recommendedPlaylists.isNotEmpty)
                     HomeRecommendationSection(
-                      title: Localizations.localeOf(context).languageCode == 'en'
+                      title:
+                          Localizations.localeOf(context).languageCode == 'en'
                           ? 'Recommended playlists'
                           : 'Рекомендованные плейлисты',
                       height: 148,
@@ -612,7 +665,7 @@ class _HomePageState extends State<HomePage> {
                         return RecommendedPlaylistCard(
                           title: e.title,
                           coverUrl: e.coverUrl,
-                          onTap: () => _openRecommendedPlaylists(context),
+                          onTap: () => _openRecommendedPlaylist(context, e),
                         );
                       },
                     ),
@@ -646,7 +699,8 @@ class _HomePageState extends State<HomePage> {
                         context,
                         title: item.title,
                         coverUrl: item.coverUrl,
-                        artistName: item.artist ??
+                        artistName:
+                            item.artist ??
                             (section.recommendedArtists.isNotEmpty
                                 ? section.recommendedArtists.first.username
                                 : null),

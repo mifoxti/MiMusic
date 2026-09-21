@@ -59,10 +59,10 @@ class ShellMaterialPageRoute<T> extends MaterialPageRoute<T> {
     super.fullscreenDialog,
     super.allowSnapshotting,
     bool opaque = true,
-  })  : _opaque = opaque,
-        super(
-          builder: (context) => ShellRouteBackGuard(child: builder(context)),
-        );
+  }) : _opaque = opaque,
+       super(
+         builder: (context) => ShellRouteBackGuard(child: builder(context)),
+       );
 
   final bool _opaque;
 

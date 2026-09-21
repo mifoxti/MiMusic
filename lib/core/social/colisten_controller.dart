@@ -7,6 +7,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../audio/audio_player_service.dart';
 import '../audio/track.dart';
+import '../audio/audio_transport_coordinator.dart';
 import '../auth/auth_session_store.dart';
 import '../network/api_config.dart';
 import '../network/colisten_api.dart';
@@ -37,6 +38,18 @@ class ColistenController {
   Timer? _guestSnapshotTimer;
   void Function()? _hostListener;
   AudioPlayerService? _hostAudio;
+  StreamSubscription<AudioTransportEvent>? _transportSubscription;
+  final String _senderSessionId = DateTime.now().microsecondsSinceEpoch.toString();
+  int _senderSequence = 0;
+  String? _pendingHostControlCommandId;
+
+  void _stampCommand(Map<String, dynamic> payload) {
+    if (payload['commandId'] != null) return;
+    final sequence = ++_senderSequence;
+    payload['senderSessionId'] = _senderSessionId;
+    payload['senderSeq'] = sequence;
+    payload['commandId'] = '$_senderSessionId:$sequence';
+  }
   bool _hostRestSyncInFlight = false;
   bool _hostPendingRestSync = false;
   Map<String, dynamic>? _guestPendingCommandPayload;
@@ -431,6 +444,9 @@ class ColistenController {
     }
     _hostListener = null;
     _hostAudio = null;
+    await _transportSubscription?.cancel();
+    _transportSubscription = null;
+    _pendingHostControlCommandId = null;
     _hostRestSyncInFlight = false;
     _hostPendingRestSync = false;
     _guestPendingCommandPayload = null;
@@ -1307,6 +1323,11 @@ class ColistenController {
         'controlPlaylistHostOnly': state.controlPlaylistHostOnly,
         'participantIds': state.participantIds,
         'wallClockMs': state.wallClockMs,
+        'queueRevision': state.queueRevision,
+        'trackEpoch': state.trackEpoch,
+        'hostRecovering': state.hostRecovering,
+        'recoverUntilMs': state.recoverUntilMs,
+        'serverTimeMs': state.serverTimeMs,
       };
 
   /// Дискретная команда хоста: WS `command` + короткий REST-ack (второй broadcast с controlSeq).
@@ -1321,6 +1342,8 @@ class ColistenController {
     _hostRemoteAuthoritativeOverrideUntilMs = 0;
     final payload = _hostStatePayloadForSend(audio, explicitAction: true);
     payload['type'] = 'command';
+    _stampCommand(payload);
+    _pendingHostControlCommandId = payload['commandId'] as String;
     if (overrides != null) {
       for (final entry in overrides.entries) {
         if (entry.value != null) {
@@ -1433,6 +1456,9 @@ class ColistenController {
             repeatMode: payload['repeatMode'] as String? ?? 'off',
             baseStateVersion: (payload['baseStateVersion'] as num?)?.toInt(),
             explicitAction: payload['explicitAction'] == true,
+            commandId: payload['commandId'] as String?,
+            senderSessionId: payload['senderSessionId'] as String?,
+            senderSeq: payload['senderSeq'] as int?,
           )
           .then((state) {
             if (state != null) {
@@ -1503,6 +1529,7 @@ class ColistenController {
                 ? _hostStatePayload(audio)
                 : Map<String, dynamic>.from(guestPayloadOverride))
             ..['type'] = 'command';
+      _stampCommand(payload);
       if (guestPayloadOverride == null && !includeQueueForGuest) {
         // Regular command actions (play/pause/seek/skip/shuffle/repeat)
         // must not mutate playlist implicitly.
@@ -1537,6 +1564,9 @@ class ColistenController {
               .pushHostState(
                 roomId: roomId,
                 messageType: 'command',
+                commandId: payload['commandId'] as String?,
+                senderSessionId: payload['senderSessionId'] as String?,
+                senderSeq: payload['senderSeq'] as int?,
                 trackId: trackId,
                 trackKey: trackKey,
                 queueTrackIds: queueTrackIds,
@@ -1730,6 +1760,19 @@ class ColistenController {
 
     _hostListener = null;
 
+    _transportSubscription = AudioTransportCoordinator.instance.events.listen((event) {
+      if (!_isHost || _roomId != roomId ||
+          !ListeningRoomSession.instance.active || _hostOutboundBlockers > 0) return;
+      // Automatic native playlist transitions have no UI action to publish them.
+      // Remote applications never emit this engine-origin event.
+      if (event.origin == AudioTransportOrigin.engine &&
+          event.kind == AudioTransportKind.trackChanged) {
+        pushHostTransportState(audio,
+            positionSeconds: event.position!.inMilliseconds / 1000.0,
+            playing: audio.engineIsPlaying);
+      }
+    });
+
     // Позицию на сервер пушим только при явных действиях (pause/seek/skip),
     // не раз в секунду — иначе гости захлёбываются очередью apply.
     _hostSnapshotTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -1761,6 +1804,15 @@ class ColistenController {
   void _onHostStateMessage(String raw) {
     try {
       final j = jsonDecode(raw) as Map<String, dynamic>;
+      if (j['type'] == 'command_ack') {
+        if (j['commandId'] == _pendingHostControlCommandId &&
+            (j['status'] == 'applied' || j['status'] == 'duplicate')) {
+          _hostControlRestTimer?.cancel();
+          _pendingHostControlCommandId = null;
+          _noteHostRoomVersion((j['stateVersion'] as num?)?.toInt() ?? 0);
+        }
+        return;
+      }
       if (j['type'] == 'remote_command') {
         _onHostRemoteCommand(j);
         return;
@@ -2784,8 +2836,7 @@ class ColistenController {
                 assetPath: audio.currentTrack?.assetPath ?? '',
                 audioFilePath: audio.currentTrack?.audioFilePath,
               ) !=
-              effectiveTrackKey ||
-          queueMismatch;
+              effectiveTrackKey;
       _log(
         '$roleTag track decision key=$effectiveTrackKey reload=$needTrackReload queueMismatch=$queueMismatch currentKey=${TracksApi().trackKeyForPaths(assetPath: audio.currentTrack?.assetPath ?? '', audioFilePath: audio.currentTrack?.audioFilePath)}',
       );
@@ -3285,6 +3336,7 @@ class ColistenController {
       'trackId': payload['trackId'],
       'trackKey': payload['trackKey'],
     };
+    _stampCommand(cmd);
     _log(
       'guest command playpause room=$_roomId playing=$playing trackId=${cmd['trackId']} key=${cmd['trackKey']} pos=${(cmd['position'] as double).toStringAsFixed(3)}',
     );

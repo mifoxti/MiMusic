@@ -52,11 +52,16 @@ class ExpandablePlayerDock extends StatelessWidget {
         final begin = collapsedMiniRectInOverlay(overlaySize);
 
         return ListenableBuilder(
-          listenable: Listenable.merge([
-            expandController,
-            playerCoverPalette,
-          ]),
-          builder: (context, _) {
+          listenable: Listenable.merge([expandController, playerCoverPalette]),
+          child: RepaintBoundary(
+            child: FullPlayerDockPanel(
+              audioPlayerService: audioPlayerService,
+              playerCoverPalette: playerCoverPalette,
+              onCollapse: onCollapse,
+              playlistsRepository: playlistsRepository,
+            ),
+          ),
+          builder: (context, fullPanel) {
             final raw = expandController.value.clamp(0.0, 1.0);
             // Пока док полностью свёрнут, не перехватываем тапы по экрану — иначе блокируются
             // списки, диалоги и маршруты под слоем дока в MainShell.
@@ -73,12 +78,10 @@ class ExpandablePlayerDock extends StatelessWidget {
             final palette = playerCoverPalette;
             final crossfading = palette.isCrossfading;
             // Размытие контента под плеером (как у мини): раньше, чем раньше — с ~35% разворота.
-            final blurSigma = u < 0.35
-                ? 0.0
-                : AppGlass.blurSigma *
-                      Curves.easeOut.transform(
-                        ((u - 0.35) / 0.65).clamp(0.0, 1.0),
-                      );
+            // BackdropFilter is the expensive part of the morph. Keep it off
+            // while the card is moving and enable one stable filter after the
+            // geometry has settled instead of animating blur every frame.
+            final blurSigma = raw < 1.0 ? 0.0 : AppGlass.blurSigma;
 
             return Stack(
               fit: StackFit.expand,
@@ -106,10 +109,10 @@ class ExpandablePlayerDock extends StatelessWidget {
                     child: PlayerGlassShell(
                       colors: palette.shellFrontColors,
                       coverBytes: palette.shellFrontCover,
-                      underColors:
-                          crossfading ? palette.shellBackColors : null,
-                      underCoverBytes:
-                          crossfading ? palette.shellBackCover : null,
+                      underColors: crossfading ? palette.shellBackColors : null,
+                      underCoverBytes: crossfading
+                          ? palette.shellBackCover
+                          : null,
                       crossfade: palette.shellCrossfade,
                       isDark: isDark,
                       seeThrough: u > 0.35,
@@ -117,9 +120,7 @@ class ExpandablePlayerDock extends StatelessWidget {
                       showBorder: borderW > 0,
                       borderWidth: borderW,
                       blurSigma: blurSigma,
-                      boxShadow: u < 0.98
-                          ? AppGlass.cardShadows(isDark)
-                          : null,
+                      boxShadow: u < 0.98 ? AppGlass.cardShadows(isDark) : null,
                       child: Stack(
                         clipBehavior: Clip.hardEdge,
                         fit: StackFit.expand,
@@ -134,16 +135,16 @@ class ExpandablePlayerDock extends StatelessWidget {
                               child: IgnorePointer(
                                 ignoring: u < 0.22,
                                 child: Opacity(
-                                  opacity: ((u - 0.14) / 0.72).clamp(
-                                    0.0,
-                                    1.0,
-                                  ),
-                                  child: FullPlayerDockPanel(
-                                    audioPlayerService: audioPlayerService,
-                                    playerCoverPalette: playerCoverPalette,
-                                    onCollapse: onCollapse,
-                                    playlistsRepository:
-                                        playlistsRepository,
+                                  opacity: ((u - 0.14) / 0.72).clamp(0.0, 1.0),
+                                  // Keep content at its final layout size while
+                                  // the enclosing glass clips the expanding card.
+                                  child: OverflowBox(
+                                    alignment: Alignment.topCenter,
+                                    minWidth: overlaySize.width,
+                                    maxWidth: overlaySize.width,
+                                    minHeight: overlaySize.height,
+                                    maxHeight: overlaySize.height,
+                                    child: fullPanel,
                                   ),
                                 ),
                               ),
@@ -205,6 +206,8 @@ class _DockMiniLayer extends StatelessWidget {
                 child: MiniPlayerInterior(
                   track: track,
                   trackProgress: progress,
+                  positionListenable: audioPlayerService.positionListenable,
+                  duration: dur,
                   isPlaying: audioPlayerService.isPlaying,
                   playerCoverPalette: playerCoverPalette,
                   collaborativeMode: ListeningRoomSession.instance.active,

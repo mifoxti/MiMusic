@@ -7,37 +7,57 @@ import 'package:path_provider/path_provider.dart';
 Future<int> getAppCacheSizeBytes() async {
   if (kIsWeb) return 0;
   var total = 0;
-  try {
-    final temp = await getTemporaryDirectory();
-    total += _directorySizeSync(Directory(temp.path));
-    try {
-      final cache = await getApplicationCacheDirectory();
-      total += _directorySizeSync(Directory(cache.path));
-    } catch (_) {}
-  } catch (_) {}
+  for (final dir in await _cacheDirectories()) {
+    total += await _directorySize(dir);
+  }
   return total;
 }
 
 /// Удаляет содержимое temp и application cache (не сами корневые папки).
 Future<void> clearAppCache() async {
   if (kIsWeb) return;
-  try {
-    await _clearChildren(await getTemporaryDirectory());
+  for (final dir in await _cacheDirectories()) {
     try {
-      final cache = await getApplicationCacheDirectory();
-      await _clearChildren(Directory(cache.path));
+      await _clearChildren(dir);
     } catch (_) {}
-  } catch (_) {}
+  }
 }
 
-int _directorySizeSync(Directory dir) {
-  if (!dir.existsSync()) return 0;
+Future<List<Directory>> _cacheDirectories() async {
+  final directories = <String, Directory>{};
+  for (final resolve in [getTemporaryDirectory, getApplicationCacheDirectory]) {
+    try {
+      final dir = await resolve();
+      final path = await dir.resolveSymbolicLinks();
+      directories[Platform.isWindows ? path.toLowerCase() : path] = Directory(
+        path,
+      );
+    } catch (_) {}
+  }
+  // Nested cache roots must also be counted only once.
+  return directories.entries
+      .where(
+        (entry) => !directories.keys.any(
+          (other) =>
+              other != entry.key &&
+              entry.key.startsWith(
+                other.endsWith(Platform.pathSeparator)
+                    ? other
+                    : '$other${Platform.pathSeparator}',
+              ),
+        ),
+      )
+      .map((entry) => entry.value)
+      .toList();
+}
+
+Future<int> _directorySize(Directory dir) async {
   var total = 0;
   try {
-    for (final entity in dir.listSync(recursive: true, followLinks: false)) {
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
       if (entity is File) {
         try {
-          total += entity.lengthSync();
+          total += await entity.length();
         } catch (_) {}
       }
     }

@@ -26,6 +26,11 @@ class ColistenRoomStateDto {
     this.stateVersion = 0,
     this.wallClockMs = 0,
     this.controlSeq = 0,
+    this.queueRevision = 0,
+    this.trackEpoch = 0,
+    this.hostRecovering = false,
+    this.recoverUntilMs,
+    this.serverTimeMs = 0,
   });
 
   final String roomId;
@@ -49,6 +54,11 @@ class ColistenRoomStateDto {
   final int stateVersion;
   final int wallClockMs;
   final int controlSeq;
+  final int queueRevision;
+  final int trackEpoch;
+  final bool hostRecovering;
+  final int? recoverUntilMs;
+  final int serverTimeMs;
 
   factory ColistenRoomStateDto.fromJson(Map<String, dynamic> j) {
     final p = j['participantIds'];
@@ -81,6 +91,11 @@ class ColistenRoomStateDto {
       stateVersion: (j['stateVersion'] as num?)?.toInt() ?? 0,
       wallClockMs: (j['wallClockMs'] as num?)?.toInt() ?? 0,
       controlSeq: (j['controlSeq'] as num?)?.toInt() ?? 0,
+      queueRevision: (j['queueRevision'] as num?)?.toInt() ?? 0,
+      trackEpoch: (j['trackEpoch'] as num?)?.toInt() ?? 0,
+      hostRecovering: j['hostRecovering'] as bool? ?? false,
+      recoverUntilMs: (j['recoverUntilMs'] as num?)?.toInt(),
+      serverTimeMs: (j['serverTimeMs'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -188,6 +203,9 @@ class ColistenApi {
   Future<ColistenRoomStateDto?> pushHostState({
     required String roomId,
     String messageType = 'host_state',
+    String? commandId,
+    String? senderSessionId,
+    int? senderSeq,
     int? trackId,
     String? trackKey,
     List<int>? queueTrackIds,
@@ -203,6 +221,9 @@ class ColistenApi {
     final dio = await createAuthenticatedDio();
     final data = <String, dynamic>{
       'type': messageType,
+      if (commandId != null) 'commandId': commandId,
+      if (senderSessionId != null) 'senderSessionId': senderSessionId,
+      if (senderSeq != null) 'senderSeq': senderSeq,
       'position': positionSeconds,
       'playing': playing,
       'shuffleEnabled': shuffleEnabled,

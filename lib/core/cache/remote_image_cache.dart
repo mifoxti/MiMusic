@@ -17,6 +17,8 @@ class RemoteImageCache {
   static final RemoteImageCache instance = RemoteImageCache._();
 
   Directory? _dir;
+  final Map<String, Future<File?>> _inFlight = {};
+  int _temporaryFileId = 0;
 
   Future<Directory> _cacheDir() async {
     if (kIsWeb) {
@@ -57,17 +59,17 @@ class RemoteImageCache {
 
   /// Только аватары требуют Bearer. [GET /tracks/{id}/cover] — публичный.
   bool requiresAuth(String url) {
-    final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
-    if (!url.startsWith(base)) return false;
-    if (url.contains('/me/avatar')) return true;
-    return url.contains('/users/') && url.contains('/avatar');
+    final uri = Uri.tryParse(url);
+    if (uri == null || !_isApiOrigin(uri)) return false;
+    return uri.path.endsWith('/me/avatar') ||
+        RegExp(r'/users/\d+/avatar$').hasMatch(uri.path);
   }
 
-  String _requestPath(String url) {
-    final uri = Uri.parse(url);
-    if (!uri.hasScheme) return url;
-    final path = uri.path.isEmpty ? '/' : uri.path;
-    return uri.hasQuery ? '$path?${uri.query}' : path;
+  bool _isApiOrigin(Uri uri) {
+    final base = Uri.parse(ApiConfig.baseUrl);
+    return uri.scheme == base.scheme &&
+        uri.host == base.host &&
+        uri.port == base.port;
   }
 
   /// Возвращает файл из кэша или скачивает в кэш. При ошибке сети — старый файл, если есть.
@@ -80,6 +82,25 @@ class RemoteImageCache {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return null;
     }
+    final auth =
+        (requireAuth ?? requiresAuth(url)) && _isApiOrigin(Uri.parse(url));
+    final key = '$auth:$url';
+    final existing = _inFlight[key];
+    if (existing != null) return existing;
+    final future = _loadFile(url, auth: auth, forceRefresh: forceRefresh);
+    _inFlight[key] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlight.remove(key);
+    }
+  }
+
+  Future<File?> _loadFile(
+    String url, {
+    required bool auth,
+    required bool forceRefresh,
+  }) async {
     final dir = await _cacheDir();
     final file = File('${dir.path}/${_fileNameForUrl(url)}');
     if (!forceRefresh && await file.exists()) {
@@ -87,9 +108,10 @@ class RemoteImageCache {
       if (len > 0) return file;
     }
 
-    final auth = requireAuth ?? requiresAuth(url);
+    File? temporary;
+    Dio? dio;
     try {
-      final dio = auth
+      dio = auth
           ? await createAuthenticatedDio()
           : Dio(
               BaseOptions(
@@ -99,7 +121,7 @@ class RemoteImageCache {
               ),
             );
       final res = await dio.get<List<int>>(
-        _requestPath(url),
+        url,
         options: Options(
           responseType: ResponseType.bytes,
           followRedirects: true,
@@ -110,7 +132,9 @@ class RemoteImageCache {
       if (data == null || data.isEmpty) {
         return await file.exists() ? file : null;
       }
-      await file.writeAsBytes(data, flush: true);
+      temporary = File('${file.path}.${_temporaryFileId++}.tmp');
+      await temporary.writeAsBytes(data, flush: true);
+      await temporary.rename(file.path);
       if (_isMeAvatarUrl(url)) {
         await MeProfileAvatarDisk.saveFrom(file);
       }
@@ -120,6 +144,13 @@ class RemoteImageCache {
         return file;
       }
       return null;
+    } finally {
+      dio?.close();
+      if (temporary != null && await temporary.exists()) {
+        try {
+          await temporary.delete();
+        } catch (_) {}
+      }
     }
   }
 

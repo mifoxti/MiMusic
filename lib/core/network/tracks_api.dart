@@ -95,14 +95,15 @@ class RecentUploaderDto {
 
 class TracksApi {
   TracksApi({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ApiConfig.baseUrl,
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 30),
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: ApiConfig.baseUrl,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 30),
+            ),
+          );
 
   final Dio _dio;
 
@@ -115,7 +116,10 @@ class TracksApi {
     final data = res.data;
     if (data == null) return [];
     return data
-        .map((e) => RecentUploaderDto.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map(
+          (e) =>
+              RecentUploaderDto.fromJson(Map<String, dynamic>.from(e as Map)),
+        )
         .toList();
   }
 
@@ -127,12 +131,17 @@ class TracksApi {
     final data = res.data;
     if (data == null) return [];
     return data
-        .map((e) => ServerTrackListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map(
+          (e) =>
+              ServerTrackListItem.fromJson(Map<String, dynamic>.from(e as Map)),
+        )
         .toList();
   }
 
   /// Треки, выгруженные текущим пользователем ([GET /me/tracks]).
-  Future<List<ServerTrackListItem>> fetchMyUploadedTracks({int limit = 100}) async {
+  Future<List<ServerTrackListItem>> fetchMyUploadedTracks({
+    int limit = 100,
+  }) async {
     final dio = await createAuthenticatedDio();
     final res = await dio.get<List<dynamic>>(
       '/me/tracks',
@@ -141,7 +150,10 @@ class TracksApi {
     final data = res.data;
     if (data == null) return [];
     return data
-        .map((e) => ServerTrackListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map(
+          (e) =>
+              ServerTrackListItem.fromJson(Map<String, dynamic>.from(e as Map)),
+        )
         .toList();
   }
 
@@ -176,11 +188,11 @@ class TracksApi {
     return int.tryParse(m.group(1)!);
   }
 
-  String trackKeyForPaths({
-    required String assetPath,
-    String? audioFilePath,
-  }) {
-    final sid = resolveServerTrackId(assetPath: assetPath, audioFilePath: audioFilePath);
+  String trackKeyForPaths({required String assetPath, String? audioFilePath}) {
+    final sid = resolveServerTrackId(
+      assetPath: assetPath,
+      audioFilePath: audioFilePath,
+    );
     if (sid != null) return 'srv:$sid';
     return 'asset:$assetPath';
   }
@@ -230,7 +242,8 @@ class TracksApi {
     required int trackId,
     required int userId,
   }) async {
-    final res = await _dio.post<Map<String, dynamic>>(
+    final dio = await createAuthenticatedDio();
+    final res = await dio.post<Map<String, dynamic>>(
       '/tracks/$trackId/like',
       data: {'userId': userId},
     );
@@ -238,7 +251,9 @@ class TracksApi {
   }
 
   /// Лайкнутые треки в порядке постановки лайка ([GET /users/{id}/loved]).
-  Future<List<ServerTrackListItem>> fetchLovedTracks({required int userId}) async {
+  Future<List<ServerTrackListItem>> fetchLovedTracks({
+    required int userId,
+  }) async {
     final res = await _dio.get<List<dynamic>>('/users/$userId/loved');
     final data = res.data;
     if (data == null) return [];

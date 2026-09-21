@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../cache/remote_image_cache.dart';
 import '../platform/platform.dart' show buildCoverImageFromFile;
+import 'image_decode_extent.dart';
 
 /// Путь к файлу на диске (не asset и не URL).
 bool _isFilePath(String path) {
@@ -42,6 +43,8 @@ Widget buildCoverImage({
             fit: fit,
             width: width,
             height: height,
+            cacheWidth: imageDecodeExtent(width),
+            cacheHeight: imageDecodeExtent(height),
             errorBuilder: (_, _, _) => placeholder,
           ),
         ),
@@ -71,6 +74,8 @@ Widget buildCoverImage({
       borderRadius,
       placeholder,
       fit,
+      imageDecodeExtent(width),
+      imageDecodeExtent(height),
     );
   }
   return ClipRRect(
@@ -83,6 +88,8 @@ Widget buildCoverImage({
         fit: fit,
         width: width,
         height: height,
+        cacheWidth: imageDecodeExtent(width),
+        cacheHeight: imageDecodeExtent(height),
         errorBuilder: (context, error, stackTrace) => placeholder,
       ),
     ),
@@ -113,6 +120,7 @@ class _CachedNetworkCover extends StatefulWidget {
 class _CachedNetworkCoverState extends State<_CachedNetworkCover> {
   String? _filePath;
   bool _loading = true;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -134,19 +142,24 @@ class _CachedNetworkCoverState extends State<_CachedNetworkCover> {
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
+    final imageUrl = widget.imageUrl;
+    final forceRefresh = widget.forceRefresh;
     var file = await RemoteImageCache.instance.fileForUrl(
-      widget.imageUrl,
-      forceRefresh: widget.forceRefresh,
+      imageUrl,
+      forceRefresh: forceRefresh,
     );
-  // Повтор: сервер мог только что извлечь обложку из MP3 при первом GET.
-    if (file == null && !widget.forceRefresh) {
+    if (!mounted || generation != _loadGeneration) return;
+    // Повтор: сервер мог только что извлечь обложку из MP3 при первом GET.
+    if (file == null && !forceRefresh) {
       await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (!mounted || generation != _loadGeneration) return;
       file = await RemoteImageCache.instance.fileForUrl(
-        widget.imageUrl,
+        imageUrl,
         forceRefresh: true,
       );
     }
-    if (!mounted) return;
+    if (!mounted || generation != _loadGeneration) return;
     setState(() {
       _filePath = file?.path;
       _loading = false;
@@ -169,6 +182,8 @@ class _CachedNetworkCoverState extends State<_CachedNetworkCover> {
       BorderRadius.zero,
       widget.placeholder,
       widget.fit,
+      imageDecodeExtent(widget.width),
+      imageDecodeExtent(widget.height),
     );
   }
 }

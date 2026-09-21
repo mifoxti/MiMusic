@@ -5,12 +5,18 @@ import 'package:just_audio/just_audio.dart';
 Future<String?> copyPickedAudioToApp(String sourcePath, String trackId) async =>
     null;
 
-Future<String?> saveAudioBytesToApp(List<int> bytes, String trackId, String extension) async =>
-    null;
+Future<String?> saveAudioBytesToApp(
+  List<int> bytes,
+  String trackId,
+  String extension,
+) async => null;
 
 // --- copy_cover_to_app
-Future<String?> saveCoverBytesToApp(List<int> bytes, String id, String extension) async =>
-    null;
+Future<String?> saveCoverBytesToApp(
+  List<int> bytes,
+  String id,
+  String extension,
+) async => null;
 
 Future<String?> copyPickedCoverToApp(String sourcePath, String id) async =>
     null;
@@ -41,8 +47,10 @@ Widget buildCoverImageFromFile(
   double height,
   BorderRadius borderRadius,
   Widget placeholder,
-  BoxFit fit,
-) {
+  BoxFit fit, [
+  int? cacheWidth,
+  int? cacheHeight,
+]) {
   return ClipRRect(
     borderRadius: borderRadius,
     child: SizedBox(width: width, height: height, child: placeholder),
@@ -50,10 +58,6 @@ Widget buildCoverImageFromFile(
 }
 
 // --- studio_cover_image
-Widget studioCoverImageFromFile(
-  String path,
-  double size,
-  Widget placeholder,
-) {
+Widget studioCoverImageFromFile(String path, double size, Widget placeholder) {
   return placeholder;
 }

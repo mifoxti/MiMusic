@@ -9,27 +9,29 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'notification_intent.dart';
 import '../network/api_config.dart';
 import '../settings/local_settings_repository.dart';
+import 'notification_delivery_ledger.dart';
 
 class LocalNotificationsService {
   LocalNotificationsService._();
 
-  static final LocalNotificationsService instance = LocalNotificationsService._();
+  static final LocalNotificationsService instance =
+      LocalNotificationsService._();
 
   static const AndroidNotificationChannel _friendRequestsChannel =
       AndroidNotificationChannel(
-    'mimusic_friend_requests',
-    'Заявки в друзья',
-    description: 'Тестовые уведомления о заявках в друзья',
-    importance: Importance.high,
-  );
+        'mimusic_friend_requests',
+        'Заявки в друзья',
+        description: 'Тестовые уведомления о заявках в друзья',
+        importance: Importance.high,
+      );
 
   static const AndroidNotificationChannel _adminMessagesChannel =
       AndroidNotificationChannel(
-    'mimusic_admin_messages',
-    'Сообщения MiMusic',
-    description: 'Рассылки и уведомления от администрации',
-    importance: Importance.high,
-  );
+        'mimusic_admin_messages',
+        'Сообщения MiMusic',
+        description: 'Рассылки и уведомления от администрации',
+        importance: Importance.high,
+      );
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -90,14 +92,17 @@ class LocalNotificationsService {
         _handleNotificationResponse(launchResponse);
       }
 
-      final androidPlugin =
-          _plugin.resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       await androidPlugin?.createNotificationChannel(_friendRequestsChannel);
       await androidPlugin?.createNotificationChannel(_adminMessagesChannel);
       await androidPlugin?.requestNotificationsPermission();
-      final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
+      final iosPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
       await iosPlugin?.requestPermissions(
         alert: true,
         badge: true,
@@ -131,8 +136,9 @@ class LocalNotificationsService {
       avatarUrl: fromAvatarUrl,
       avatarAssetPath: fromAvatarAssetPath,
     );
-    final avatarBitmap =
-        avatarPath != null ? FilePathAndroidBitmap(avatarPath) : null;
+    final avatarBitmap = avatarPath != null
+        ? FilePathAndroidBitmap(avatarPath)
+        : null;
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _friendRequestsChannel.id,
@@ -227,8 +233,9 @@ class LocalNotificationsService {
     if (!_initialized) return;
 
     final imagePath = await _downloadAvatarToTempFile(imageUrl);
-    final imageBitmap =
-        imagePath != null ? FilePathAndroidBitmap(imagePath) : null;
+    final imageBitmap = imagePath != null
+        ? FilePathAndroidBitmap(imagePath)
+        : null;
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _adminMessagesChannel.id,
@@ -274,6 +281,7 @@ class LocalNotificationsService {
     required String roomId,
     String? fromAvatarUrl,
     String? fromAvatarAssetPath,
+    int? notificationId,
   }) async {
     final notificationsEnabled = await _notificationsEnabled();
     if (!notificationsEnabled) return;
@@ -281,44 +289,55 @@ class LocalNotificationsService {
       await initialize();
     }
     if (!_initialized) return;
-    final avatarPath = await _resolveAvatarPath(
-      avatarUrl: fromAvatarUrl,
-      avatarAssetPath: fromAvatarAssetPath,
+    final deliveryKey = NotificationDeliveryLedger.inviteKey(
+      roomId: roomId,
+      notificationId: notificationId,
     );
-    final avatarBitmap =
-        avatarPath != null ? FilePathAndroidBitmap(avatarPath) : null;
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        _friendRequestsChannel.id,
-        _friendRequestsChannel.name,
-        channelDescription: _friendRequestsChannel.description,
-        importance: Importance.high,
-        priority: Priority.high,
-        largeIcon: avatarBitmap,
-      ),
-      iOS: DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-        attachments: avatarPath != null
-            ? <DarwinNotificationAttachment>[
-                DarwinNotificationAttachment(avatarPath),
-              ]
-            : null,
-      ),
-    );
-    await _plugin.show(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      title: 'Приглашение в совместное прослушивание',
-      body: '@$fromUsername приглашает вас в комнату',
-      notificationDetails: details,
-      payload: NotificationIntent(
-        target: NotificationTarget.colistenInvite,
-        username: fromUsername,
+    if (!await NotificationDeliveryLedger.claim(deliveryKey)) return;
+    try {
+      final avatarPath = await _resolveAvatarPath(
         avatarUrl: fromAvatarUrl,
-        roomId: roomId,
-      ).toPayload(),
-    );
+        avatarAssetPath: fromAvatarAssetPath,
+      );
+      final avatarBitmap = avatarPath != null
+          ? FilePathAndroidBitmap(avatarPath)
+          : null;
+      final details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          _friendRequestsChannel.id,
+          _friendRequestsChannel.name,
+          channelDescription: _friendRequestsChannel.description,
+          importance: Importance.high,
+          priority: Priority.high,
+          largeIcon: avatarBitmap,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          attachments: avatarPath != null
+              ? <DarwinNotificationAttachment>[
+                  DarwinNotificationAttachment(avatarPath),
+                ]
+              : null,
+        ),
+      );
+      await _plugin.show(
+        id: NotificationDeliveryLedger.platformId(deliveryKey),
+        title: 'Приглашение в совместное прослушивание',
+        body: '@$fromUsername приглашает вас в комнату',
+        notificationDetails: details,
+        payload: NotificationIntent(
+          target: NotificationTarget.colistenInvite,
+          username: fromUsername,
+          avatarUrl: fromAvatarUrl,
+          roomId: roomId,
+        ).toPayload(),
+      );
+    } catch (_) {
+      await NotificationDeliveryLedger.release(deliveryKey);
+      rethrow;
+    }
   }
 
   Future<String?> _resolveAvatarPath({
